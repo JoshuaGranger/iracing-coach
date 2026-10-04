@@ -22,6 +22,7 @@ const loadSetupDetail = () => import("./pages/setup-detail");
 const loadBaseline = () => import("./pages/baseline");
 const loadTuning = () => import("./pages/tuning");
 const loadLive = () => import("./pages/live");
+const loadKit = () => import("./pages/kit");
 
 const LAST_DRIVER = "coach.last-driver";
 
@@ -118,6 +119,9 @@ function TopBar({ route, who }: { route: ParsedRoute; who: CurrentDriver }) {
   return (
     <header class="topbar">
       <a class="brand" href={href({ page: "drivers" })}>
+        <svg width="28" height="17" viewBox="0 0 28 17" aria-hidden="true">
+          <path d="M5 13V6.5C5 4 7 3 9 3h9c2.6 0 4.5 1 5.3 2.7.8 1.800.2 3.600-1.500 4.600L16 13.600c-1 .6-2 .4-3-.2L5 13z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+        </svg>
         iRacing Coach
       </a>
       <nav aria-label="Main">
@@ -155,7 +159,7 @@ function Banner() {
   const n = entries.length;
   return (
     <p class="banner" role="status" data-testid="offline-banner">
-      Server unreachable. Loaded data stays open{n ? `; ${n} ${n === 1 ? "change is" : "changes are"} waiting to save` : ""}.
+      Server unreachable{n ? ` · ${n} ${n === 1 ? "change" : "changes"} waiting` : ""}
     </p>
   );
 }
@@ -190,6 +194,8 @@ function renderPage(route: ParsedRoute) {
         return <Lazy load={loadTuning} props={{ customerId: route.customerId, analysisId: route.analysisId }} what="tuning" />;
       case "live":
         return <Lazy load={loadLive} props={{ customerId: route.customerId }} what="live" />;
+      case "kit":
+        return <Lazy load={loadKit} props={{}} what="components" />;
       default:
         return <Notice>Page not found.</Notice>;
     }

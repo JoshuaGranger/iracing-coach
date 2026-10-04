@@ -17,11 +17,16 @@ const add = (name, value) => vars.push([name, String(value)]);
 for (const [k, v] of Object.entries(theme.colors)) add(`--color-${kebab(k)}`, v);
 for (const [k, v] of Object.entries(theme.evidence)) add(`--evidence-${kebab(k)}`, v);
 for (const [k, v] of Object.entries(theme.telemetry)) add(`--telemetry-${kebab(k)}`, v);
+// Racing meanings (green flag, caution, pit, best, loss, fuel), session phases and car identity: colour that carries data.
+for (const [k, v] of Object.entries(theme.race ?? {})) add(`--race-${kebab(k)}`, v);
+for (const [k, v] of Object.entries(theme.phase ?? {})) add(`--phase-${kebab(k)}`, v);
+(theme.identity?.cars ?? []).forEach((c, i) => add(`--car-${i + 1}`, c));
 
 const t = theme.typography;
 const family = (names) => names.map((n) => (/[\s]/.test(n) ? `"${n}"` : n)).join(", ");
 add("--font-ui", family(t.uiFamilies));
 add("--font-metric", family(t.metricFamilies));
+if (t.displayFamilies) add("--font-display", family(t.displayFamilies));
 // Sizes are authored in px against rootPx (the browser default, 16) and emitted in rem, so the root font size (the
 // browser or OS default, then the driver's text-size step below) scales every type size, control height and space.
 // Control heights keep a pixel floor so a small browser default cannot shrink a target under 36 px (desktop) or 44 px (touch).
@@ -34,6 +39,9 @@ add("--text-data", rem(t.dataPx));
 add("--text-section-title", rem(t.sectionTitlePx));
 add("--text-page-title", rem(t.pageTitlePx));
 add("--text-metric", rem(t.metricPx));
+if (t.heroPx) add("--text-hero", rem(t.heroPx));
+if (t.figurePx) add("--text-figure", rem(t.figurePx));
+if (t.headingPx) add("--text-heading", rem(t.headingPx));
 add("--control-height", `max(${t.controlHeightPx}px, ${rem(t.controlHeightPx)})`);
 add("--touch-target", `max(${t.touchTargetPx}px, ${rem(t.touchTargetPx)})`);
 t.weights.forEach((w, i) => add(`--weight-${["regular", "medium", "semibold"][i] ?? w}`, w));

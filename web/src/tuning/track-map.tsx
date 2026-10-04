@@ -19,7 +19,7 @@ function feedbackClass(items: readonly FeedbackItem[]): string {
 }
 
 export function turnDetail(turn: MapTurn, items: readonly FeedbackItem[]): string {
-  if (items.length === 0) return turn.user_verified ? "Bounds verified" : turn.is_official ? "Official label, bounds unverified" : "Detected zone, bounds unverified";
+  if (items.length === 0) return turn.user_verified ? "Verified" : turn.is_official ? "Official · unverified" : "Unverified";
   const names: Record<string, string> = { good: "comfortable", tight: "tight", loose: "loose" };
   const stages: Record<string, string> = { entry: "Entry", center: "Center", exit: "Exit", whole: "Whole" };
   const parts = [
@@ -58,8 +58,7 @@ export function TrackMap(p: TrackMapProps) {
   if (points.length < 2) {
     return (
       <div class="map-empty">
-        <strong>Track shape unavailable</strong>
-        <span>Pick a zone from the list.</span>
+        <strong>No track shape</strong>
       </div>
     );
   }
@@ -123,7 +122,7 @@ export function TrackMap(p: TrackMapProps) {
             />
             <circle cx={mk.x} cy={mk.y} r={r} class="turn-dot" />
             <text x={mk.x} y={mk.y + r * 0.36} font-size={r * 1.05} text-anchor="middle" class="turn-text">
-              {shortLabel(t.label)}
+              {shortLabel(t.label, t.is_official)}
             </text>
           </g>
         );

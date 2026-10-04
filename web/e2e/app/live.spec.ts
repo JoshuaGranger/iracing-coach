@@ -43,14 +43,85 @@ for (const device of DEVICES) {
       })).toBeGreaterThan(50);
     });
 
-    test("the update rate is a per-device choice that reaches the server socket", async ({ page }) => {
+    test("a trend keeps its backlog as live frames accumulate and draws a line, not isolated points", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/live`));
+      await layoutSelect(page).selectOption("factory-qualifying");
+      const canvas = page.locator("[data-metric=speed] canvas");
+      const read = () => canvas.evaluate((c: HTMLCanvasElement) => {
+        const px = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+        let lit = 0;
+        let left = c.width;
+        for (let i = 3; i < px.length; i += 4) if (px[i]! > 0) {
+          lit++;
+          left = Math.min(left, ((i - 3) / 4) % c.width);
+        }
+        return { lit, left };
+      });
+      await expect.poll(async () => (await read()).lit).toBeGreaterThan(300);
+      const before = await read();
+      await page.waitForTimeout(4000);
+      const after = await read();
+      expect(after.lit).toBeGreaterThanOrEqual(before.lit);
+      expect(after.left).toBeLessThanOrEqual(before.left);
+    });
+
+    test("there is no update rate control: every device asks for 60 Hz", async ({ page }) => {
       const urls: string[] = [];
       page.on("websocket", (ws) => urls.push(ws.url()));
       await page.goto(hash(`/d/${DRIVER}/live`));
-      await expect(page.getByLabel("Update rate")).toHaveValue(phone ? "10" : d.name.startsWith("tablet") ? "30" : "60");
-      await page.getByLabel("Update rate").selectOption("1");
-      await expect(page.getByLabel("Update rate")).toHaveValue("1");
-      expect(urls.some((u) => u.includes(`/ws/live/${DRIVER}?rate=`))).toBe(true);
+      await expect(page.getByTestId("live-status")).toContainText("Live");
+      await expect(page.getByLabel("Update rate")).toHaveCount(0);
+      await expect(page.getByText("Update rate")).toHaveCount(0);
+      expect(urls.some((u) => u.includes(`/ws/live/${DRIVER}?rate=60`))).toBe(true);
+    });
+
+    test("frames that stop make every tile Waiting and the headline Waiting for iRacing, and a restart is Live again", async ({ page, request }) => {
+      await page.goto(hash(`/d/${DRIVER}/live`));
+      await expect(page.getByTestId("live-status")).toHaveAttribute("data-live", "true");
+      await expect(page.locator("[data-metric=position]")).toContainText("P8");
+      await setMock(request, { liveStalled: true });
+      await expect(page.getByTestId("live-status")).toContainText("Waiting for iRacing", { timeout: 6000 });
+      await expect(page.getByTestId("live-status")).toHaveAttribute("data-live", "false");
+      for (const metric of ["position", "last-lap", "leader-gap", "fuel"]) await expect(page.locator(`[data-metric=${metric}]`)).toContainText("Waiting");
+      await setMock(request, { liveStalled: false });
+      await expect(page.getByTestId("live-status")).toHaveAttribute("data-live", "true", { timeout: 6000 });
+      await expect(page.locator("[data-metric=position]")).toContainText("P8");
+    });
+
+    test("a session that starts after the page opened turns the headline Live", async ({ page, request }) => {
+      await setMock(request, { live: false });
+      await page.goto(hash(`/d/${DRIVER}/live`));
+      await expect(page.getByTestId("live-status")).toContainText("Waiting for iRacing");
+      await setMock(request, { live: true });
+      await expect(page.getByTestId("live-status")).toHaveAttribute("data-live", "true", { timeout: 6000 });
+      await expect(page.locator("[data-metric=position]")).toContainText("P8");
+    });
+
+    test("only Default is built in; Race and Qualifying are layouts the driver can edit", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/live`));
+      await layoutSelect(page).selectOption("factory-race");
+      await expect(page.getByText("Built in")).toHaveCount(0);
+      await page.getByRole("button", { name: "Edit layout" }).click();
+      await expect(page.getByRole("region", { name: "Layout editor" }).getByLabel("Name")).toHaveValue("Race");
+    });
+
+    test("scrollbars follow the theme on the page and on a scrolling panel", async ({ page }) => {
+      await page.goto(hash("/__kit"));
+      await expect(page.getByTestId("kit-scroll")).toBeVisible();
+      const read = (sel: string) => page.evaluate((s) => {
+        const el = document.querySelector(s)!;
+        const cs = getComputedStyle(el);
+        return { scheme: getComputedStyle(document.documentElement).colorScheme, color: cs.scrollbarColor, width: cs.scrollbarWidth };
+      }, sel);
+      const token = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--color-border-strong").trim());
+      for (const sel of ["html", "[data-testid=kit-scroll]"]) {
+        const got = await read(sel);
+        expect(got.scheme, sel).toBe("dark");
+        expect(got.width, sel).toBe("thin");
+        const hex = token.replace("#", "");
+        const rgb = `rgb(${parseInt(hex.slice(0, 2), 16)}, ${parseInt(hex.slice(2, 4), 16)}, ${parseInt(hex.slice(4, 6), 16)})`;
+        expect(got.color, sel).toContain(rgb);
+      }
     });
 
     test("leaving the page closes the socket so the collector can stop streaming", async ({ page }) => {

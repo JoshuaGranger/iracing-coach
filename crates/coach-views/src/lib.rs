@@ -28,7 +28,7 @@ use parse::{Doc, Kind};
 use prune::Spec;
 use val::{Obj, int_of};
 
-pub const PROJECTION_VERSION: u32 = 1;
+pub const PROJECTION_VERSION: u32 = 2;
 
 /// `analysis_view.schema_version` this crate reads, and the analysis document's own.
 const VIEW_SCHEMA_VERSION: i64 = 1;
@@ -412,6 +412,7 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
     race.insert("race_summary".into(), race_summary);
     race.insert("race_grades".into(), race_grades);
     race.insert("laps".into(), Value::Array(lap_rows));
+    race.insert("pit_stops".into(), Value::Array(laps::pit_stops(run_items)));
     race.insert("strategy".into(), strategy);
     race.insert("damage_repair".into(), damage_repair);
     race.insert("field_pace".into(), field_pace);
@@ -632,6 +633,7 @@ fn specs() -> &'static Specs {
                 "exclusion_reasons",
                 "run_number",
                 "run_age_laps",
+                "sector_times_s",
             ])
             .chain(conditions.iter().map(String::as_str))
             .collect();

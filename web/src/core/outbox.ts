@@ -149,7 +149,7 @@ export class Outbox {
           this.finish(sending, res);
         } catch (e) {
           if (e instanceof VersionConflictError) {
-            this.patch(sending.id, { state: "conflict", current: e.current, error: "The server has a newer version." });
+            this.patch(sending.id, { state: "conflict", current: e.current, error: "Newer version on the server" });
             continue;
           }
           if (isTransient(e)) {

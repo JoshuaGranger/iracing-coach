@@ -20,6 +20,43 @@ const TRACKS = [
   { track: "New Hampshire Motor Speedway", track_config: "Oval", series: "NASCAR Xfinity Series" },
 ];
 
+/**
+ * Fixed or open setup per event (`is_fixed_setup` on SessionSummary: true fixed, false open, null when the recording does not say).
+ * Event 3 is fixed with one open practice, so a tile that differs from its event carries its own badge. Event 5 has none recorded.
+ */
+function setupTypeFor(e, phase) {
+  if (e === 5) return null;
+  if (e === 3 && phase === "Practice") return "Open";
+  return e % 3 === 1 ? "Open" : "Fixed";
+}
+
+/**
+ * Library figures per phase. A session that is not ready (none, deferred) carries the lap count only, as the server sends it before
+ * an analysis exists. Event 0 is a gain (P12 to P4, its fastest lap in the race), event 3 a win from P3 with a qualifying lap faster than its race.
+ */
+function overviewFor(e, phase, state) {
+  const raced = phase === "Race";
+  if (state === "none" || state === "deferred" || state === "failed") return { recorded_laps: raced ? 82 + e : 20 + e };
+  if (raced) {
+    const start = e === 3 ? 3 : 12;
+    const final = e === 3 ? 1 : 4 + e;
+    const slope = [0.021, -0.012, 0.004, 0.031, 0.0, 0.012][e] ?? 0.004;
+    return { starting_position: start, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: 15.234 + e * 0.1, fuel_used_gal: 21.6 - e };
+  }
+  const qualify = phase === "Qualify";
+  return {
+    final_position: qualify ? 2 + e : 5 + e,
+    recorded_laps: 20 + e,
+    green_laps_estimated: qualify ? 3 : 20 + e,
+    caution_laps_estimated: 0,
+    pit_stops_detected: qualify ? 0 : 1,
+    longest_green_run: qualify ? 3 : 14 + e,
+    pace_slope_s_per_lap: qualify ? null : -0.041 + e * 0.02,
+    best_clean_lap_s: qualify ? 15.41 + e * 0.1 - (e === 3 ? 0.4 : 0) : 15.5 + e * 0.1,
+    fuel_used_gal: qualify ? 0.9 : 6.1,
+  };
+}
+
 /** Events: practice, qualify and race share an event_key (one subsession). */
 function buildSessions(customerId, count) {
   const out = [];
@@ -63,9 +100,8 @@ function buildSessions(customerId, count) {
         analysis_state: state,
         analysis_reason: reason,
         analysis_id: state === "ready" ? `an-${id}` : null,
-        overview: raced
-          ? { starting_position: 12, final_position: 4 + e, recorded_laps: 82 + e, pit_stops_detected: 3, best_clean_lap_s: 15.234 + e * 0.1, runs_detected: 4 }
-          : { recorded_laps: 20 + e, best_clean_lap_s: 15.5 + e * 0.1 },
+        is_fixed_setup: setupTypeFor(e, phase) === null ? null : setupTypeFor(e, phase) === "Fixed",
+        overview: overviewFor(e, phase, state),
       });
     });
   }
@@ -252,18 +288,27 @@ export const TRACE_SIGNALS = [
   { id: "throttle", source_key: "throttle", label: "Throttle", short_label: "Thr", unit: "%", digits: 0, category: "driving", minimum: 0, maximum: 1, dtype: "f64", default: true },
   { id: "brake", source_key: "brake", label: "Brake", short_label: "Brk", unit: "%", digits: 0, category: "driving", minimum: 0, maximum: 1, dtype: "f64", default: true },
   { id: "steering", source_key: "steering_rad", label: "Steering", short_label: "Str", unit: "rad", digits: 3, category: "driving", minimum: -1, maximum: 1, dtype: "f64", default: true },
+  // Outside the default set, as on the server: fetched with ?channels= when a layout row or the Tire load map needs them (audit T5).
+  { id: "slip", source_key: "slip_angle_deg", label: "Slip", short_label: "Slip", unit: "deg", digits: 1, category: "driving", minimum: -10, maximum: 10, dtype: "f64", default: false },
+  { id: "tire-stress", source_key: "tire_stress_proxy", label: "Tire stress", short_label: "Stress", unit: "", digits: 2, category: "tires", minimum: 0, maximum: 2, dtype: "f64", default: false },
 ];
 
-export function traceBinary(analysisId, laps = 12, bins = 160) {
+/** The channel ids a traces request returns: the requested ones the catalog has, else the catalog default set. */
+export function traceChannels(requested) {
+  if (!requested || requested.length === 0) return TRACE_SIGNALS.filter((s) => s.default).map((s) => s.id);
+  return TRACE_SIGNALS.filter((s) => requested.includes(s.id)).map((s) => s.id);
+}
+
+export function traceBinary(analysisId, laps = 12, bins = 160, channels = traceChannels(null)) {
   const headerChannels = [];
   let offset = 0;
   const arrays = [];
-  for (const s of TRACE_SIGNALS) {
+  for (const s of TRACE_SIGNALS.filter((signal) => channels.includes(signal.id))) {
     const a = new Float64Array(laps * bins);
     for (let l = 0; l < laps; l++)
       for (let b = 0; b < bins; b++) {
         const x = b / bins;
-        const v = s.id === "speed" ? 120 + 40 * Math.sin(x * 12.566 + l * 0.02) : s.id === "throttle" ? 0.5 + 0.5 * Math.sin(x * 12.566 + 1) : s.id === "brake" ? Math.max(0, 0.4 * Math.sin(x * 12.566 + 3)) : 0.3 * Math.sin(x * 12.566 + 2);
+        const v = s.id === "speed" ? 120 + 40 * Math.sin(x * 12.566 + l * 0.02) : s.id === "throttle" ? 0.5 + 0.5 * Math.sin(x * 12.566 + 1) : s.id === "brake" ? Math.max(0, 0.4 * Math.sin(x * 12.566 + 3)) : s.id === "slip" ? 3 * Math.sin(x * 12.566 + 2.5) : s.id === "tire-stress" ? 1 + 0.6 * Math.sin(x * 12.566 + 0.5) : 0.3 * Math.sin(x * 12.566 + 2);
         a[l * bins + b] = v;
       }
     headerChannels.push({ id: s.id, dtype: "f64", offset, byte_length: a.byteLength, missing: null });
@@ -284,7 +329,7 @@ export function traceBinary(analysisId, laps = 12, bins = 160) {
 
 export function createState() {
   const state = {
-    config: { drivers: 1, live: true, conflictNext: false, failWrites: false, delayMs: 0 },
+    config: { drivers: 1, live: true, conflictNext: false, failWrites: false, delayMs: 0, failChannels: [] },
     sessions: { [DRIVER_ID]: buildSessions(DRIVER_ID, 6), [SECOND_DRIVER_ID]: buildSessions(SECOND_DRIVER_ID, 2) },
     setups: { [DRIVER_ID]: buildSetups(DRIVER_ID), [SECOND_DRIVER_ID]: [] },
     unlinked: { [DRIVER_ID]: UNLINKED_FILES, [SECOND_DRIVER_ID]: [] },

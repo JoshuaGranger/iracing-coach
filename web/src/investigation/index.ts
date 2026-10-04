@@ -16,3 +16,8 @@ export type { Investigation } from "./investigation-model";
 export { INVESTIGATION_VIEWS } from "./types";
 export type { InvestigationView, LastInvestigation, TraceLayoutBody } from "./types";
 export { criticalLayoutBody, defaultLayoutBody } from "./layout-model";
+export { PhaseSelector, orderedPhases, phaseLetter } from "./ui/PhaseSelector";
+export type { PhaseOption } from "./ui/PhaseSelector";
+export type { TraceLayoutCommand } from "./ui/InvestigationWorkspace";
+export { DEFAULT_LAYOUT_ID } from "./layout-sets";
+export type { NamedLayout, LayoutSet } from "./layout-sets";

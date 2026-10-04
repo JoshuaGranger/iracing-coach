@@ -1,6 +1,7 @@
 //! Finalization gate (`workflow._assert_finalized_ibt`, workflow.py:1254-1295, plus the share
 //! check), streaming SHA-256 and the setup values fingerprint (`setup-keys.json`).
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;
@@ -167,11 +168,18 @@ static EXCLUDED_LEAVES: LazyLock<Vec<LeafPattern>> = LazyLock::new(|| {
         .collect()
 });
 
-/// True when the last path segment of a `CarSetup` key matches an excluded pattern
-/// (ASCII case folding).
+/// True when the last path segment of a setup key matches an excluded pattern, folding ASCII case
+/// and ignoring `_` (no pattern holds one): a `CarSetup` key such as
+/// `Chassis.LeftFront.CornerWeight`, or the canonical key of a garage `.htm` export such as
+/// `chassis.left_front.corner_weight`.
 pub fn is_identity_excluded(key: &str) -> bool {
     let leaf = key.rsplit('.').next().unwrap_or(key);
-    EXCLUDED_LEAVES.iter().any(|pattern| pattern.matches(leaf))
+    let leaf: Cow<'_, str> = if leaf.contains('_') {
+        Cow::Owned(leaf.replace('_', ""))
+    } else {
+        Cow::Borrowed(leaf)
+    };
+    EXCLUDED_LEAVES.iter().any(|pattern| pattern.matches(&leaf))
 }
 
 /// `setup-keys.json`: drop excluded keys; hash the rest in ascending UTF-8 byte order as
@@ -220,11 +228,50 @@ mod tests {
         assert!(is_identity_excluded("UpdateCount"));
         assert!(is_identity_excluded("Chassis.Rear.TRUCKARMPRELOAD"));
         assert!(is_identity_excluded("Tires.RightRear.LastHotPressure"));
-        assert!(!is_identity_excluded("Chassis.Front.Preload"));
         assert!(!is_identity_excluded("Chassis.Front.ArbPreloadOffset"));
         assert!(!is_identity_excluded("Chassis.LeftFront.CornerWeightBias"));
         assert!(!is_identity_excluded("CornerWeight.Camber"));
         assert!(!is_identity_excluded("Tires.LeftFront.ColdPressure"));
+    }
+
+    #[test]
+    fn an_anti_roll_bar_preload_published_as_a_section_leaf_is_derived() {
+        // Supra, Tundra and Taurus front bar; the Taurus's rear bar lives in Chassis.Rear
+        assert!(is_identity_excluded("Chassis.FrontArb.Preload"));
+        assert!(is_identity_excluded("Chassis.RearArb.Preload"));
+        assert!(is_identity_excluded("Chassis.Rear.Preload"));
+        assert!(is_identity_excluded("Chassis.RightRear.TruckArmPreload"));
+        // the bar's adjustments and any other preload setting still count
+        assert!(!is_identity_excluded("Chassis.FrontArb.LinkSlack"));
+        assert!(!is_identity_excluded("Chassis.FrontArb.Diameter"));
+        assert!(!is_identity_excluded("Chassis.Rear.DiffPreload"));
+        assert!(!is_identity_excluded("Chassis.FrontArb.PreloadTurns"));
+    }
+
+    #[test]
+    fn export_keys_match_without_their_underscores() {
+        // garage .htm exports (setup_catalog.parse_setup_html canonical keys)
+        for key in [
+            "chassis.left_front.corner_weight",
+            "chassis.left_front.ride_height",
+            "chassis.front_arb.preload",
+            "chassis.right_rear.truck_arm_preload",
+            "tires.left_front.last_hot_pressure",
+            "tires.left_front.last_temps_omi",
+            "tires.right_front.tread_remaining",
+        ] {
+            assert!(is_identity_excluded(key), "{key}");
+        }
+        for key in [
+            "tires.left_front.cold_pressure",
+            "chassis.left_front.camber",
+            "chassis.front.cross_weight",
+            "chassis.front_arb.link_slack",
+            "_",
+            "",
+        ] {
+            assert!(!is_identity_excluded(key), "{key}");
+        }
     }
 
     #[test]

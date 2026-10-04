@@ -202,6 +202,12 @@ function required<T>(record: Json, key: string, what: string): T {
   return record[key] as T;
 }
 
+function requiredBoolean(record: Json, key: string, what: string): boolean {
+  const value = record[key];
+  if (typeof value !== "boolean") throw new InvestigationFormatError(`${what} is missing "${key}"`);
+  return value;
+}
+
 const numbers = (value: unknown): number[] => asArray(value).filter((item): item is number => typeof item === "number" && Number.isFinite(item));
 const strings = (value: unknown): string[] => asArray(value).filter((item): item is string => typeof item === "string");
 
@@ -228,7 +234,7 @@ function metric(raw: unknown): Metric {
   return { key: str(r.key) ?? "", label: str(r.label) ?? "", unit: str(r.unit) ?? "", baseline: num(r.baseline), compared: num(r.compared), delta: num(r.delta), evidence: str(r.evidence), detail: str(r.detail) };
 }
 
-function pass(raw: unknown): Pass {
+function pass(raw: unknown, what: string): Pass {
   const r = asRecord(raw);
   return {
     lap: num(r.lap) ?? 0,
@@ -236,7 +242,7 @@ function pass(raw: unknown): Pass {
     sectionS: num(r.section_s),
     runNumber: num(r.run_number),
     greenExposure: num(r.green_exposure),
-    eligible: r.eligible !== false,
+    eligible: requiredBoolean(r, "eligible", what),
     exclusionReasons: strings(r.exclusion_reasons),
     fuelStartGal: num(r.fuel_start_gal),
   };
@@ -264,13 +270,13 @@ function pair(raw: unknown, id: string): PassPair {
     entryGapS: num(r.entry_gap_s),
     exitGapS: num(r.exit_gap_s),
     entrySpeedDifferenceMph: num(r.entry_speed_difference_mph),
-    a: pass(r.a),
-    b: pass(r.b),
+    a: pass(r.a, `section ${id} pass a`),
+    b: pass(r.b, `section ${id} pass b`),
     rows: asArray(r.rows).map((row) => {
       const rr = asRecord(row);
       return { x: num(rr.x) ?? 0, gap: num(rr.gap), a: channelValues(rr.a), b: channelValues(rr.b) };
     }),
-    steering: { comparable: steering.comparable !== false, degreeDigits: num(steering.degree_digits), reason: str(steering.reason), basis: str(steering.basis), label: str(steering.label) },
+    steering: { comparable: requiredBoolean(steering, "comparable", `section ${id} steering`), degreeDigits: num(steering.degree_digits), reason: str(steering.reason), basis: str(steering.basis), label: str(steering.label) },
   };
 }
 
@@ -287,8 +293,8 @@ function comparison(raw: unknown): Comparison {
     title: str(r.title) ?? id,
     summary: str(r.summary) ?? "",
     deltaS: num(r.delta_s),
-    eligibility: str(r.eligibility) ?? "eligible",
-    paceComparable: r.pace_comparable !== false,
+    eligibility: required<string>(r, "eligibility", `comparison ${id}`),
+    paceComparable: requiredBoolean(r, "pace_comparable", `comparison ${id}`),
     paceUnusableReasons: strings(r.pace_unusable_reasons),
     baseline: cohort(r.baseline),
     compared: cohort(r.compared),
@@ -350,7 +356,7 @@ function run(raw: unknown): RunView {
       ? {
           method: str(fit.method),
           eligibleCount: num(fit.eligible_count) ?? 0,
-          slopeSPerGreenLap: num(fit.slope_s_per_green_lap),
+          slopeSPerGreenLap: required<number>(fit, "slope_s_per_green_lap", `run ${num(r.run_number) ?? "?"} fit`),
           domain: domain.length === 2 ? [domain[0]!, domain[1]!] : null,
           points: asArray(fit.points).map((p) => ({ x: num(asRecord(p).x) ?? 0, y: num(asRecord(p).y) ?? 0 })),
         }
@@ -362,7 +368,8 @@ export function parseInvestigation(raw: unknown): Investigation {
   const r = asRecord(raw);
   if (Object.keys(r).length === 0) throw new InvestigationFormatError("race_investigation is empty");
   const schema = num(r.schema_version);
-  if (schema !== null && schema !== SUPPORTED_INVESTIGATION_SCHEMA) {
+  if (schema === null) throw new InvestigationFormatError(`race_investigation is missing "schema_version"`);
+  if (schema !== SUPPORTED_INVESTIGATION_SCHEMA) {
     throw new InvestigationFormatError(`race_investigation schema ${schema} is not supported (supported: ${SUPPORTED_INVESTIGATION_SCHEMA})`);
   }
   const comparisons = asArray(required<unknown>(r, "comparisons", "race_investigation")).map(comparison);
@@ -381,10 +388,10 @@ export function parseInvestigation(raw: unknown): Investigation {
         lapTimeS: num(l.lap_time_s),
         position: num(l.position),
         flagState: str(l.flag_state) ?? "",
-        eligible: l.eligible === true,
+        eligible: requiredBoolean(l, "eligible", `lap ${num(l.lap) ?? "?"}`),
         exclusionReasons: strings(l.exclusion_reasons),
         runNumber: num(l.run_number),
-        plotPace: l.plot_pace === true,
+        plotPace: requiredBoolean(l, "plot_pace", `lap ${num(l.lap) ?? "?"}`),
         greenExposure: num(l.green_exposure),
       };
     }),

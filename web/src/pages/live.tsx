@@ -1,17 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { type Schemas, api, paths } from "../core/api";
 import { outbox } from "../core/outbox";
 import { savePrefs } from "../core/prefs";
 import { invalidate, useResource } from "../core/resource";
-import { readJson, useStore, writeJson } from "../core/store";
+import { useStore } from "../core/store";
+import { LiveBoard } from "../live/board";
 import { LayoutEditor } from "../live/editor";
-import { type LiveRate, LIVE_RATES, defaultRate, useFrameSample, useLiveConnection } from "../live/connection";
-import { LiveGrid } from "../live/grid";
+import { liveHeadline, useLiveConnection, useLiveHealth } from "../live/connection";
 import { type LayoutBody, newLayoutId, validateLayout } from "../live/layout";
 import { Chip, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
 
 type LiveLayout = Schemas["LiveLayout"];
-const RATE_KEY = "coach.live.rate";
 const clone = (b: LayoutBody): LayoutBody => JSON.parse(JSON.stringify(b)) as LayoutBody;
 
 interface Draft {
@@ -35,15 +34,9 @@ function useNarrow(): boolean {
 }
 
 export default function LivePage({ customerId }: { customerId: number }) {
-  const [rate, setRate] = useState<LiveRate>(() => {
-    const stored = readJson<number | null>(RATE_KEY, null);
-    return (LIVE_RATES as readonly number[]).includes(stored ?? -1) ? (stored as LiveRate) : defaultRate(globalThis.innerWidth ?? 1280);
-  });
-  useEffect(() => writeJson(RATE_KEY, rate), [rate]);
-  const conn = useLiveConnection(customerId, rate);
-  const { frame, tick } = useFrameSample(conn, 15);
+  const conn = useLiveConnection(customerId);
   const status = useStore(conn.status);
-  const observed = useRef(new Map<string, { min: number; max: number }>());
+  const health = useLiveHealth(conn);
   const narrow = useNarrow();
 
   const layoutsKey = paths.liveLayouts(customerId);
@@ -88,24 +81,21 @@ export default function LivePage({ customerId }: { customerId: number }) {
       setDraft(null);
       setSelected(null);
     } catch {
-      setMessage("The layout is waiting to save; see pending changes above.");
+      setMessage("Layout queued.");
       setDraft(null);
     } finally {
       setSaving(false);
     }
   }
 
-  const link = status.link;
-  const waitingSim = link === "open" && status.hello && !status.hello.live;
-  const liveNow = link === "open" && status.hello?.live === true && frame !== null && (frame.flags & 1) !== 0;
-  const headline = liveNow ? "Live" : waitingSim ? "Waiting for iRacing" : link === "connecting" ? "Connecting" : link === "retrying" ? "Reconnecting" : link === "open" ? "Waiting for data" : "Closed";
+  const headline = liveHeadline(status.link, status.hello, health);
 
   return (
     <>
       <PageHead title="Live">
-        <span class="live-status" data-testid="live-status" data-live={liveNow}>
-          <span class={`dot${liveNow ? " on" : ""}`} aria-hidden="true" />
-          {headline}
+        <span class="live-status" data-testid="live-status" data-live={headline.live}>
+          <span class={`dot${headline.live ? " on" : ""}`} aria-hidden="true" />
+          {headline.text}
         </span>
       </PageHead>
 
@@ -117,7 +107,6 @@ export default function LivePage({ customerId }: { customerId: number }) {
             disabled={draft !== null}
             onChange={(e) => {
               setViewId((e.currentTarget as HTMLSelectElement).value);
-              observed.current.clear();
             }}
           >
             {list.map((l) => (
@@ -128,17 +117,10 @@ export default function LivePage({ customerId }: { customerId: number }) {
             ))}
           </select>
         </label>
-        <label class="select-field">
-          <span>Update rate</span>
-          <select value={rate} onChange={(e) => setRate(Number((e.currentTarget as HTMLSelectElement).value) as LiveRate)}>
-            {LIVE_RATES.map((r) => (
-              <option key={r} value={r}>
-                {r} Hz
-              </option>
-            ))}
-          </select>
-        </label>
         <div class="live-buttons">
+          {view?.builtin && !draft ? (
+            <Chip title="Edit saves a copy">Built in</Chip>
+          ) : null}
           {view && view.layout_id !== activeId && !draft ? (
             <button type="button" class="btn" onClick={() => void savePrefs(customerId, { active_live_layout_id: view.layout_id })}>
               Show on rig
@@ -156,27 +138,9 @@ export default function LivePage({ customerId }: { customerId: number }) {
       {status.lastError ? <Notice tone="warn">{status.lastError}</Notice> : null}
       {message ? <Notice tone="warn">{message}</Notice> : null}
       {!body && !layouts.error ? <Loading what="layout" /> : null}
-      {link === "retrying" ? (
-        <p class="sub" role="status">
-          Showing the last values. Reconnecting.
-        </p>
-      ) : null}
 
       <div class={draft ? "live-work editing" : "live-work"}>
-        {body ? (
-          <LiveGrid
-            body={body}
-            frame={frame}
-            history={conn.history}
-            tick={tick}
-            observed={observed.current}
-            editing={draft !== null}
-            selectedId={selected}
-            onSelect={setSelected}
-            onChange={(b) => draft && setDraft({ ...draft, body: b })}
-            flow={narrow && !draft}
-          />
-        ) : null}
+        {body ? <LiveBoard conn={conn} body={body} editing={draft !== null} selectedId={selected} onSelect={setSelected} onChange={(b) => draft && setDraft({ ...draft, body: b })} flow={narrow && !draft} /> : null}
         {draft ? (
           <LayoutEditor
             name={draft.name}
@@ -186,6 +150,7 @@ export default function LivePage({ customerId }: { customerId: number }) {
             selectedId={selected}
             issues={issues}
             saving={saving}
+            absRecorded={!health.hadFrames || health.absRecorded}
             dirty={!!dirty}
             onName={(name) => setDraft({ ...draft, name })}
             onBody={(b) => setDraft({ ...draft, body: b })}
@@ -199,7 +164,7 @@ export default function LivePage({ customerId }: { customerId: number }) {
                 invalidate(layoutsKey);
                 setViewId(null);
               } catch {
-                setMessage("Deleting is waiting; see pending changes above.");
+                setMessage("Delete queued.");
               }
               setDraft(null);
             }}
@@ -210,11 +175,6 @@ export default function LivePage({ customerId }: { customerId: number }) {
           />
         ) : null}
       </div>
-      {view?.builtin && !draft ? (
-        <p class="sub">
-          <Chip>Built in</Chip> Built-in layouts cannot be changed; edit makes a copy.
-        </p>
-      ) : null}
     </>
   );
 }

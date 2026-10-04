@@ -1,5 +1,6 @@
 import { CHANNELS, CHANNEL_INDEX, CUES, FlagState, RunPhase, TILES, type TileSpec, conversion, unitLabel } from "../gen/live-channels";
 import { FrameFlag, type LiveFrame } from "./frame";
+import { CUE_PRIORITY, type LiveHistory, type Series, type TrendWindow } from "./history";
 import { ceiling, custom, customOptional, fixed, lapTime, percent0, signed, whole } from "./text";
 
 /**
@@ -285,4 +286,83 @@ export function tileRange(spec: TileSpec, frame: LiveFrame | null, display: Tile
     if (fuel !== null && pct !== null && pct > 0.0001) return { min: 0, max: convert(fuel, "L", resolveUnit(spec, display.unit)) / pct };
   }
   return { min: spec.min, max: spec.max };
+}
+
+/**
+ * The tile's own value for every sample of its trend window, in the tile's display unit: the channel converted, the flag as its
+ * step, the run phase as its ordinal, the pace range as its midpoint, the coach cue as its priority. A trend never plots the raw
+ * stream value of a tile that shows something else.
+ */
+export function tileTrend(history: LiveHistory, spec: TileSpec, display: TileDisplay, win: TrendWindow): Series {
+  const first = spec.channels[0]!;
+  const conv = unitConverter(first, resolveUnit(spec, display.unit));
+  switch (spec.id) {
+    case "flag":
+      return history.map([first], win, ([f]) => FLAG_STEP[f!] ?? 7);
+    case "tire-phase":
+      return history.map([first], win, ([v]) => (PHASE_TEXT[v!] ? v! - 1 : Number.NaN));
+    case "pace-range":
+      return history.map(["pace_band_min", "pace_band_max"], win, ([lo, hi]) => (lo! + hi!) / 2);
+    case "coach-cue":
+      return history.map([CUE_PRIORITY], win, ([priority]) => priority!);
+    case "leader-gap":
+      if (history.hasChannel("position")) return history.map([first, "position"], win, ([gap, position]) => (position === 1 ? 0 : conv.fn(gap!)));
+      return history.map([first], win, ([v]) => conv.fn(v!));
+    default:
+      return history.map([first], win, ([v]) => conv.fn(v!));
+  }
+}
+
+/**
+ * The display range of a gauge, a bar or a trend (`coach_live::tiles::display_range`): the tile's own bounds where it has them, else
+ * the value range of its trend window and the current value, padded by 8 % (at least 1 when the range is flat). The range follows
+ * the window, so it shrinks again when a spike leaves it. Null while the tile has no value.
+ */
+export function displayRange(spec: TileSpec, value: number | null, bounds: { min: number | null; max: number | null }, trend: ArrayLike<number>): { min: number; max: number } | null {
+  if (value === null || !Number.isFinite(value)) return null;
+  let observedMin = value;
+  let observedMax = value;
+  for (let i = 0; i < trend.length; i++) {
+    const v = trend[i]!;
+    if (!Number.isFinite(v)) continue;
+    if (v < observedMin) observedMin = v;
+    if (v > observedMax) observedMax = v;
+  }
+  const span = observedMax - observedMin;
+  const padding = span > 0.0001 ? span * 0.08 : Math.max(Math.abs(observedMax) * 0.08, 1);
+  let min = bounds.min ?? spec.min ?? observedMin - padding;
+  let max = bounds.max ?? spec.max ?? observedMax + padding;
+  if (max <= min) {
+    const fallback = Math.max(Math.abs(value) * 0.08, 1);
+    if (bounds.max === null && spec.max === null) max = min + fallback;
+    else if (bounds.min === null && spec.min === null) min = max - fallback;
+  }
+  return { min, max };
+}
+
+/**
+ * The line a tile shows under its value. `formatTile` is the twin of the overlay's tile text and keeps the overlay's secondary
+ * lines (the parity vectors check them); the page shows only the ones that carry a figure: the gap to the leader's last lap, the
+ * fuel laps, the steering ratio, the run phase of the pace range and the cue's basis. Descriptions and narrated unknowns are dropped.
+ */
+export function secondaryLine(spec: TileSpec, text: TileText): string | null {
+  const line = text.secondary;
+  if (!line) return null;
+  switch (spec.id) {
+    case "flag":
+    case "on-pit-road":
+    case "tire-phase":
+    case "pit-window":
+      return null;
+    case "last-lap":
+      return line.endsWith("not measured") ? null : line;
+    case "fuel": {
+      const laps = /^(\S+) estimated laps$/.exec(line);
+      return laps ? `${laps[1]} laps` : null;
+    }
+    case "steering":
+      return line.replace(/ steering ratio$/, "");
+    default:
+      return line;
+  }
 }

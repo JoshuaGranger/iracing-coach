@@ -115,8 +115,39 @@ paths:
     get:
       tags: [library]
       summary: Sessions library, newest first. Filtering is server-side; grouping into events uses `event_key`.
+      description: |
+        Every filter narrows the list; values within one filter are alternatives (`car=a&car=b` is a or b), different
+        filters must all hold. `car`, `track`, `series` and `type` may repeat. A value that matches nothing returns an
+        empty page, not an error.
       parameters:
-        - { name: type, in: query, schema: { type: string, enum: [all, race, qualify, practice, test] } }
+        - name: type
+          in: query
+          style: form
+          explode: true
+          schema: { type: array, items: { type: string, enum: [all, race, qualify, practice, test] } }
+          description: "Session type; repeat for several. `all` anywhere means no type filter."
+        - name: car
+          in: query
+          style: form
+          explode: true
+          schema: { type: array, items: { type: string, maxLength: 200 } }
+          description: "`car_path` values (`CarTrackOptions.cars[].car_path`), exact."
+        - name: track
+          in: query
+          style: form
+          explode: true
+          schema: { type: array, items: { type: string, maxLength: 200 } }
+          description: "Track names (`CarTrackOptions.tracks[].track`), exact, any layout."
+        - name: series
+          in: query
+          style: form
+          explode: true
+          schema: { type: array, items: { type: string, maxLength: 200 } }
+          description: "Series names (`CarTrackOptions.series[].series_name`), exact."
+        - name: setup
+          in: query
+          schema: { type: string, enum: [fixed, open] }
+          description: "Fixed-setup or open-setup sessions (`SessionSummary.is_fixed_setup`); sessions whose recording does not say are in neither."
         - { name: q, in: query, schema: { type: string, maxLength: 120 }, description: "Text over track, layout, car, series." }
         - { $ref: "#/components/parameters/Cursor" }
         - { $ref: "#/components/parameters/Limit" }
@@ -304,6 +335,7 @@ paths:
         - { name: car_path, in: query, schema: { type: string, maxLength: 160 } }
         - { name: q, in: query, schema: { type: string, maxLength: 120 } }
         - { name: raced_only, in: query, schema: { type: boolean, default: false } }
+        - { name: raced, in: query, schema: { type: boolean }, description: "true: only setups seen in a race recording (as `raced_only`, and `unlinked_files` is empty); false: only setups never raced; absent: both. Overrides `raced_only`." }
         - { $ref: "#/components/parameters/Cursor" }
         - { $ref: "#/components/parameters/Limit" }
       responses:
@@ -346,7 +378,7 @@ paths:
               schema: { $ref: "#/components/schemas/SetupCompareResult" }
         "202": { $ref: "#/components/responses/Accepted" }
         "422":
-          description: Different cars or values unknown
+          description: "`different_cars`, `values_unknown`, or `different_schemes` (one setup is known only from a garage export, the other from a recording: their keys differ and every row would read unknown)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1029,8 +1061,9 @@ components:
         track_config: { type: [string, "null"] }
         car_path: { type: [string, "null"] }
         car_name: { type: [string, "null"] }
-        series_name: { type: [string, "null"] }
+        series_name: { type: [string, "null"], description: "WeekendInfo.SeriesName of the session's first recording that names one; null for rows rebuilt from the NAS." }
         season_name: { type: [string, "null"] }
+        is_fixed_setup: { type: [boolean, "null"], description: "WeekendInfo.WeekendOptions.IsFixedSetup of the session's first recording that states it: true fixed setup, false open setup, null when the recording does not say (never read as open)." }
         subsession_id: { type: [integer, "null"] }
         sim_session_num: { type: [integer, "null"] }
         start_time_utc: { type: [string, "null"], format: date-time }
@@ -1081,13 +1114,15 @@ components:
         notes_count: { type: integer }
         event_sessions:
           type: array
-          description: Other phases of the same event (phase switch).
+          description: Other phases of the same event (phase switch), in session order.
           items:
             type: object
             required: [session_id, session_type]
             properties:
               session_id: { type: integer }
               session_type: { type: [string, "null"] }
+              analysis_state: { $ref: "#/components/schemas/AnalysisState" }
+              analysis_reason: { type: [string, "null"], description: "e.g. exceeds_memory_budget while deferred." }
 
     ViewEnvelope:
       type: object
@@ -1185,6 +1220,11 @@ components:
                 - unavailable_categories[].reason
                 - unavailable_categories[].weight_percent
             laps: { type: array, maxItems: 2000, items: { $ref: "#/components/schemas/Lap" } }
+            pit_stops:
+              type: array
+              maxItems: 200
+              description: "One entry per run that ends in a pit service, in run order (projector-written from `runs[].pit_service`). Empty when no service was detected."
+              items: { $ref: "#/components/schemas/PitStop" }
             strategy:
               type: [object, "null"]
               additionalProperties: true
@@ -1232,6 +1272,26 @@ components:
             field_pace: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.field_pace", x-consumed-fields: [] }
             conditions: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.conditions", x-consumed-fields: [] }
             data_quality: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.data_quality", x-consumed-fields: [confidence] }
+
+    PitStop:
+      type: object
+      description: |
+        One pit service. `lap` is the run's `end_lap`, the lap the car enters the pits. Window, tires and fuel are the
+        backend's `pit_service` values; nothing is measured here. Null means the backend did not report it.
+      required: [run_number, lap, post_run_service]
+      properties:
+        run_number: { type: [integer, "null"], description: "The run this service ended." }
+        lap: { type: [integer, "null"] }
+        start_time_s: { type: [number, "null"], description: "Session time the service began (pit_service.start_time)." }
+        end_time_s: { type: [number, "null"], description: "Session time the service ended (pit_service.end_time)." }
+        service_s: { type: [number, "null"], description: "end_time_s - start_time_s, 3 decimals; the detected service window (stall, service-active or fuel-rise samples bridged within 2.5 s), not pit-lane time. Null when either end is missing." }
+        tires_changed:
+          type: [array, "null"]
+          description: "Tires the backend observed changed (pit_service.tires_changed_observed): LF, LR, RF, RR, ascending. An empty list means none observed changed; null means the backend did not report the list."
+          items: { type: string, enum: [LF, LR, RF, RR] }
+        fuel_added_l: { type: [number, "null"], description: "pit_service.fuel_added_l; 0 is a measured no-fuel stop." }
+        fuel_added_gal: { type: [number, "null"], description: "fuel_added_l / 3.785411784 rounded to 3 decimals (the analyzer's own conversion)." }
+        post_run_service: { type: boolean, description: "The run ended with a post-run service (run.ended_with_post_run_service), e.g. after the checkered flag." }
 
     RunsView:
       allOf:
@@ -1508,6 +1568,17 @@ components:
           description: "The joined Lap's exclusion_reasons; [\"eligibility_not_recorded\"] when no Lap has this number."
         run_number: { type: [integer, "null"] }
         run_age_laps: { type: [number, "null"] }
+        sector_times_s:
+          type: array
+          description: |
+            Seconds spent in each sector, one entry per `TraceCatalog.sector_start_pcts` item in that order (present only
+            when the session defines at least two sectors). Projector-derived from the lap's `session-time` bins: the
+            session time at the sector's end fraction minus the time at its start fraction, each linearly interpolated
+            between the two distance bins that straddle it (the retired desktop app's rule, `TimeAtPercent`); the last
+            sector ends at fraction 1. 3 decimals, bin resolution (bins_per_lap), so the sectors of a complete lap sum to
+            within about a bin of `lap_time_s`, not exactly to it. Null for a sector whose boundary the lap's bins stop more than two bins short of (a
+            partial lap, a lap that starts mid-lap), whose session time is missing, or that would read negative.
+          items: { type: [number, "null"] }
         conditions:
           type: [object, "null"]
           additionalProperties: true
@@ -1653,6 +1724,14 @@ components:
             properties:
               track: { type: string }
               track_config: { type: [string, "null"] }
+        series:
+          type: array
+          description: "Series names in this driver's recordings, ascending; the options of the Sessions series filter."
+          items:
+            type: object
+            required: [series_name]
+            properties:
+              series_name: { type: string }
 
     SetupSource:
       type: string
@@ -2154,6 +2233,31 @@ components:
         comparison_id: { type: [string, "null"] }
         section_id: { type: [string, "null"] }
 
+    TextSize:
+      type: string
+      enum: [default, larger, largest]
+
+    SessionFilters:
+      type: object
+      description: "Selections of the Sessions page filters; the values are the query values of `GET /drivers/{customer_id}/sessions`. An absent or empty list is no filter."
+      additionalProperties: true
+      properties:
+        cars: { type: array, maxItems: 64, items: { type: string, maxLength: 200 }, description: "car_path values." }
+        tracks: { type: array, maxItems: 64, items: { type: string, maxLength: 200 }, description: "Track names." }
+        series: { type: array, maxItems: 64, items: { type: string, maxLength: 200 }, description: "Series names." }
+        types: { type: array, maxItems: 4, items: { type: string, enum: [race, qualify, practice, test] } }
+        setup: { type: [string, "null"], enum: [fixed, open, null] }
+        text: { type: [string, "null"], maxLength: 120 }
+
+    SetupFilters:
+      type: object
+      description: "Selections of the Setups page filters; the values are the query values of `GET /drivers/{customer_id}/setups`. An absent value is no filter."
+      additionalProperties: true
+      properties:
+        car_path: { type: [string, "null"], maxLength: 160 }
+        raced: { type: [boolean, "null"], description: "true raced setups only, false never-raced only, null both." }
+        text: { type: [string, "null"], maxLength: 120 }
+
     DriverPrefsWrite:
       type: object
       properties:
@@ -2164,6 +2268,9 @@ components:
         reduced_motion: { type: [boolean, "null"] }
         safe_glance: { type: [boolean, "null"], description: "Live cue safe-glance hold (default true)." }
         units: { type: [object, "null"], additionalProperties: { type: string } }
+        text_size: { oneOf: [{ $ref: "#/components/schemas/TextSize" }, { type: "null" }], description: "Interface text step; null or absent is default." }
+        session_filters: { oneOf: [{ $ref: "#/components/schemas/SessionFilters" }, { type: "null" }], description: "The Sessions page's selected filters, restored on the next visit. Replaced whole by a write." }
+        setup_filters: { oneOf: [{ $ref: "#/components/schemas/SetupFilters" }, { type: "null" }], description: "The Setups page's selected filters, restored on the next visit. Replaced whole by a write." }
 
     DriverPrefs:
       allOf:

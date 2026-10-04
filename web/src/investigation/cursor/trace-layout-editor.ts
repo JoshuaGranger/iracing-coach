@@ -303,7 +303,7 @@ export function createTraceLayoutEditor(
     const source = rowSource ?? signalSource;
     if (!source || !root.contains(source)) return;
     event.stopPropagation();
-    try { source.setPointerCapture(event.pointerId); } catch { /* synthetic pointers cannot be captured */ }
+    try { source.setPointerCapture(event.pointerId); } catch { /* a synthetic pointer has nothing to capture */ }
     session = {
       kind: rowSource ? "row" : "signal",
       source,

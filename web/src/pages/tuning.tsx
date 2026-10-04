@@ -7,7 +7,9 @@ import { useResource } from "../core/resource";
 import { href } from "../core/router";
 import { useServerEvent } from "../core/sse";
 import { useStore } from "../core/store";
-import { Chip, Empty, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
+import { Empty, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
+import "../setups/setups.css";
+import "../tuning/tuning.css";
 import {
   BALANCES,
   type Balance,
@@ -22,23 +24,36 @@ import {
   type RunPhase,
   STAGES,
   SYMPTOMS,
+  type TargetChoice,
   type TuningResult,
+  alignFeedback,
   analyzeBlocker,
   annotationBody,
   applyPriority,
   buildFeedback,
   buildMapSubmission,
+  chosenTarget,
+  eligibilityReasons,
   mergeTurns,
+  needsTarget,
+  outcomeChoices,
   phaseCount,
   priorityCorner,
   readDraft,
   readEditorState,
+  readLastExperiment,
   readResult,
+  reasonText,
   recommendRequest,
   replaceFeedback,
   runFacts,
+  serializeDraft,
+  setupTypeLabel,
+  staleCorrections,
   toggleRun,
   validBounds,
+  verification,
+  withExperiment,
 } from "../tuning/model";
 import { TrackMap, turnDetail } from "../tuning/track-map";
 
@@ -59,27 +74,24 @@ function Entry({ customerId }: { customerId: number }) {
   const res = useResource(paths.sessions(customerId, { limit: 40 }), () => api.sessions(customerId, { limit: 40 }));
   const ready = (res.data?.sessions ?? []).filter((s) => s.analysis_state === "ready" && s.analysis_id);
   return (
-    <>
-      <PageHead title="Progressive tuning" sub="Pick the recording to tune from." />
+    <div class="tuning-page ds">
+      <PageHead title="Progressive tuning" />
       {res.error && !res.data ? <ErrorLine error={res.error} /> : null}
       {!res.data && !res.error ? <Loading what="recordings" /> : null}
-      {res.data && ready.length === 0 ? <Empty title="No analyzed recording yet">Analyze a session first, then return here.</Empty> : null}
-      <ul class="rows" aria-label="Recordings">
+      {res.data && ready.length === 0 ? <Empty title="No analyzed recordings" /> : null}
+      <ul class="t-recs" aria-label="Recordings">
         {ready.map((s) => (
           <li key={s.session_id}>
-            <a class="row-link" href={href({ page: "tuning", customerId, analysisId: s.analysis_id! })}>
-              <span class="row-main">
-                <Chip>{sessionTypeLabel(s.session_type)}</Chip>
-                <span class="row-title">{trackLabel(s.track, s.track_config)}</span>
-              </span>
-              <span class="row-meta">
-                {s.car_name ?? s.car_path} · {formatDate(s.start_time_utc)}
-              </span>
+            <a class="t-rec" href={href({ page: "tuning", customerId, analysisId: s.analysis_id! })}>
+              <span class="tag">{sessionTypeLabel(s.session_type)}</span>
+              <span class="s-title">{trackLabel(s.track, s.track_config)}</span>
+              <span class="t-car">{s.car_name ?? s.car_path}</span>
+              <span class="date">{formatDate(s.start_time_utc)}</span>
             </a>
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 
@@ -157,15 +169,15 @@ function FeedbackEditor(p: {
       </div>
       <label class="note-field">
         <span>Turn note</span>
-        <textarea rows={2} maxLength={500} placeholder="Anything else about this turn" value={s.note} onInput={(e) => p.onChange({ ...s, note: (e.currentTarget as HTMLTextAreaElement).value.replace(/^\s+/, "") })} />
+        <textarea rows={2} maxLength={500} value={s.note} onInput={(e) => p.onChange({ ...s, note: (e.currentTarget as HTMLTextAreaElement).value.replace(/^\s+/, "") })} />
       </label>
       <div class="ratings">
-        <label title="How much this hurt your ability to drive the corner: 1 minor, 5 race-limiting.">
+        <label title="1 minor, 5 race-limiting">
           <span>Severity</span>
           <input type="range" min={1} max={5} step={1} value={s.severity} aria-label="Severity, from minor to race-limiting" onInput={(e) => p.onChange({ ...s, severity: Number((e.currentTarget as HTMLInputElement).value) })} />
           <output>{s.severity}</output>
         </label>
-        <label title="How sure you are the feeling was repeatable, not traffic or one unusual lap: 1 unsure, 5 repeatable.">
+        <label title="1 unsure, 5 repeatable">
           <span>Confidence</span>
           <input type="range" min={1} max={5} step={1} value={s.confidence} aria-label="Confidence, from uncertain to repeatable" onInput={(e) => p.onChange({ ...s, confidence: Number((e.currentTarget as HTMLInputElement).value) })} />
           <output>{s.confidence}</output>
@@ -179,7 +191,9 @@ function FeedbackEditor(p: {
   );
 }
 
-function CorrectionPanel(p: { turn: MapTurn; handles: { entry: number; apex: number; exit: number; active: "entry" | "apex" | "exit" }; label: string; error: string; onLabel(v: string): void; onHandles(h: { entry: number; apex: number; exit: number; active: "entry" | "apex" | "exit" }): void; onSave(): void; onClose(): void }) {
+type Handles = { entry: number; apex: number; exit: number; active: "entry" | "apex" | "exit" };
+
+function CorrectionPanel(p: { turn: MapTurn; handles: Handles; label: string; error: string; onLabel(v: string): void; onHandles(h: Handles): void; onSave(): void; onClose(): void }) {
   const h = p.handles;
   const slider = (key: "entry" | "apex" | "exit", name: string) => (
     <label>
@@ -203,7 +217,7 @@ function CorrectionPanel(p: { turn: MapTurn; handles: { entry: number; apex: num
         </button>
       </div>
       <p class="sub">
-        Click the track to set <b>{h.active}</b>, or use the sliders.
+        Click the track to set <b>{h.active}</b>
       </p>
       <label>
         <span>Label</span>
@@ -219,20 +233,56 @@ function CorrectionPanel(p: { turn: MapTurn; handles: { entry: number; apex: num
           {p.error}
         </p>
       ) : null}
-      <button type="submit" class="btn btn-accent" disabled={!p.label.trim()}>
+      <button type="submit" class="pill primary" disabled={!p.label.trim()}>
         Save correction
       </button>
     </form>
   );
 }
 
-function ResultCard(p: { result: TuningResult; outcomeTargets: Ctx["open_targets"]; analysisId: string; customerId: number; onEdit(): void }) {
-  const r = p.result;
-  const c = r.selected;
+const OUTCOMES = [
+  ["improved", "Improved"],
+  ["worse", "Worse"],
+  ["no-change", "No change"],
+  ["inconclusive", "Inconclusive"],
+] as const;
+
+/** Record how a test turned out, linked to the recording that tested it. */
+function OutcomePanel(p: { experimentId: string; customerId: number; choices: TargetChoice[] }) {
   const outcome = useJobRun<unknown>();
   const [target, setTarget] = useState("");
   const save = (kind: Schemas["TuningOutcomeRequest"]["outcome"]) =>
-    outcome.run(() => api.recordOutcome(p.customerId, r.experimentId, { outcome: kind, notes: "", result_analysis_id: target || null }), "Saving result");
+    outcome.run(() => api.recordOutcome(p.customerId, p.experimentId, { outcome: kind, notes: "", result_analysis_id: target || null }), "Saving result");
+  return (
+    <div class="outcome">
+      <label class="select-field">
+        <span>Comparison run</span>
+        <select value={target} onChange={(e) => setTarget((e.currentTarget as HTMLSelectElement).value)}>
+          <option value="">Driver result only</option>
+          {p.choices.map((t) => (
+            <option key={t.analysisId} value={t.analysisId}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div class="seg" role="group" aria-label="Save comparison outcome">
+        {OUTCOMES.map(([k, label]) => (
+          <button key={k} type="button" disabled={outcome.state.phase === "running" || !p.experimentId} onClick={() => void save(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {outcome.state.phase === "done" ? <p role="status">Result saved</p> : null}
+      {outcome.state.phase === "error" ? <Notice tone="warn">{outcome.state.message}</Notice> : null}
+    </div>
+  );
+}
+
+function ResultCard(p: { result: TuningResult; choices: TargetChoice[]; customerId: number; onEdit(): void }) {
+  const r = p.result;
+  const c = r.selected;
+  const why = [...r.missing, ...r.limitations].map(reasonText);
   return (
     <section class="result-card" aria-label="Controlled test" data-testid="tuning-result">
       <header>
@@ -240,7 +290,7 @@ function ResultCard(p: { result: TuningResult; outcomeTargets: Ctx["open_targets
           <span class="eyebrow">Controlled test</span>
           <h2>{c ? humanize(c.system) : "No supported change"}</h2>
         </div>
-        <Chip>One system</Chip>
+        {c ? <span class="tag">One system</span> : null}
       </header>
       {r.summary ? <p>{r.summary}</p> : null}
       {c ? (
@@ -258,9 +308,27 @@ function ResultCard(p: { result: TuningResult; outcomeTargets: Ctx["open_targets
               <dt>Watch</dt>
               <dd>{c.risk}</dd>
             </div>
+            {c.protocol?.control ? (
+              <div>
+                <dt>Control</dt>
+                <dd>{c.protocol.control}</dd>
+              </div>
+            ) : null}
+            {c.protocol?.minimumRun ? (
+              <div>
+                <dt>Run</dt>
+                <dd>{c.protocol.minimumRun}</dd>
+              </div>
+            ) : null}
+            {c.rollback || c.protocol?.rollback ? (
+              <div>
+                <dt>Rollback</dt>
+                <dd>{c.rollback || c.protocol?.rollback}</dd>
+              </div>
+            ) : null}
           </dl>
           {c.verify.length ? (
-            <ul class="verify">
+            <ul class="verify" aria-label="Verify">
               {c.verify.map((v) => (
                 <li key={v}>{v}</li>
               ))}
@@ -273,42 +341,33 @@ function ResultCard(p: { result: TuningResult; outcomeTargets: Ctx["open_targets
               ))}
             </ol>
           ) : null}
-          <div class="outcome">
-            <label class="select-field">
-              <span>Comparison run</span>
-              <select value={target} onChange={(e) => setTarget((e.currentTarget as HTMLSelectElement).value)}>
-                <option value="">Driver result only</option>
-                {p.outcomeTargets.map((t) => (
-                  <option key={t.analysis_id} value={t.analysis_id}>
-                    {formatDate(t.start_time_utc)} · {t.identity.car ?? t.identity.car_path}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div class="seg" role="group" aria-label="Save comparison outcome">
-              {(
-                [
-                  ["improved", "Improved"],
-                  ["worse", "Worse"],
-                  ["no-change", "No change"],
-                  ["inconclusive", "Inconclusive"],
-                ] as const
-              ).map(([k, label]) => (
-                <button key={k} type="button" disabled={outcome.state.phase === "running" || !r.experimentId} onClick={() => void save(k)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {outcome.state.phase === "done" ? <p role="status">Result saved.</p> : null}
-            {outcome.state.phase === "error" ? <Notice tone="warn">{outcome.state.message}</Notice> : null}
-          </div>
+          <OutcomePanel experimentId={r.experimentId} customerId={p.customerId} choices={p.choices} />
         </>
       ) : (
-        <p>{[...r.missing, ...r.limitations].join(" ") || "This recording does not support a setup-change recommendation."}</p>
+        <ul class="why" aria-label="Missing">
+          {(why.length ? why : ["No supported change"]).map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
       )}
-      <button type="button" class="btn" onClick={p.onEdit}>
+      <button type="button" class="pill" onClick={p.onEdit}>
         Edit feedback
       </button>
+    </section>
+  );
+}
+
+function LastTest(p: { system: string; change: string; experimentId: string; customerId: number; choices: TargetChoice[] }) {
+  return (
+    <section class="result-card last-test" aria-label="Last test" data-testid="last-test">
+      <header>
+        <div>
+          <span class="eyebrow">Last test</span>
+          <h2>{humanize(p.system)}</h2>
+        </div>
+      </header>
+      {p.change ? <p>{p.change}</p> : null}
+      <OutcomePanel experimentId={p.experimentId} customerId={p.customerId} choices={p.choices} />
     </section>
   );
 }
@@ -317,6 +376,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
   const ctxRes = useResource<Ctx>(paths.tuning(analysisId), () => api.tuning(analysisId));
   useServerEvent("analysis_ready", (e) => e.analysis_id === analysisId && ctxRes.reload());
   const ctx = ctxRes.data;
+  const sessions = useResource(paths.sessions(customerId, { limit: 200 }), () => api.sessions(customerId, { limit: 200 }));
 
   // ---- draft (feedback, goal, runs, note), saved through the outbox
   const draftKey = ctx ? paths.tuningDraft(customerId, ctx.draft_identity_key) : null;
@@ -340,7 +400,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
     timer.current = null;
     const l = latest.current;
     latest.current = null;
-    if (l) void outbox.enqueue({ method: "PUT", path: l.key, body: { body: l.body }, label: "Tuning feedback", coalesceKey: `draft:${l.key}` }).catch(() => undefined);
+    if (l) void outbox.enqueue({ method: "PUT", path: l.key, body: { body: serializeDraft(l.body) }, label: "Tuning feedback", coalesceKey: `draft:${l.key}` }).catch(() => undefined);
   };
   useEffect(() => flush, []);
   const commit = (next: DraftBody, delay = 300) => {
@@ -355,6 +415,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
 
   // ---- turn corrections
   const trackKey = ctx?.identity.track_configuration_key ?? null;
+  const geometryHash = ctx?.map.geometry_hash ?? null;
   const annKey = ctx && trackKey ? paths.turnAnnotations(customerId, trackKey, ctx.map.map_identity) : null;
   const annRes = useResource<Schemas["TurnAnnotations"] | null>(annKey, (signal) => getOrNull<Schemas["TurnAnnotations"]>(annKey!, signal));
   const [annBody, setAnnBody] = useState<unknown>(null);
@@ -364,7 +425,8 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
       if (annKey) outbox.observe(annKey, annRes.data.version);
     }
   }, [annRes.data, annKey]);
-  const turns = useMemo(() => (ctx ? mergeTurns(ctx.map.turns, annBody) : []), [ctx, annBody]);
+  const turns = useMemo(() => (ctx ? mergeTurns(ctx.map.turns, annBody, geometryHash) : []), [ctx, annBody, geometryHash]);
+  const stale = staleCorrections(annBody, geometryHash);
 
   // ---- selection
   const [phase, setPhase] = useState<RunPhase>("early");
@@ -379,7 +441,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
   const editState = (next: EditorState) => {
     if (!turn) return;
     setEditor(next);
-    const items = buildFeedback(turn, phase, next, priorityId === turn.corner_id ? 5 : 3);
+    const items = buildFeedback(turn, phase, next, priorityId === turn.corner_id ? 5 : 3, draft.feedback);
     commit(applyPriority(replaceFeedback(draft, turn.corner_id, phase, items), priorityId));
     setHideResult(true);
   };
@@ -399,51 +461,76 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
   const [correction, setCorrection] = useState<{ entry: number; apex: number; exit: number; active: "entry" | "apex" | "exit"; label: string; error: string } | null>(null);
   const openCorrection = () => turn && setCorrection({ entry: turn.start_pct, apex: turn.apex_pct, exit: turn.end_pct, active: "entry", label: turn.label, error: "" });
   function saveCorrection() {
-    if (!turn || !correction || !annKey) return;
+    if (!ctx || !turn || !correction || !annKey) return;
     const err = validBounds(correction.entry, correction.apex, correction.exit);
     if (err) return setCorrection({ ...correction, error: err });
+    const original = ctx.map.turns.find((t) => t.corner_id === turn.corner_id) ?? turn;
     const fixed: MapTurn = { ...turn, label: correction.label.trim(), start_pct: correction.entry, apex_pct: correction.apex, end_pct: correction.exit, user_verified: true };
-    const body = annotationBody(annBody, fixed);
+    const body = annotationBody(annBody, fixed, original, geometryHash);
     setAnnBody(body);
     setCorrection(null);
     void outbox.enqueue({ method: "PUT", path: annKey, body: { body }, label: "Turn correction", coalesceKey: `ann:${annKey}` }).catch(() => undefined);
+    // Feedback already entered for this turn follows its new label and bounds, or the worker refuses it.
+    const next = alignFeedback(draft.feedback, mergeTurns(ctx.map.turns, body, geometryHash));
+    if (next.some((f, i) => f !== draft.feedback[i])) commit({ ...draft, feedback: next });
+    setHideResult(true);
   }
 
   // ---- analysis
   const run = useJobRun<unknown>();
+  const lastRun = useRef<unknown>(null);
+  useEffect(() => {
+    if (run.state.phase !== "done" || lastRun.current === run.state.result) return;
+    lastRun.current = run.state.result;
+    commit(withExperiment(draft, readResult(run.state.result)), 0);
+  }, [run.state]);
   if (!ctx) {
     const notReady = ctxRes.error instanceof ApiError && ctxRes.error.status === 409;
-    if (notReady) return <Notice>Preparing this race for tuning. It opens when ready.</Notice>;
+    if (notReady) return <Notice>Preparing this race</Notice>;
     return ctxRes.error ? <ErrorLine error={ctxRes.error} /> : <Loading what="race" />;
   }
   const id = ctx.identity;
-  const submission = buildMapSubmission(ctx.map, turns, draft.feedback, trackKey);
-  const inputs = { ctx, draft, verified: submission.verified, hasSubmission: submission.submission !== null };
+  const aligned: DraftBody = { ...draft, feedback: alignFeedback(draft.feedback, turns) };
+  const submission = buildMapSubmission(ctx.map, turns, trackKey);
+  const inputs = { ctx, draft: aligned, verified: submission.verified, hasSubmission: submission.submission !== null, progress: verification(ctx.map, turns) };
   const blocker = analyzeBlocker(inputs);
-  const needsTarget = id.setup_type.toLowerCase() !== "open";
+  const needsOpenTarget = needsTarget(ctx);
   const result: TuningResult | null = run.state.phase === "done" && !hideResult ? readResult(run.state.result) : null;
   const eligibleRuns = ctx.representative_runs;
   const selectedRuns = eligibleRuns.map(runFacts).filter((f) => draft.representative_run_ids.includes(f.number));
+  const reasons = eligibilityReasons(ctx);
+  const choices = outcomeChoices(ctx, analysisId, sessions.data?.sessions ?? []);
+  const last = readLastExperiment(draft);
+  const target = chosenTarget(ctx, draft) ?? "";
+  const open = id.setup_type.toLowerCase() === "open";
 
   return (
-    <>
+    <div class="tuning-page ds">
       <p class="crumbs">
         <a href={href({ page: "tuning", customerId, analysisId: null })}>Progressive tuning</a>
       </p>
       <PageHead title={trackLabel(id.track, id.layout)} sub={`${id.car ?? id.car_path ?? "Car unknown"} · ${sessionTypeLabel(id.session_type)}`}>
-        <Chip tone={needsTarget ? "neutral" : "good"} title={needsTarget ? "Fixed setup: driving evidence only" : "Open setup: can receive changes"}>
-          {needsTarget ? "Fixed setup" : "Open setup"}
-        </Chip>
+        <span class={`tag${open ? " solid" : ""}`}>{setupTypeLabel(ctx)}</span>
       </PageHead>
-      {!ctx.eligible && !ctx.can_use_as_evidence ? <Notice tone="warn">{ctx.reasons.join(" ") || "This recording cannot be used for tuning."}</Notice> : null}
+      {reasons.length > 0 ? (
+        <Notice tone="warn">
+          {reasons.map((r) => (
+            <span key={r} class="reason">
+              {r}
+            </span>
+          ))}
+        </Notice>
+      ) : null}
+      {!trackKey ? <Notice tone="warn">Track configuration unavailable</Notice> : null}
+      {stale > 0 ? <Notice>{stale === 1 ? "1 older correction skipped" : `${stale} older corrections skipped`}</Notice> : null}
 
       <div class="tuning-grid">
         <section class="panel map-panel" aria-label="Track feedback">
           <header class="panel-head">
             <h2>Track</h2>
-            <Chip tone={ctx.map.is_verified ? "good" : "neutral"} title={ctx.map.verification_message ?? ctx.map.source_label}>
-              {ctx.map.is_verified ? "Map ready" : "Verify turns"}
-            </Chip>
+            <span class={`tag${ctx.map.is_verified ? " solid" : " dashed"}`} title={ctx.map.verification_message ?? ctx.map.source_label}>
+              {ctx.map.is_verified ? "Map ready" : `Verified ${inputs.progress.verified} of ${inputs.progress.total}`}
+            </span>
           </header>
           <TrackMap
             map={ctx.map}
@@ -461,7 +548,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
             }}
           />
           <div class="turn-list" role="group" aria-label="Selectable turns">
-            {turns.length === 0 ? <span class="sub">No selectable zones</span> : null}
+            {turns.length === 0 ? <span class="sub">No zones</span> : null}
             {turns.map((t) => {
               const items = draft.feedback.filter((f) => f.corner_id === t.corner_id && f.run_phase === phase);
               return (
@@ -473,7 +560,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
             })}
           </div>
           {!ctx.map.is_verified && turn && !correction ? (
-            <button type="button" class="link-btn" onClick={openCorrection}>
+            <button type="button" class="link-btn" disabled={!annKey} title={annKey ? undefined : "Track configuration unavailable"} onClick={openCorrection}>
               Correct selected zone
             </button>
           ) : null}
@@ -507,7 +594,17 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
           </header>
           <div class="seg phases" role="tablist" aria-label="Run phase for all turns">
             {RUN_PHASES.map(([p, label]) => (
-              <button key={p} type="button" role="tab" aria-selected={phase === p} class={phase === p ? "on" : ""} onClick={() => { setPhase(p); setHideResult(true); }}>
+              <button
+                key={p}
+                type="button"
+                role="tab"
+                aria-selected={phase === p}
+                class={phase === p ? "on" : ""}
+                onClick={() => {
+                  setPhase(p);
+                  setHideResult(true);
+                }}
+              >
                 {label}
                 {phaseCount(draft, p) > 0 ? <b>{phaseCount(draft, p)}</b> : null}
               </button>
@@ -529,12 +626,13 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
           ) : null}
 
           {result ? (
-            <ResultCard result={result} outcomeTargets={ctx.open_targets} analysisId={analysisId} customerId={customerId} onEdit={() => setHideResult(true)} />
+            <ResultCard result={result} choices={choices} customerId={customerId} onEdit={() => setHideResult(true)} />
           ) : (
             <>
+              {last ? <LastTest system={last.system} change={last.change} experimentId={last.experimentId} customerId={customerId} choices={choices} /> : null}
               <section class="runs" aria-label="Representative runs">
                 <h3>Representative runs</h3>
-                {eligibleRuns.length === 0 ? <p class="sub">No run has enough clean laps.</p> : null}
+                {eligibleRuns.length === 0 ? <p class="sub">No eligible runs</p> : null}
                 <div class="chip-grid" role="group" aria-label="Representative runs">
                   {eligibleRuns.map(runFacts).map((f) => {
                     const on = draft.representative_run_ids.includes(f.number);
@@ -548,23 +646,28 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
                 </div>
                 {selectedRuns.length ? (
                   <dl class="run-facts">
-                    {selectedRuns.flatMap((f) => [
-                      f.delta !== null ? [`Run ${f.number}`, formatSigned(f.delta, 3, "s"), "early to late"] : f.slope !== null ? [`Run ${f.number}`, formatSigned(f.slope, 3, "s/lap"), "pace trend"] : null,
-                      f.fuel !== null ? [`Run ${f.number}`, formatNumber(f.fuel, 2, "gal"), "fuel used"] : null,
-                      f.lowestTire !== null ? [`Run ${f.number}`, formatNumber(f.lowestTire, 1, "%"), "lowest tire remaining"] : null,
-                    ]).filter((x): x is string[] => x !== null).map(([a, b, c]) => (
-                      <div key={`${a}${c}`}>
-                        <dt>{a} · {c}</dt>
-                        <dd>{b}</dd>
-                      </div>
-                    ))}
+                    {selectedRuns
+                      .flatMap((f) => [
+                        f.delta !== null ? [`Run ${f.number}`, formatSigned(f.delta, 3, "s"), "early to late"] : f.slope !== null ? [`Run ${f.number}`, formatSigned(f.slope, 3, "s/lap"), "pace trend"] : null,
+                        f.fuel !== null ? [`Run ${f.number}`, formatNumber(f.fuel, 2, "gal"), "fuel used"] : null,
+                        f.lowestTire !== null ? [`Run ${f.number}`, formatNumber(f.lowestTire, 1, "%"), "lowest tire remaining"] : null,
+                      ])
+                      .filter((x): x is string[] => x !== null)
+                      .map(([a, b, c]) => (
+                        <div key={`${a}${c}`}>
+                          <dt>
+                            {a} · {c}
+                          </dt>
+                          <dd>{b}</dd>
+                        </div>
+                      ))}
                   </dl>
                 ) : null}
               </section>
-              {needsTarget ? (
+              {needsOpenTarget ? (
                 <label class="select-field">
                   <span>Open-setup target</span>
-                  <select value={draft.open_target_analysis_id ?? ""} onChange={(e) => commit({ ...draft, open_target_analysis_id: (e.currentTarget as HTMLSelectElement).value || null })}>
+                  <select value={target} onChange={(e) => commit({ ...draft, open_target_analysis_id: (e.currentTarget as HTMLSelectElement).value || null })}>
                     <option value="">Choose matching race</option>
                     {ctx.open_targets.map((t) => (
                       <option key={t.analysis_id} value={t.analysis_id}>
@@ -580,14 +683,26 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
           <footer class="toolbox-foot">
             <label class="note-field">
               <span>General feedback</span>
-              <textarea rows={2} maxLength={1200} placeholder="Anything that applies across the race" value={draft.general_note} onInput={(e) => { commit({ ...draft, general_note: (e.currentTarget as HTMLTextAreaElement).value }, 450); setHideResult(true); }} />
+              <textarea
+                rows={2}
+                maxLength={1200}
+                value={draft.general_note}
+                onInput={(e) => {
+                  commit({ ...draft, general_note: (e.currentTarget as HTMLTextAreaElement).value }, 450);
+                  setHideResult(true);
+                }}
+              />
             </label>
-            {blocker && !result ? <p class="hint" role="status">{blocker}</p> : null}
+            {blocker && !result ? (
+              <p class="hint" role="status">
+                {blocker}
+              </p>
+            ) : null}
             {run.state.phase === "error" ? <Notice tone="warn">{run.state.message}</Notice> : null}
             {run.state.phase === "running" ? <Loading what="analysis" /> : null}
             <button
               type="button"
-              class="btn btn-accent"
+              class="pill primary"
               disabled={blocker !== "" || run.state.phase === "running"}
               onClick={() => {
                 flush();
@@ -601,7 +716,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
           </footer>
         </aside>
       </div>
-    </>
+    </div>
   );
 }
 

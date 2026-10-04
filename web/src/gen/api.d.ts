@@ -206,11 +206,25 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Sessions library, newest first. Filtering is server-side; grouping into events uses `event_key`. */
+        /**
+         * Sessions library, newest first. Filtering is server-side; grouping into events uses `event_key`.
+         * @description Every filter narrows the list; values within one filter are alternatives (`car=a&car=b` is a or b), different
+         *     filters must all hold. `car`, `track`, `series` and `type` may repeat. A value that matches nothing returns an
+         *     empty page, not an error.
+         */
         get: {
             parameters: {
                 query?: {
-                    type?: "all" | "race" | "qualify" | "practice" | "test";
+                    /** @description Session type; repeat for several. `all` anywhere means no type filter. */
+                    type?: ("all" | "race" | "qualify" | "practice" | "test")[];
+                    /** @description `car_path` values (`CarTrackOptions.cars[].car_path`), exact. */
+                    car?: string[];
+                    /** @description Track names (`CarTrackOptions.tracks[].track`), exact, any layout. */
+                    track?: string[];
+                    /** @description Series names (`CarTrackOptions.series[].series_name`), exact. */
+                    series?: string[];
+                    /** @description Fixed-setup or open-setup sessions (`SessionSummary.is_fixed_setup`); sessions whose recording does not say are in neither. */
+                    setup?: "fixed" | "open";
                     /** @description Text over track, layout, car, series. */
                     q?: string;
                     cursor?: components["parameters"]["Cursor"];
@@ -664,6 +678,8 @@ export interface paths {
                     car_path?: string;
                     q?: string;
                     raced_only?: boolean;
+                    /** @description true: only setups seen in a race recording (as `raced_only`, and `unlinked_files` is empty); false: only setups never raced; absent: both. Overrides `raced_only`. */
+                    raced?: boolean;
                     cursor?: components["parameters"]["Cursor"];
                     limit?: components["parameters"]["Limit"];
                 };
@@ -767,7 +783,7 @@ export interface paths {
                     };
                 };
                 202: components["responses"]["Accepted"];
-                /** @description Different cars or values unknown */
+                /** @description `different_cars`, `values_unknown`, or `different_schemes` (one setup is known only from a garage export, the other from a recording: their keys differ and every row would read unknown) */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -2206,8 +2222,11 @@ export interface components {
             track_config?: string | null;
             car_path?: string | null;
             car_name?: string | null;
+            /** @description WeekendInfo.SeriesName of the session's first recording that names one; null for rows rebuilt from the NAS. */
             series_name?: string | null;
             season_name?: string | null;
+            /** @description WeekendInfo.WeekendOptions.IsFixedSetup of the session's first recording that states it: true fixed setup, false open setup, null when the recording does not say (never read as open). */
+            is_fixed_setup?: boolean | null;
             subsession_id?: number | null;
             sim_session_num?: number | null;
             /** Format: date-time */
@@ -2251,10 +2270,13 @@ export interface components {
             /** @description Setups observed in this session's recordings. */
             setup_ids: number[];
             notes_count: number;
-            /** @description Other phases of the same event (phase switch). */
+            /** @description Other phases of the same event (phase switch), in session order. */
             event_sessions?: {
                 session_id: number;
                 session_type: string | null;
+                analysis_state?: components["schemas"]["AnalysisState"];
+                /** @description e.g. exceeds_memory_budget while deferred. */
+                analysis_reason?: string | null;
             }[];
         };
         ViewEnvelope: {
@@ -2307,6 +2329,8 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             laps: components["schemas"]["Lap"][];
+            /** @description One entry per run that ends in a pit service, in run order (projector-written from `runs[].pit_service`). Empty when no service was detected. */
+            pit_stops?: components["schemas"]["PitStop"][];
             strategy?: {
                 [key: string]: unknown;
             } | null;
@@ -2322,6 +2346,29 @@ export interface components {
             data_quality?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * @description One pit service. `lap` is the run's `end_lap`, the lap the car enters the pits. Window, tires and fuel are the
+         *     backend's `pit_service` values; nothing is measured here. Null means the backend did not report it.
+         */
+        PitStop: {
+            /** @description The run this service ended. */
+            run_number: number | null;
+            lap: number | null;
+            /** @description Session time the service began (pit_service.start_time). */
+            start_time_s?: number | null;
+            /** @description Session time the service ended (pit_service.end_time). */
+            end_time_s?: number | null;
+            /** @description end_time_s - start_time_s, 3 decimals; the detected service window (stall, service-active or fuel-rise samples bridged within 2.5 s), not pit-lane time. Null when either end is missing. */
+            service_s?: number | null;
+            /** @description Tires the backend observed changed (pit_service.tires_changed_observed): LF, LR, RF, RR, ascending. An empty list means none observed changed; null means the backend did not report the list. */
+            tires_changed?: ("LF" | "LR" | "RF" | "RR")[] | null;
+            /** @description pit_service.fuel_added_l; 0 is a measured no-fuel stop. */
+            fuel_added_l?: number | null;
+            /** @description fuel_added_l / 3.785411784 rounded to 3 decimals (the analyzer's own conversion). */
+            fuel_added_gal?: number | null;
+            /** @description The run ended with a post-run service (run.ended_with_post_run_service), e.g. after the checkered flag. */
+            post_run_service: boolean;
         };
         RunsView: components["schemas"]["ViewEnvelope"] & {
             /** @description Observed trend segments and screened fit stay distinct (AGENTS.md). */
@@ -2379,6 +2426,16 @@ export interface components {
             exclusion_reasons: string[];
             run_number?: number | null;
             run_age_laps?: number | null;
+            /**
+             * @description Seconds spent in each sector, one entry per `TraceCatalog.sector_start_pcts` item in that order (present only
+             *     when the session defines at least two sectors). Projector-derived from the lap's `session-time` bins: the
+             *     session time at the sector's end fraction minus the time at its start fraction, each linearly interpolated
+             *     between the two distance bins that straddle it (the retired desktop app's rule, `TimeAtPercent`); the last
+             *     sector ends at fraction 1. 3 decimals, bin resolution (bins_per_lap), so the sectors of a complete lap sum to
+             *     within about a bin of `lap_time_s`, not exactly to it. Null for a sector whose boundary the lap's bins stop more than two bins short of (a
+             *     partial lap, a lap that starts mid-lap), whose session time is missing, or that would read negative.
+             */
+            sector_times_s?: (number | null)[];
             conditions?: {
                 [key: string]: unknown;
             } | null;
@@ -2498,6 +2555,10 @@ export interface components {
             tracks: {
                 track: string;
                 track_config?: string | null;
+            }[];
+            /** @description Series names in this driver's recordings, ascending; the options of the Sessions series filter. */
+            series?: {
+                series_name: string;
             }[];
         };
         /** @enum {string} */
@@ -2931,6 +2992,32 @@ export interface components {
             comparison_id?: string | null;
             section_id?: string | null;
         };
+        /** @enum {string} */
+        TextSize: "default" | "larger" | "largest";
+        /** @description Selections of the Sessions page filters; the values are the query values of `GET /drivers/{customer_id}/sessions`. An absent or empty list is no filter. */
+        SessionFilters: {
+            /** @description car_path values. */
+            cars?: string[];
+            /** @description Track names. */
+            tracks?: string[];
+            /** @description Series names. */
+            series?: string[];
+            types?: ("race" | "qualify" | "practice" | "test")[];
+            /** @enum {string|null} */
+            setup?: "fixed" | "open" | null;
+            text?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description Selections of the Setups page filters; the values are the query values of `GET /drivers/{customer_id}/setups`. An absent value is no filter. */
+        SetupFilters: {
+            car_path?: string | null;
+            /** @description true raced setups only, false never-raced only, null both. */
+            raced?: boolean | null;
+            text?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         DriverPrefsWrite: {
             active_live_layout_id?: string | null;
             active_trace_layout_id?: string | null;
@@ -2942,6 +3029,12 @@ export interface components {
             units?: {
                 [key: string]: string;
             } | null;
+            /** @description Interface text step; null or absent is default. */
+            text_size?: components["schemas"]["TextSize"] | null;
+            /** @description The Sessions page's selected filters, restored on the next visit. Replaced whole by a write. */
+            session_filters?: components["schemas"]["SessionFilters"] | null;
+            /** @description The Setups page's selected filters, restored on the next visit. Replaced whole by a write. */
+            setup_filters?: components["schemas"]["SetupFilters"] | null;
         };
         DriverPrefs: components["schemas"]["DriverPrefsWrite"] & {
             customer_id: number;

@@ -272,6 +272,16 @@ fn base_name(relative_path: &str) -> &str {
     relative_path.rsplit('/').next().unwrap_or(relative_path)
 }
 
+/// An `.htm` (or `.html`) export's file name without its extension; None for any other file or an
+/// empty stem.
+fn export_stem(relative_path: &str) -> Option<&str> {
+    let name = base_name(relative_path);
+    let (stem, extension) = name.rsplit_once('.')?;
+    let export = extension.eq_ignore_ascii_case("htm") || extension.eq_ignore_ascii_case("html");
+    let stem = stem.trim();
+    (export && !stem.is_empty()).then_some(stem)
+}
+
 fn load_files(conn: &Connection, customer: i64) -> rusqlite::Result<Vec<FileRow>> {
     let mut stmt = conn.prepare(
         "SELECT blob_sha256, car_folder, relative_path, format, present FROM setup_files
@@ -395,11 +405,14 @@ fn summarize(
         });
     }
     let mut names: BTreeSet<String> = BTreeSet::new();
+    let mut export_names: BTreeSet<String> = BTreeSet::new();
     let mut sto_files = Vec::new();
     for f in files {
         if linked_setup(f, car_path_of, obs) == Some(setup.setup_id) {
             if f.format == "sto" {
                 names.insert(base_name(&f.relative_path).to_string());
+            } else if let Some(stem) = export_stem(&f.relative_path) {
+                export_names.insert(stem.to_string());
             }
             sto_files.push(file_entry(f, Some(setup.setup_id)));
         }
@@ -414,6 +427,11 @@ fn summarize(
         {
             names.insert(name.to_string());
         }
+    }
+    // Values known only from a garage `.htm` export have no `.sto` name: the export's file name
+    // without its extension names them (the migration's exports showed as "Unnamed").
+    if names.is_empty() {
+        names = export_names;
     }
     let raced = mine.iter().any(|o| {
         o.source == "recording"
@@ -471,6 +489,8 @@ pub struct LibraryQuery<'a> {
     pub car_path: Option<&'a str>,
     pub q: Option<&'a str>,
     pub raced_only: bool,
+    /// `Some(true)` raced only (no unlinked files), `Some(false)` never raced; overrides `raced_only`.
+    pub raced: Option<bool>,
     pub cursor: Option<&'a str>,
     pub limit: usize,
 }
@@ -496,7 +516,11 @@ pub fn library_page(conn: &Connection, query: &LibraryQuery<'_>) -> Result<Value
         }
         let name = car_name(conn, query.customer_id, &setup.car_path)?;
         let summary = summarize(setup, name, &files, &obs, &car_path_of);
-        if query.raced_only && summary["raced"] != true {
+        let raced = summary["raced"] == true;
+        if query
+            .raced
+            .map_or(query.raced_only && !raced, |want| want != raced)
+        {
             continue;
         }
         if let Some(needle) = &needle {
@@ -535,7 +559,7 @@ pub fn library_page(conn: &Connection, query: &LibraryQuery<'_>) -> Result<Value
     } else {
         None
     };
-    let unlinked: Vec<Value> = if query.cursor.is_some() {
+    let unlinked: Vec<Value> = if query.cursor.is_some() || query.raced == Some(true) {
         Vec::new()
     } else {
         files
@@ -672,21 +696,42 @@ pub fn cars_and_tracks(conn: &Connection, customer: i64) -> rusqlite::Result<Val
             Ok(json!({"track": r.get::<_, String>(0)?, "track_config": r.get::<_, Option<String>>(1)?}))
         })?
         .collect::<rusqlite::Result<_>>()?;
-    Ok(json!({"cars": cars, "tracks": tracks}))
+    let mut series_stmt = conn.prepare(
+        "SELECT DISTINCT series_name FROM recordings WHERE customer_id = ?1 AND series_name IS NOT NULL
+           AND trim(series_name) <> '' ORDER BY series_name",
+    )?;
+    let series: Vec<Value> = series_stmt
+        .query_map([customer], |r| {
+            Ok(json!({"series_name": r.get::<_, String>(0)?}))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(json!({"cars": cars, "tracks": tracks, "series": series}))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The literal leaves a contract pattern matches: anchors dropped, one group expanded.
+    /// The literal leaves a contract pattern matches: anchors dropped, one group expanded (an
+    /// optional group also to nothing).
     fn literals(pattern: &str) -> Vec<String> {
         let body = pattern.trim_start_matches('^').trim_end_matches('$');
         match (body.find('('), body.find(')')) {
-            (Some(open), Some(close)) => body[open + 1..close]
-                .split('|')
-                .map(|alt| format!("{}{alt}{}", &body[..open], &body[close + 1..]))
-                .collect(),
+            (Some(open), Some(close)) => {
+                let (head, rest) = (&body[..open], &body[close + 1..]);
+                let mut alternatives: Vec<&str> = body[open + 1..close].split('|').collect();
+                let tail = match rest.strip_prefix('?') {
+                    Some(tail) => {
+                        alternatives.push("");
+                        tail
+                    }
+                    None => rest,
+                };
+                alternatives
+                    .iter()
+                    .map(|alt| format!("{head}{alt}{tail}"))
+                    .collect()
+            }
             _ => vec![body.to_owned()],
         }
     }
@@ -711,5 +756,18 @@ mod tests {
     fn kelvin_sign_is_not_ascii_k() {
         assert!(is_identity_excluded("Chassis.Rear.TruckArmPreload"));
         assert!(!is_identity_excluded("Chassis.Rear.Truc\u{212A}ArmPreload"));
+    }
+
+    #[test]
+    fn an_export_is_named_after_its_file_without_the_extension() {
+        assert_eq!(
+            export_stem("NOAPS_MaconiSetupShop Sonoma 26S3 R.htm"),
+            Some("NOAPS_MaconiSetupShop Sonoma 26S3 R")
+        );
+        assert_eq!(export_stem("exports/Base.HTML"), Some("Base"));
+        assert_eq!(export_stem("a.b.htm"), Some("a.b"));
+        for none in ["Base.sto", "Base", ".htm", "dir.htm/", "  .htm"] {
+            assert_eq!(export_stem(none), None, "{none}");
+        }
     }
 }

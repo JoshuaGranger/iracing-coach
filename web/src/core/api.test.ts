@@ -48,7 +48,9 @@ describe("api client", () => {
   });
 
   it("builds paths with encoded ids and only the filters that are set", () => {
-    expect(paths.sessions(1, { type: "race", q: "", limit: 50 })).toBe("/api/v1/drivers/1/sessions?type=race&limit=50");
+    expect(paths.sessions(1, { type: ["race"], q: "", limit: 50 })).toBe("/api/v1/drivers/1/sessions?type=race&limit=50");
+    expect(paths.sessions(1, { car: ["a", "b"], series: [], setup: "fixed" })).toBe("/api/v1/drivers/1/sessions?car=a&car=b&setup=fixed");
+    expect(paths.setups(1, { raced: false })).toBe("/api/v1/drivers/1/setups?raced=false");
     expect(paths.tuning("a/b")).toBe("/api/v1/analyses/a%2Fb/tuning");
     expect(paths.notes(1, "setup", "9")).toBe("/api/v1/drivers/1/notes?subject_kind=setup&subject_id=9");
   });

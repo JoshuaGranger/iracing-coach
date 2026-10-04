@@ -47,7 +47,7 @@ const PAGES = {
   runs: { source: "shell", view: "runs", ready: ".ri-dot" },
   sections: { source: "shell", view: "sections", ready: "[data-ri-chart]" },
   traces: { source: "shell", view: "traces", ready: "[data-analysis-trace-path]" },
-  setups: { source: "mock", hash: `/d/${DRIVER}/setups`, ready: "ul.rows a.row-link" },
+  setups: { source: "mock", hash: `/d/${DRIVER}/setups`, ready: ".s-car a.s-name" },
   live: { source: "mock", hash: `/d/${DRIVER}/live`, ready: "[data-metric=position]" },
   setup: { source: "mock", hash: `/d/${DRIVER}/setups/1`, ready: "table tbody tr, .value-group" },
   baseline: { source: "mock", hash: `/d/${DRIVER}/setups/baseline`, ready: "main h1" },
@@ -62,15 +62,15 @@ const GROUPS = {
     min: 14,
     selector: [
       ".row-meta, .sub, .event-meta, .chip, .eyebrow, .count, .tile-label, .tile-secondary, .tile-unit, label > span:first-child, .field-error, .inline-error, .note-meta",
-      ".ri-muted, .ri-fine, .ri-heading span, .ri-comparison-laps, .ri-legend, .ri-run-legend, .ri-key small, .ri-timing, .ri-foot, .ri-lap-foot, .ri-toolbox-foot, .ri-lap-group header, .ri-section-head, .ri-section-range, .ri-map-legend",
-      ".ri-axis, .ri-axis-title, .ri-bracket-label, .ri-event-label, .ri-y-axis span, .ri-x-axis span, .ri-zone, .ri-row-unit, .flag, .ri-unavailable, .ri-channel-label small, .ri-tabs, .crumbs, .driver-name",
+      ".ri-muted, .ri-fine, .ri-heading span, .ri-comparison-laps, .ri-legend, .ri-run-legend, .ri-key small, .ri-timing, .ri-foot, .ri-rail-foot, .ri-toolbox-foot, .ri-run-head, .ri-section-head, .ri-section-range, .ri-map-legend",
+      ".ri-axis, .ri-axis-title, .ri-bracket-label, .ri-event-label, .ri-y-axis span, .ri-x-axis span, .ri-zone, .ri-row-unit, .ri-chip, .ri-rail-cols span, .ri-count-chip, .ri-unavailable, .ri-channel-label small, .ri-tabs, .crumbs, .driver-name",
     ].join(", "),
   },
-  numbers: { min: 15, selector: "td, .ri-lap-time, .ri-lap-fuel, .ri-lap-id, .ri-readings output, .ri-readout, .ri-cursor-readout, .ri-timing b, .ri-median, .ri-comparison strong, .tile-primary, dd, .stepper output, .ri-section-id, .turn-text, .map-handle text, .ri-map-label text" },
+  numbers: { min: 15, selector: "td, .ri-tm, .ri-dl, .ri-fu, .ri-n, .ri-kv strong, .ri-run-range, .ri-inc-chip, .ri-pit-cell, .ri-readings output, .ri-readout, .ri-cursor-readout, .ri-timing b, .ri-median, .ri-comparison strong, .tile-primary, dd, .stepper output, .ri-section-id, .turn-text, .map-handle text, .ri-map-label text" },
   controls: {
     min: 15,
     height: true,
-    selector: "button, .btn, .nav-link, select, input:not([type=checkbox]):not([type=radio]):not([type=range]), .ri-tab, .ri-button, .ri-text-button, .ri-toggle, .ri-lap-row, .ri-section, .ri-comparison, label.check, .ri-filters label, .crumbs a",
+    selector: "button, .btn, .nav-link, select, input:not([type=checkbox]):not([type=radio]):not([type=range]), .ri-tab, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-icon-pill, .ri-pqr-seg, .ri-text-button, .ri-toggle, .ri-lap-row, .ri-section, .ri-comparison, label.check, .ri-filters label, .crumbs a",
   },
 };
 

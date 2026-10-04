@@ -31,20 +31,22 @@ export function formatPosition(p: number | null | undefined): string {
   return p === null || p === undefined ? DASH : `P${p}`;
 }
 
-const dateFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
-const timeFmt = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
-
-/** UTC date, e.g. "Sep 20, 2026". The library shows UTC because recordings carry UTC start times. */
-export function formatDate(iso: string | null | undefined): string {
+/** Local date, e.g. "Sep 20, 2026" (audit S1: recordings carry UTC times, the driver reads the clock on the wall). `timeZone` is for tests. */
+export function formatDate(iso: string | null | undefined, timeZone?: string): string {
   if (!iso) return DASH;
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? DASH : dateFmt.format(d);
+  return Number.isNaN(d.getTime()) ? DASH : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone }).format(d);
 }
 
-export function formatDateTime(iso: string | null | undefined): string {
+/** Local date and time, e.g. "Sep 20, 2026 7:30 pm". */
+export function formatDateTime(iso: string | null | undefined, timeZone?: string): string {
   if (!iso) return DASH;
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? DASH : `${dateFmt.format(d)} ${timeFmt.format(d)} UTC`;
+  if (Number.isNaN(d.getTime())) return DASH;
+  const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone })
+    .format(d)
+    .replace(/\s?([AP])M$/i, (_m, c: string) => ` ${c.toLowerCase()}m`);
+  return `${formatDate(iso, timeZone)} ${time}`;
 }
 
 export function formatBytes(n: number | null | undefined): string {

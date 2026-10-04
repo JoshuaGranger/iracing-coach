@@ -16,6 +16,8 @@ export type Route =
   | { page: "baseline"; customerId: number }
   | { page: "tuning"; customerId: number; analysisId: string | null }
   | { page: "live"; customerId: number }
+  /** The component gallery (`#/__kit`): every shared mark, selector and pictogram on one page. Not linked from the app. */
+  | { page: "kit" }
   | { page: "notfound" };
 
 export type ParsedRoute = Route & { query: Record<string, string> };
@@ -34,6 +36,7 @@ export function parseHash(hash: string): ParsedRoute {
   const seg = pathPart.split("/").filter(Boolean).map(decodeURIComponent);
   const done = (r: Route): ParsedRoute => ({ ...r, query });
   if (seg.length === 0) return done({ page: "drivers" });
+  if (seg[0] === "__kit" && seg.length === 1) return done({ page: "kit" });
   if (seg[0] !== "d") return done({ page: "notfound" });
   const customerId = int(seg[1]);
   if (customerId === null) return done({ page: "notfound" });
@@ -90,6 +93,9 @@ export function formatRoute(route: Route, query?: Record<string, string | null |
       break;
     case "live":
       path = `/d/${route.customerId}/live`;
+      break;
+    case "kit":
+      path = "/__kit";
       break;
     default:
       path = "/";

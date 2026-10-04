@@ -1,0 +1,244 @@
+/*
+ * Progressive tuning in the chosen visual language (docs/08-rewrite/design/README.md): Broadcast cards and pills, the glowing
+ * track silhouette, Pit-wall column tracks for the recording list. Interaction is light (the interaction colour), never a hue:
+ * the selected turn, the chosen balance and the chosen run are lit, not coloured. Built on the shared `.ds` tokens in setups.css.
+ */
+.tuning-page .panel,
+.tuning-page .result-card,
+.tuning-page .feedback-editor,
+.tuning-page .correction {
+  border-radius: 14px;
+  border: 1px solid var(--ds-line);
+  background: var(--ds-card);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.3), inset 0 1px 0 var(--ds-edge);
+}
+.tuning-page .feedback-editor,
+.tuning-page .correction,
+.tuning-page .result-card {
+  border-radius: 12px;
+  background: var(--color-surface2);
+  box-shadow: inset 0 1px 0 var(--ds-edge);
+}
+.tuning-page .result-card {
+  border-color: var(--ds-lit);
+}
+.tuning-page h2,
+.tuning-page h3 {
+  font-family: var(--ds-disp);
+  font-stretch: condensed;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tuning-page .result-card h2,
+.tuning-page .feedback-editor h2 {
+  font-stretch: semi-condensed;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  font-size: 1.375rem;
+}
+.tuning-page .eyebrow {
+  font-family: var(--ds-disp);
+  font-stretch: condensed;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+}
+.tuning-page .page-head {
+  margin-bottom: var(--space-4);
+}
+.tuning-page .page-head .sub {
+  font-family: var(--ds-disp);
+  font-stretch: condensed;
+  font-size: var(--text-body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* the track silhouette */
+.tuning-page .track-map {
+  background: transparent;
+}
+.tuning-page .map-halo {
+  stroke: color-mix(in srgb, var(--ds-lit) 8%, transparent);
+}
+.tuning-page .map-track {
+  stroke: color-mix(in srgb, var(--ds-lit) 70%, var(--color-chart-reference));
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--ds-lit) 35%, transparent));
+}
+.tuning-page .turn-seg {
+  stroke: var(--color-border-strong);
+}
+.tuning-page .map-turn[class*="fb-"] .turn-seg {
+  stroke: var(--color-text-secondary);
+}
+.tuning-page .map-turn.fb-level-4 .turn-seg,
+.tuning-page .map-turn.fb-level-5 .turn-seg {
+  stroke: var(--ds-lit);
+}
+.tuning-page .map-turn.selected .turn-seg {
+  stroke: var(--ds-lit);
+  stroke-width: 11px;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--ds-lit) 55%, transparent));
+}
+.tuning-page .map-turn.selected .turn-dot {
+  stroke: var(--ds-lit);
+}
+.tuning-page .map-turn.priority .turn-dot {
+  stroke: var(--ds-lit);
+  fill: var(--color-surface3);
+  stroke-width: 3.5px;
+}
+.tuning-page .map-handle circle {
+  stroke: var(--ds-lit);
+}
+.tuning-page .map-handle.active circle {
+  fill: var(--ds-lit);
+}
+.tuning-page .map-handle.active text {
+  fill: var(--ds-ink);
+}
+
+/* turns, balance, runs: chosen = lit */
+.tuning-page .turn-list button {
+  border-radius: 10px;
+  background: var(--color-surface2);
+  border: 1px solid var(--ds-line);
+}
+.tuning-page .turn-list button.on {
+  border-color: var(--ds-lit);
+  background: color-mix(in srgb, var(--ds-lit) 10%, var(--color-surface2));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--ds-lit) 18%, transparent);
+}
+.tuning-page .balance-row button,
+.tuning-page .chip-grid button {
+  border-radius: var(--radius-pill);
+}
+.tuning-page .balance-row button.on,
+.tuning-page .balance-row button.on.balance-tight,
+.tuning-page .balance-row button.on.balance-good,
+.tuning-page .balance-row button.on.balance-loose,
+.tuning-page .chip-grid button.on {
+  background: var(--ds-lit);
+  border-color: var(--ds-lit);
+  color: var(--ds-ink);
+}
+.tuning-page .chip-grid button.on strong + span {
+  color: var(--ds-ink);
+}
+.tuning-page .icon-btn.on {
+  color: var(--ds-ink);
+  background: var(--ds-lit);
+  border-color: var(--ds-lit);
+}
+.tuning-page .seg button b {
+  color: inherit;
+  font-family: var(--ds-disp);
+}
+.tuning-page .seg.phases button {
+  min-width: 5rem;
+}
+.tuning-page .link-btn {
+  color: var(--color-text-secondary);
+}
+.tuning-page input[type="range"] {
+  accent-color: var(--ds-lit);
+}
+.tuning-page .hint {
+  color: var(--color-text-secondary);
+  font-family: var(--ds-disp);
+  font-stretch: semi-condensed;
+}
+.tuning-page .reason + .reason::before {
+  content: " · ";
+}
+.tuning-page .why {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+.tuning-page .why li {
+  padding: var(--space-2) var(--space-3);
+  border-radius: 10px;
+  border: 1.5px dashed var(--color-border-strong);
+  color: var(--color-text-secondary);
+}
+.tuning-page .verify,
+.tuning-page .protocol {
+  color: var(--color-text-secondary);
+}
+.tuning-page .run-facts dd,
+.tuning-page .run-facts dt {
+  font-family: var(--ds-disp);
+  font-stretch: semi-condensed;
+}
+.tuning-page .pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* the recording list: one track per field */
+.tuning-page .t-recs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--ds-card);
+  border: 1px solid var(--ds-line);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.3), inset 0 1px 0 var(--ds-edge);
+}
+.tuning-page .t-recs li + li {
+  border-top: 1px solid color-mix(in srgb, var(--ds-line) 70%, transparent);
+}
+.tuning-page .t-rec {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) 16rem 7.5rem;
+  align-items: center;
+  column-gap: var(--space-3);
+  min-height: 3.5rem;
+  padding: var(--space-1) var(--space-5);
+  color: var(--color-text-primary);
+}
+.tuning-page .t-rec:hover {
+  background: color-mix(in srgb, var(--color-surface3) 45%, transparent);
+  text-decoration: none;
+}
+.tuning-page .t-rec .t-car {
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.tuning-page .t-rec .date {
+  text-align: right;
+  color: var(--color-text-secondary);
+}
+.tuning-page .t-rec .tag {
+  justify-self: start;
+}
+@media (max-width: 900px) {
+  .tuning-page .t-rec {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-1);
+    padding: var(--space-2) var(--space-4);
+    min-height: var(--touch-target);
+  }
+  .tuning-page .t-rec .s-title {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .tuning-page .t-rec .t-car {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .tuning-page .t-rec .date {
+    grid-column: 2;
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 760px), (pointer: coarse) {
+  .tuning-page .pill,
+  .tuning-page .seg button {
+    min-height: var(--touch-target);
+  }
+}

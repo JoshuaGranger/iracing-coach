@@ -26,9 +26,27 @@ export interface TelemetryCursorOptions {
   /** Readouts under the map. */
   trackPercent?: HTMLElement | null;
   trackSummary?: HTMLElement | null;
+  /** Big-numeral readouts beside the map, one element per value (mean of the selected laps at the cursor). */
+  trackFields?: Partial<Record<TrackField, HTMLElement | null>>;
   config: CursorConfig;
   /** Called after a frame in which the fraction changed (never per pointer event). */
   onFraction?: (fraction: number) => void;
+}
+
+export type TrackField = "speed" | "throttle" | "brake" | "delta";
+
+/** The map readout values at a bin: speed mph to 1 decimal, pedals whole percent, delta signed seconds; `—` when missing. */
+export function trackFieldTexts(aggregate: CursorConfig["aggregate"], bin: number): Record<TrackField, string> {
+  const speed = aggregate.speed[bin]!;
+  const throttle = aggregate.throttle[bin]!;
+  const brake = aggregate.brake[bin]!;
+  const delta = aggregate.delta[bin]!;
+  return {
+    speed: finite(speed) ? speed.toFixed(1) : "—",
+    throttle: finite(throttle) ? (throttle * 100).toFixed(0) : "—",
+    brake: finite(brake) ? (brake * 100).toFixed(0) : "—",
+    delta: finite(delta) ? signed(delta, 3) : "—",
+  };
 }
 
 export interface CursorDiagnostics {
@@ -88,6 +106,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
   let lastReportedFraction = Number.NaN;
   let lastPercentText = "";
   let lastSummaryText = "";
+  const lastFieldTexts: Partial<Record<TrackField, string>> = {};
   let lastMarkerTransform = "";
   let readoutTimer = 0;
   let lastReadoutAt = 0;
@@ -101,7 +120,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
   const context = canvas.getContext("2d");
   const styles = getComputedStyle(surface);
   const token = (name: string, fallback: string): string => styles.getPropertyValue(name).trim() || fallback;
-  const lineColor = token("--color-text-secondary", "#D0D8DC");
+  const lineColor = token("--ri-ice", token("--color-text-secondary", "#D0D8DC"));
   const markerOutline = token("--color-app", "#0B1015");
   const cardFill = token("--color-surface3", "#25333D");
   const cardStroke = token("--color-border-strong", "#4C6572");
@@ -178,6 +197,16 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
       if (text !== lastPercentText) {
         lastPercentText = text;
         options.trackPercent.textContent = text;
+      }
+    }
+    if (options.trackFields) {
+      const texts = trackFieldTexts(config.aggregate, pendingBin);
+      for (const key of Object.keys(options.trackFields) as TrackField[]) {
+        const element = options.trackFields[key];
+        if (element && texts[key] !== lastFieldTexts[key]) {
+          lastFieldTexts[key] = texts[key];
+          element.textContent = texts[key];
+        }
       }
     }
     if (options.trackSummary) {
@@ -472,6 +501,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
       lastMarkerTransform = "";
       lastPercentText = "";
       lastSummaryText = "";
+      for (const key of Object.keys(lastFieldTexts) as TrackField[]) delete lastFieldTexts[key];
       updateMarker();
       updateReadouts(Math.max(0, nearestIndex(config.x, fraction)), true);
       if (cursorActive()) schedule();
@@ -507,6 +537,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     dispose() {
       disposed = true;
       if (frame) cancelAnimationFrame(frame);
+      hideAll();
       if (readoutTimer) window.clearTimeout(readoutTimer);
       resizeObserver?.disconnect();
       surface.removeEventListener("pointerenter", onEnter);

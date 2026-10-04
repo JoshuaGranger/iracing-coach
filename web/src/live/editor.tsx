@@ -41,6 +41,8 @@ export interface EditorProps {
   selectedId: string | null;
   issues: LayoutIssue[];
   saving: boolean;
+  /** False once frames have flowed and none carried ABS activation: Mark ABS is then unavailable. */
+  absRecorded: boolean;
   dirty: boolean;
   onName(name: string): void;
   onBody(body: LayoutBody): void;
@@ -182,8 +184,8 @@ export function LayoutEditor(p: EditorProps) {
           </label>
           {tile.metric === "brake" && tile.style === "trend" ? (
             <label class="check">
-              <input type="checkbox" checked={tile.highlight_abs ?? false} onChange={(e) => set({ highlight_abs: (e.currentTarget as HTMLInputElement).checked })} />
-              <span>Mark ABS</span>
+              <input type="checkbox" checked={tile.highlight_abs ?? false} disabled={!p.absRecorded} onChange={(e) => set({ highlight_abs: (e.currentTarget as HTMLInputElement).checked })} />
+              <span title={p.absRecorded ? undefined : "No ABS data"}>{p.absRecorded ? "Mark ABS" : "Mark ABS (no ABS data)"}</span>
             </label>
           ) : null}
           <div class="editor-row geometry">
@@ -204,7 +206,7 @@ export function LayoutEditor(p: EditorProps) {
           </button>
         </fieldset>
       ) : (
-        <p class="sub">Select a tile on the grid to change it, or drag it to move.</p>
+        <p class="sub">Select a tile.</p>
       )}
 
       {blocking ? (

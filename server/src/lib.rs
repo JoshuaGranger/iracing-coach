@@ -24,6 +24,7 @@ pub mod jobs;
 pub mod rebuild;
 pub mod scheduler;
 pub mod schema;
+pub mod setup_identity;
 pub mod setups;
 pub mod sys;
 pub mod tuning;

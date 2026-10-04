@@ -15,7 +15,7 @@ for (const device of DEVICES) {
       await addNote(page, "Pressures were low");
       const bar = page.getByTestId("outbox");
       await expect(bar).toContainText("1 change waiting to save");
-      await expect(page.getByTestId("offline-banner")).toContainText("1 change is waiting to save");
+      await expect(page.getByTestId("offline-banner")).toContainText("1 change waiting");
       await expect(page.locator(".note-queued")).toContainText("Waiting to save");
       await expectNoHorizontalScroll(page);
       expect((await mockState(request)).notes).toHaveLength(0);
@@ -43,7 +43,7 @@ for (const device of DEVICES) {
       await page.getByRole("button", { name: "Save" }).click();
       const bar = page.getByTestId("outbox");
       await expect(bar).toContainText("1 conflict");
-      await expect(bar).toContainText("changed on the server meanwhile");
+      await expect(bar).toContainText("changed on the server");
       await bar.getByRole("button", { name: "Keep mine" }).click();
       await expect(page.getByTestId("outbox")).toHaveCount(0);
       await expect(page.getByRole("region", { name: "Notes" }).getByText("Mine")).toBeVisible();

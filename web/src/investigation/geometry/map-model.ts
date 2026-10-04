@@ -134,6 +134,8 @@ export interface MapGeometry {
   /** Recorded GPS to map box, null when the geometry has no transform or the point is implausible. */
   projectGps(latitude: number, longitude: number): Point2 | null;
   hasTransform: boolean;
+  /** The Sections highlight may use this map: status usable and every main-loop point carries its lap fraction (audit R8). */
+  sectionsReady: boolean;
 }
 
 export function mapPointAt(points: readonly MapPoint[], percent: number): MapPoint | null {
@@ -212,6 +214,7 @@ export function buildMapGeometry(track: TrackGeometryData | null): MapGeometry |
     pit: road || entry || exit || commitment || merge ? { road, entry, exit, commitment, merge } : null,
     project,
     hasTransform: transform !== null,
+    sectionsReady: track.status.toLowerCase() === "usable" && main.every((point) => typeof point.pct === "number" && Number.isFinite(point.pct)),
     projectGps(latitude, longitude) {
       if (!transform) return null;
       const nx = (longitude - transform.source_bounds.minimum_x) / transform.normalization_scale;

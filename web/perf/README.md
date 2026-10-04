@@ -22,3 +22,5 @@ Throttling is emulation on desktop Chromium, not a phone.
 ## Cursor loop
 
 `src/investigation/cursor/telemetry-cursor.ts`. Per pointer frame: one bin lookup on the shared bin grid, one canvas dirty-rect redraw (cursor line, one marker per visible lap and signal, the per-row value cards), a compositor-only transform for the map marker. The chart rect is cached, the trace SVG takes no pointer events, readouts under the map update at most every 100 ms. Work is bounded by the visible laps (the tooltip capacity of a row), not by the selected lap count.
+
+`node perf/final-screens.mjs [--out dir] [--prefix final] [--size 1536x864]` screenshots every page of the real app (Sessions, Setups, a setup detail and Live from web/mock; Race, Runs, Sections and Traces from the g2 fixture) and fails on a console error. Not a gate.

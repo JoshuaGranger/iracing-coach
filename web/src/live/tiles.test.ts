@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { CHANNELS, CHANNEL_INDEX, CUES, Evidence, FlagState, GapTrend, Priority, RunPhase, TILES, unitLabel } from "../gen/live-channels";
 import type { LiveFrame } from "./frame";
 import { FrameFlag } from "./frame";
-import { TILE_BY_ID, cueText, formatTile, resolveUnit, tileRange, usesPrecision } from "./tiles";
+import { TILE_BY_ID, cueText, displayRange, formatTile, resolveUnit, secondaryLine, tileRange, tileTrend, usesPrecision } from "./tiles";
+import { LiveHistory } from "./history";
 
 function frame(values: Record<string, number>, cue: LiveFrame["cue"] = null, flags: number = FrameFlag.SimConnected): LiveFrame {
   const v: (number | null)[] = Array(CHANNELS.length).fill(null);
@@ -11,6 +12,73 @@ function frame(values: Record<string, number>, cue: LiveFrame["cue"] = null, fla
   return { flags, seq: 1, sessionEpoch: 1, capturedUnixMs: 0, sessionTime: 10, tick: 600, tickRate: 60, tableVersion: 1, channelCount: 45, values: v, cue };
 }
 const tile = (id: string, f: LiveFrame | null, display = {}) => formatTile(TILE_BY_ID.get(id)!, display, f);
+
+describe("what a tile shows under its value", () => {
+  const line = (id: string, f: LiveFrame) => secondaryLine(TILE_BY_ID.get(id)!, tile(id, f));
+  it("keeps the lines that carry a figure and drops descriptions and narrated unknowns", () => {
+    expect(line("last-lap", frame({ last_lap: 92.5, pace_delta_to_leader: 0.134 }))).toBe("+0.134 s vs leader last lap");
+    expect(line("last-lap", frame({ last_lap: 92.5 }))).toBeNull();
+    expect(line("fuel", frame({ fuel: 68, fuel_laps_remaining: 31.44 }))).toBe("31.4 laps");
+    expect(line("fuel", frame({ fuel: 68 }))).toBeNull();
+    expect(line("steering", frame({ steering_road_wheel: 0.1, steering_ratio: 12 }))).toBe("12:1");
+    expect(line("flag", frame({ flag_state: FlagState.Caution }))).toBeNull();
+    expect(line("on-pit-road", frame({ on_pit_road: 1 }))).toBeNull();
+    expect(line("tire-phase", frame({ run_phase: RunPhase.Late }))).toBeNull();
+    expect(line("pit-window", frame({ fuel_hard_limit_laps: 2 }))).toBeNull();
+    expect(line("pace-range", frame({ pace_band_min: 15.25, pace_band_max: 15.5, run_phase: RunPhase.Middle }))).toBe("Middle run");
+  });
+});
+
+describe("display range of gauges, bars and trends (coach_live::tiles::display_range)", () => {
+  const speed = TILE_BY_ID.get("speed")!;
+  it("follows the backend on a steady value: 0 to the value plus 8 %", () => {
+    const r = displayRange(speed, 89.477, tileRange(speed, null, {}), [89.477, 89.477]);
+    expect(r?.min).toBe(0);
+    expect(r?.max).toBeCloseTo(96.636, 2);
+  });
+  it("is the trend window, so it shrinks after a spike leaves it and follows a change of tile", () => {
+    const lateral = TILE_BY_ID.get("lateral-acceleration")!;
+    const spike = displayRange(speed, 90, tileRange(speed, null, {}), [90, 193.39, 90]);
+    const after = displayRange(speed, 90, tileRange(speed, null, {}), [90, 91, 90]);
+    expect(spike!.max).toBeGreaterThan(193);
+    expect(after!.max).toBeLessThan(100);
+    const g = displayRange(lateral, 1.43, tileRange(lateral, null, {}), [-1.43, 1.43]);
+    expect(g!.min).toBeLessThan(-1.43);
+    expect(g!.max).toBeGreaterThan(1.43);
+    expect(g!.max).toBeLessThan(3);
+  });
+  it("pads a flat range by at least 1 and gives nothing without a value", () => {
+    const lateral = TILE_BY_ID.get("lateral-acceleration")!;
+    expect(displayRange(lateral, 0, { min: null, max: null }, [0, 0])).toEqual({ min: -1, max: 1 });
+    expect(displayRange(speed, null, { min: 0, max: null }, [])).toBeNull();
+  });
+});
+
+describe("tile trends plot the tile's own value", () => {
+  const push = (h: LiveHistory, t: number, values: Record<string, number>, cue: LiveFrame["cue"] = null) => {
+    const f = frame(values, cue);
+    f.sessionTime = t;
+    h.push(f);
+  };
+  it("flag as its step, run phase as its ordinal, pace range as its midpoint, cue as its priority", () => {
+    const h = new LiveHistory();
+    push(h, 0, { flag_state: FlagState.Green, run_phase: RunPhase.Middle, pace_band_min: 15.1, pace_band_max: 15.5 }, { id: 1, priority: 100, evidence: 0, args: [] });
+    push(h, 1, { flag_state: FlagState.Caution, run_phase: RunPhase.Late, pace_band_min: 15.1, pace_band_max: 15.5 });
+    const win = { seconds: 30 };
+    const trend = (id: string) => Array.from(tileTrend(h, TILE_BY_ID.get(id)!, {}, win).v);
+    expect(trend("flag")).toEqual([0, 4]);
+    expect(trend("tire-phase")).toEqual([1, 2]);
+    expect(trend("pace-range")[0]).toBeCloseTo(15.3, 5);
+    expect(trend("coach-cue")[0]).toBe(100);
+    expect(Number.isNaN(trend("coach-cue")[1]!)).toBe(true);
+  });
+  it("converts to the display unit", () => {
+    const h = new LiveHistory();
+    push(h, 0, { speed: 62.5 });
+    expect(tileTrend(h, TILE_BY_ID.get("speed")!, {}, { seconds: 30 }).v[0]).toBeCloseTo(139.8, 1);
+    expect(tileTrend(h, TILE_BY_ID.get("speed")!, { unit: "km/h" }, { seconds: 30 }).v[0]).toBeCloseTo(225, 0);
+  });
+});
 
 describe("tile formatting", () => {
   it("shows Waiting until the sim is connected", () => {

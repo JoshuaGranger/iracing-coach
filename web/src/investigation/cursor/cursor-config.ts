@@ -60,15 +60,24 @@ export interface ChartMetrics {
   rowCount: number;
 }
 
+const CHART_TOP = 6;
+const minimumRowHeight = (unit: number): number => Math.round(44 * (unit / DEFAULT_UNIT));
+const axisBandHeight = (unit: number): number => Math.round(20 * (unit / DEFAULT_UNIT));
+
+/** The height `rowCount` rows need at their floor, with the tick band: below it the chart scrolls rather than clip rows. */
+export function chartContentHeight(rowCount: number, unit: number = DEFAULT_UNIT): number {
+  return CHART_TOP + Math.max(1, rowCount) * minimumRowHeight(unit) + axisBandHeight(unit);
+}
+
 /** Row frames for `rowCount` charts in a `width x height` pixel area, with a band below for the x ticks. A row holds a two-line label and a value card, so its floor follows the root font size. */
 export function chartMetrics(width: number, height: number, rowCount: number, unit: number = DEFAULT_UNIT): ChartMetrics {
   const scale = unit / DEFAULT_UNIT;
   const plotLeft = 6;
   const plotRight = 10;
-  const chartTop = 6;
-  const axisBand = Math.round(20 * scale);
+  const chartTop = CHART_TOP;
+  const axisBand = axisBandHeight(unit);
   const rows = Math.max(1, rowCount);
-  const rowHeight = Math.max(Math.round(44 * scale), (height - chartTop - axisBand) / rows);
+  const rowHeight = Math.max(minimumRowHeight(unit), (height - chartTop - axisBand) / rows);
   const plotHeight = Math.max(Math.round(36 * scale), rowHeight - 8);
   return {
     unit,
@@ -140,6 +149,8 @@ export interface CursorInputs {
   trackPoints: MapPoint[];
   initialFraction: number;
   key: string;
+  /** The time-delta zero lap; derived from the selection under the clean rule when omitted. */
+  zeroLap?: number | null;
 }
 
 export function buildCursorConfig(input: CursorInputs): CursorConfig {
@@ -149,7 +160,7 @@ export function buildCursorConfig(input: CursorInputs): CursorConfig {
   const ordered = input.selectedLaps
     .slice()
     .sort((a, b) => (input.spotlightLap === a ? 0 : 1) - (input.spotlightLap === b ? 0 : 1) || a - b);
-  const reference = referenceLapFor(data, ordered);
+  const reference = input.zeroLap !== undefined ? input.zeroLap : referenceLapFor(data, ordered);
   const lapIndices = ordered.map((lap) => data.lapIndex.get(lap)).filter((index): index is number => index !== undefined);
   const detailLaps = boundedCursorLaps(ordered, input.spotlightLap, reference, data.budgets.cursor_detail_traces);
   const rows: CursorRow[] = input.rows.map((row, rowIndex) => {

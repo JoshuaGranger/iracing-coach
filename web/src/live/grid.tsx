@@ -10,7 +10,6 @@ interface GridProps {
   frame: LiveFrame | null;
   history: LiveHistory;
   tick: number;
-  observed: Map<string, { min: number; max: number }>;
   editing?: boolean;
   selectedId?: string | null;
   onSelect?: (id: string | null) => void;
@@ -27,7 +26,7 @@ interface Drag {
 }
 
 /** The dashboard grid, shared by the page and the layout editor. Editing: drag a tile to move it, its corner to resize, arrow keys move, Shift+arrows resize. */
-export function LiveGrid({ body, frame, history, tick, observed, editing = false, selectedId = null, onSelect, onChange, flow = false }: GridProps) {
+export function LiveGrid({ body, frame, history, tick, editing = false, selectedId = null, onSelect, onChange, flow = false }: GridProps) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
 
@@ -113,7 +112,7 @@ export function LiveGrid({ body, frame, history, tick, observed, editing = false
             }}
             onKeyDown={(e) => key(e, t)}
           >
-            <TileView cfg={t} spec={spec} frame={frame} history={history} tick={tick} observed={observed} />
+            <TileView cfg={t} spec={spec} frame={frame} history={history} tick={tick} />
             {editing && selected ? <span class="resize-handle" aria-hidden="true" onPointerDown={(e) => down(e, t, "resize")} /> : null}
           </div>
         );

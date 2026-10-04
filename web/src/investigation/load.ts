@@ -193,6 +193,8 @@ export function createAnalysisLoader(options: LoaderOptions = {}): AnalysisLoade
         for (const [channelId, channel] of extra.channels) if (!current.table.channels.has(channelId)) added.push([channelId, channel]);
         for (const [channelId, channel] of added) current.table.channels.set(channelId, channel);
         for (const signal of missing) current.columns.delete(signal);
+        // The calculated tire-wear row is built from the stress channel.
+        if (missing.includes("tire-stress")) current.columns.delete("tire-wear");
         account(extra.byteLength);
         return current;
       },

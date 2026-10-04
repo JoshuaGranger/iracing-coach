@@ -578,15 +578,18 @@ pub fn default_live_layout() -> Value {
     })
 }
 
-/// Built-in trace layout (`default`), immutable: the six critical channels.
+/// Built-in trace layout (`default`), immutable: the six critical channels, one per row (the
+/// pedals are separate solid-line rows, RA-043A).
 pub fn default_trace_layout() -> Value {
+    let row = |id: &str, signal: &str| json!({"row_id": id, "label": null, "signals": [signal]});
     json!({
         "rows": [
-            {"row_id": "speed", "label": null, "signals": ["speed"]},
-            {"row_id": "delta", "label": null, "signals": ["delta"]},
-            {"row_id": "pedals", "label": null, "signals": ["throttle", "brake"]},
-            {"row_id": "steering", "label": null, "signals": ["steering"]},
-            {"row_id": "slip", "label": null, "signals": ["slip"]},
+            row("critical-speed", "speed"),
+            row("critical-delta", "delta"),
+            row("critical-throttle", "throttle"),
+            row("critical-brake", "brake"),
+            row("critical-steering", "steering"),
+            row("critical-slip", "slip"),
         ]
     })
 }

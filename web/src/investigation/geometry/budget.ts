@@ -69,11 +69,14 @@ export function boundedCursorLaps(selected: number[], spotlight: number | null, 
     .slice(0, budget);
 }
 
-/** Palette of the C# workspace (TelemetryWorkspace.TracePalette); the fastest lap is always magenta. */
+/**
+ * Lap identity palette (TelemetryWorkspace.TracePalette less the colours that imitate the caution yellow or the fastest-lap
+ * magenta, design README "Theme changes"; the pink and the lilac read as the fastest lap next to it); the fastest lap is always
+ * magenta.
+ */
 export const TRACE_PALETTE: readonly string[] = [
-  "#63F5D2", "#FF62D5", "#FFD45B", "#69A7FF", "#A879FF",
-  "#FF7B72", "#66F06A", "#54D6FF", "#FF9D4D", "#E78BFF",
-  "#8EF0FF", "#F5F56B", "#4FE0A4", "#FF6A9A", "#7F8CFF",
-  "#B8F25D", "#FFB56B", "#54ECE5", "#D58CFF", "#F07B67",
+  "#63F5D2", "#69A7FF", "#A879FF", "#FF7B72", "#66F06A",
+  "#54D6FF", "#FF9D4D", "#8EF0FF", "#4FE0A4", "#7F8CFF",
+  "#B8F25D", "#FFB56B", "#54ECE5", "#F07B67",
 ];
 export const FASTEST_LAP_COLOR = "#F05CDB";

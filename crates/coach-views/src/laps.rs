@@ -193,6 +193,60 @@ pub(crate) fn build(
     Ok((out, records))
 }
 
+/// Litres per US gallon, as the analyzer converts (`fuel.used_gal`).
+const LITRES_PER_GALLON: f64 = 3.785411784;
+
+fn round3(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
+}
+
+/// One entry per run that ends in a pit service (`runs[].pit_service`), in run order: the lap the
+/// stop belongs to (the run's `end_lap`), the service window, the tires the backend observed
+/// changed, and the fuel added in litres and gallons. `tires_changed` is null when the backend did
+/// not report the list; an empty list means none observed changed. `fuel_added_gal` is the
+/// backend's litres over 3.785411784, rounded to 3 decimals as the analyzer rounds.
+pub(crate) fn pit_stops(runs: &[Value]) -> Vec<Value> {
+    let mut stops: Vec<(i64, Value)> = Vec::new();
+    for run in runs.iter().filter_map(Value::as_object) {
+        let Some(service) = obj(run, "pit_service").filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let (start, end) = (num(service, "start_time"), num(service, "end_time"));
+        let tires = service
+            .get("tires_changed_observed")
+            .and_then(Value::as_array)
+            .map(|items| {
+                let mut tires: Vec<String> = items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(|t| t.trim().to_ascii_uppercase())
+                    .filter(|t| matches!(t.as_str(), "LF" | "LR" | "RF" | "RR"))
+                    .collect();
+                tires.sort();
+                tires.dedup();
+                tires
+            });
+        let litres = num(service, "fuel_added_l");
+        let number = int(run, "run_number");
+        stops.push((
+            number.unwrap_or(i64::MAX),
+            json!({
+                "run_number": number,
+                "lap": int(run, "end_lap"),
+                "start_time_s": start,
+                "end_time_s": end,
+                "service_s": start.zip(end).filter(|(a, b)| b >= a).map(|(a, b)| round3(b - a)),
+                "tires_changed": tires,
+                "fuel_added_l": litres,
+                "fuel_added_gal": litres.map(|l| round3(l / LITRES_PER_GALLON)),
+                "post_run_service": flag(run, "ended_with_post_run_service") == Some(true),
+            }),
+        ));
+    }
+    stops.sort_by_key(|(number, _)| *number);
+    stops.into_iter().map(|(_, stop)| stop).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -286,5 +340,40 @@ mod tests {
     fn a_lap_without_a_number_is_malformed() {
         let err = build(&[json!({"complete": true})], &[], None).unwrap_err();
         assert!(matches!(err, ProjectError::Json { .. }));
+    }
+
+    #[test]
+    fn pit_stops_list_each_service_with_its_lap_tires_and_fuel() {
+        let runs = vec![
+            json!({"run_number": 2, "end_lap": 80, "ended_with_post_run_service": true,
+                "pit_service": {"start_time": 3000.0, "end_time": 3004.5, "fuel_added_l": 0.0,
+                    "tires_changed_observed": []}}),
+            json!({"run_number": 1, "end_lap": 41,
+                "pit_service": {"start_time": 2022.85, "end_time": 2035.85, "fuel_added_l": 45.402,
+                    "tires_changed_observed": ["rr", "LF", "LR", "RF", "RF", "XX"]}}),
+            json!({"run_number": 3, "end_lap": 90, "pit_service": {}}),
+            json!({"run_number": 4, "end_lap": 99}),
+            json!({"run_number": 5, "end_lap": 120,
+                "pit_service": {"start_time": 5.0, "fuel_added_l": null}}),
+        ];
+        let stops = pit_stops(&runs);
+        assert_eq!(stops.len(), 3, "an empty or absent service is not a stop");
+        assert_eq!(stops[0]["run_number"], 1);
+        assert_eq!(stops[0]["lap"], 41);
+        assert_eq!(stops[0]["service_s"], 13.0);
+        assert_eq!(stops[0]["tires_changed"], json!(["LF", "LR", "RF", "RR"]));
+        assert_eq!(stops[0]["fuel_added_l"], 45.402);
+        assert_eq!(stops[0]["fuel_added_gal"], 11.994);
+        assert_eq!(stops[0]["post_run_service"], false);
+        assert_eq!(stops[1]["run_number"], 2);
+        assert_eq!(stops[1]["tires_changed"], json!([]));
+        assert_eq!(stops[1]["fuel_added_gal"], 0.0);
+        assert_eq!(stops[1]["post_run_service"], true);
+        // missing values stay null, never zero
+        assert_eq!(stops[2]["run_number"], 5);
+        assert_eq!(stops[2]["tires_changed"], Value::Null);
+        assert_eq!(stops[2]["fuel_added_l"], Value::Null);
+        assert_eq!(stops[2]["fuel_added_gal"], Value::Null);
+        assert_eq!(stops[2]["service_s"], Value::Null);
     }
 }

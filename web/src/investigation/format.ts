@@ -1,10 +1,11 @@
 /** Presentation helpers for the investigation (InvestigationPresentation.cs). Values are formatted, never derived. */
 
-export const RUN_COLORS = ["var(--color-accent)", "var(--color-warning)", "var(--color-info)", "var(--telemetry-steering)", "var(--telemetry-slower-delta)", "var(--telemetry-speed)"];
-export const RUN_DASHES = ["", "7 4", "2 3", "10 3 2 3", "4 4", "1 2"];
+/** Runs are identity, not data: the white family, told apart by dashes (run 1 solid, 2 dashed, 3 dotted). */
+export const RUN_COLORS = ["var(--ri-run1)", "var(--ri-run2)", "var(--ri-run3)"];
+export const RUN_DASHES = ["", "8 5", "2 4", "10 3 2 3", "4 4", "1 2"];
 
 export function runColor(run: number | null | undefined): string {
-  return run !== null && run !== undefined && run > 0 ? RUN_COLORS[(run - 1) % RUN_COLORS.length]! : "var(--color-text-muted)";
+  return run !== null && run !== undefined && run > 0 ? RUN_COLORS[(run - 1) % RUN_COLORS.length]! : "var(--ri-t3)";
 }
 
 export function runDash(run: number | null | undefined): string {
@@ -65,6 +66,10 @@ const REASONS: Record<string, string> = {
   stopped_on_track: "stopped on track",
   caution_or_mixed: "caution",
   off_track: "off track",
+  pit: "pit",
+  partial: "partial",
+  restart: "restart",
+  pit_tow_or_repair_episode_overlap: "tow/repair",
 };
 
 export function reason(code: string): string {

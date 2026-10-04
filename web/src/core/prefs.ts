@@ -6,17 +6,16 @@ import { readJson, writeJson } from "./store";
 
 export type DriverPrefs = Schemas["DriverPrefs"];
 export type DriverPrefsWrite = Schemas["DriverPrefsWrite"];
-/**
- * What this app writes: the contract's fields plus `text_size` (core/text-size.ts), which the contract does not declare yet. The server
- * keeps unknown top-level fields of PUT prefs, so it is stored and returned like the declared ones.
- */
-export type DriverPrefsPatch = DriverPrefsWrite & { text_size?: string | null };
+/** What this app writes: the contract's fields (`text_size`, `session_filters` and `setup_filters` included). */
+export type DriverPrefsPatch = DriverPrefsWrite;
 export type LastInvestigation = Schemas["LastInvestigation"];
+export type TextSize = Schemas["TextSize"];
+export type SessionFilters = Schemas["SessionFilters"];
+export type SetupFilters = Schemas["SetupFilters"];
 
 /**
- * Driver preferences (active live layout, last investigation, motion, safe glance, units, text size). Writes go through the
- * outbox with the version last read. The last investigation is also kept in localStorage so "resume" works
- * before the server answers and when it is down.
+ * Driver preferences (active layouts, last investigation, motion, safe glance, units, text size, page filters). Writes go through
+ * the outbox with the version last read.
  */
 export function usePrefs(customerId: number | null) {
   const key = customerId === null ? null : paths.prefs(customerId);

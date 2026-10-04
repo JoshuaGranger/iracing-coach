@@ -207,8 +207,9 @@ impl Default for Parts {
 }
 
 impl App {
-    /// Opens the store, starts the archiver, reconciles the spool against SQLite (before any
-    /// listener opens) and starts the background loops when `cfg.background` is set.
+    /// Opens the store, starts the archiver, reconciles setup identity and the spool against
+    /// SQLite (before any listener opens) and starts the background loops when `cfg.background`
+    /// is set.
     pub async fn start(cfg: Config, parts: Parts) -> Result<AppState> {
         cfg.ensure_dirs()?;
         if !cfg.contracts_dir.is_dir() {
@@ -242,6 +243,8 @@ impl App {
             started: Instant::now(),
             cfg,
         });
+        // Before anything stores an observation under the current rule (setup-keys.json).
+        crate::setup_identity::reconcile_on_start(&app).await;
         crate::ingest::reconcile(&app).await?;
         crate::jobs::recover(&app).await?;
         if app.cfg.background {

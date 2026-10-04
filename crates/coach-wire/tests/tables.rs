@@ -81,7 +81,8 @@ fn conversions() {
 
 #[test]
 fn setup_key_patterns_are_present() {
-    assert_eq!(setup_keys::VERSION, 1);
+    assert_eq!(setup_keys::VERSION, 2);
     assert_eq!(setup_keys::EXCLUDED_LEAF_PATTERNS.len(), 7);
     assert!(setup_keys::EXCLUDED_LEAF_PATTERNS.contains(&("^CornerWeight$", "derived")));
+    assert!(setup_keys::EXCLUDED_LEAF_PATTERNS.contains(&("^(Arb|TruckArm)?Preload$", "derived")));
 }

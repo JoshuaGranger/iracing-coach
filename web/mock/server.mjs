@@ -1,7 +1,7 @@
 // Fixture server for web development and the Playwright app project: node mock/server.mjs [--port 4173] [--dist dist]
 // Serves the built SPA and the /api/v1 surface of docs/08-rewrite/contracts/api.openapi.yaml from fixture data,
 // plus the live WebSocket (binary frames from the generated channel table) and SSE.
-// Test control: POST /__mock/state {drivers, live, conflictNext, failWrites, delayMs, reset} and POST /__mock/event {...ServerEvent}.
+// Test control: POST /__mock/state {drivers, live, liveStalled, conflictNext, failWrites, failChannels, delayMs, reset} and POST /__mock/event {...ServerEvent}.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
@@ -16,6 +16,7 @@ import {
   RECOMMENDATION_RESULT,
   TRACE_SIGNALS,
   builtinLayouts,
+  traceChannels,
   createState,
   drivers,
   traceBinary,
@@ -93,8 +94,24 @@ function sessionDetail(s) {
     analyses,
     setup_ids: [1],
     notes_count: state.notes.filter((n) => n.subject_kind === "session" && n.subject_id === String(s.session_id)).length,
-    event_sessions: Object.values(state.sessions).flat().filter((x) => x.customer_id === s.customer_id && x.event_key === s.event_key && x.session_id !== s.session_id).map((x) => ({ session_id: x.session_id, session_type: x.session_type })),
+    event_sessions: Object.values(state.sessions).flat().filter((x) => x.customer_id === s.customer_id && x.event_key === s.event_key && x.session_id !== s.session_id).map((x) => ({ session_id: x.session_id, session_type: x.session_type, analysis_state: x.analysis_state, analysis_reason: x.analysis_reason ?? null })),
   };
+}
+
+/** A closed circuit per analysis (three shapes), normalized: the track view's main path for the silhouette and the map. */
+function circuitPath(analysisId) {
+  const k = [...String(analysisId)].reduce((sum, c) => sum + c.charCodeAt(0), 0) % 3;
+  const n = 180;
+  const pct = [];
+  const x = [];
+  const y = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    pct.push(i / n);
+    x.push(0.5 + (0.42 + 0.06 * Math.cos(3 * t) * k) * Math.cos(t));
+    y.push(0.5 + (0.28 + 0.05 * Math.sin(2 * t) * (k + 1)) * Math.sin(t));
+  }
+  return { pct, x, y };
 }
 
 function envelope(analysisId) {
@@ -142,17 +159,29 @@ async function route(req, res, url) {
 
   if ((r = p.match(/^\/api\/v1\/drivers\/(\d+)\/sessions$/)) && m === "GET") {
     const c = Number(r[1]);
-    const type = url.searchParams.get("type");
+    // Repeated filters as the contract has them: values within one filter are alternatives, filters combine.
+    const types = url.searchParams.getAll("type");
+    const cars = url.searchParams.getAll("car");
+    const tracks = url.searchParams.getAll("track");
+    const series = url.searchParams.getAll("series");
+    const setup = url.searchParams.get("setup");
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
     const limit = Number(url.searchParams.get("limit") ?? 50);
     const offset = Number(url.searchParams.get("cursor") ?? 0);
-    let list = (state.sessions[c] ?? []).filter((s) => !type || type === "all" || (s.session_type ?? "").toLowerCase().startsWith(type));
+    let list = (state.sessions[c] ?? []).filter(
+      (s) =>
+        (types.length === 0 || types.includes("all") || types.some((t) => (s.session_type ?? "").toLowerCase().startsWith(t))) &&
+        (cars.length === 0 || cars.includes(s.car_path)) &&
+        (tracks.length === 0 || tracks.includes(s.track)) &&
+        (series.length === 0 || series.includes(s.series_name)) &&
+        (!setup || (setup === "fixed" ? s.is_fixed_setup === true : s.is_fixed_setup === false)),
+    );
     if (q) list = list.filter((s) => [s.track, s.track_config, s.car_name, s.series_name].join(" ").toLowerCase().includes(q));
     const page = list.slice(offset, offset + limit);
     return json(res, 200, { sessions: page, next_cursor: offset + limit < list.length ? String(offset + limit) : null });
   }
   if ((r = p.match(/^\/api\/v1\/drivers\/(\d+)\/cars-and-tracks$/)))
-    return json(res, 200, { cars: [{ car_path: "nascar-xfinity", car_name: "NASCAR Xfinity Toyota Supra" }, { car_path: "mx5-cup", car_name: "Global Mazda MX-5 Cup" }], tracks: [{ track: "Bristol Motor Speedway", track_config: "Oval" }, { track: "Lime Rock Park", track_config: "Grand Prix" }, { track: "New Hampshire Motor Speedway", track_config: "Oval" }] });
+    return json(res, 200, { cars: [{ car_path: "nascar-xfinity", car_name: "NASCAR Xfinity Toyota Supra" }, { car_path: "mx5-cup", car_name: "Global Mazda MX-5 Cup" }], tracks: [{ track: "Bristol Motor Speedway", track_config: "Oval" }, { track: "Lime Rock Park", track_config: "Grand Prix" }, { track: "New Hampshire Motor Speedway", track_config: "Oval" }], series: [{ series_name: "Global Mazda MX-5 Cup" }, { series_name: "NASCAR Xfinity Series" }] });
   if ((r = p.match(/^\/api\/v1\/sessions\/(\d+)$/))) {
     const s = findSession(Number(r[1]));
     return s ? json(res, 200, sessionDetail(s)) : err(res, 404, "not_found", "No such session");
@@ -176,15 +205,26 @@ async function route(req, res, url) {
   if ((r = p.match(/^\/api\/v1\/analyses\/([^/]+)\/(race|runs|investigation|track|tuning)$/)) && m === "GET") {
     const [, a, what] = r;
     if (what === "tuning") return json(res, 200, tuningContext(a, Object.values(state.sessions).flat()));
-    if (what === "race") return json(res, 200, { ...envelope(a), identity: { track_name: "Bristol Motor Speedway", car_name: "NASCAR Xfinity Toyota Supra" }, race_summary: { recorded_laps: 12 }, laps: Array.from({ length: 12 }, (_, i) => ({ lap: i + 1, lap_time_s: 15.2 + i * 0.01, comparison_eligible: true, exclusion_reasons: [] })) });
+    if (what === "race")
+      return json(res, 200, {
+        ...envelope(a),
+        identity: { track_name: "Bristol Motor Speedway", car_name: "NASCAR Xfinity Toyota Supra" },
+        race_summary: { recorded_laps: 12 },
+        laps: Array.from({ length: 12 }, (_, i) => ({ lap: i + 1, lap_time_s: 15.2 + i * 0.01, comparison_eligible: true, exclusion_reasons: [] })),
+        // The projector's pit stops (RaceView.pit_stops): one four-tire stop with fuel on lap 6.
+        pit_stops: [{ run_number: 1, lap: 6, start_time_s: 95.2, end_time_s: 109.0, service_s: 13.8, tires_changed: ["LF", "LR", "RF", "RR"], fuel_added_l: 45.425, fuel_added_gal: 12.0, post_run_service: false }],
+      });
     if (what === "runs") return json(res, 200, { ...envelope(a), runs: [] });
     if (what === "investigation") return json(res, 200, { ...envelope(a), race_investigation: { schema_version: 2, status: "available", comparisons: [], laps: [], runs: [], timeline: [] } });
-    return json(res, 200, { ...envelope(a), coordinate_space: "normalized_local_vector", status: "usable", main_path: { pct: [0, 0.5], x: [0.1, 0.9], y: [0.5, 0.5] }, provenance: {} });
+    return json(res, 200, { ...envelope(a), coordinate_space: "normalized_local_vector", status: "usable", main_path: circuitPath(a), provenance: {} });
   }
   if ((r = p.match(/^\/api\/v1\/analyses\/([^/]+)\/traces\/catalog$/)))
-    return json(res, 200, { ...envelope(r[1]), bins_per_lap: 160, laps: Array.from({ length: 12 }, (_, i) => ({ lap: i + 1, lap_time_s: 15.2, comparison_eligible: true, exclusion_reasons: [] })), signals: TRACE_SIGNALS, omitted_signals: [], steering_basis: { basis: "steering_wheel" }, budgets: { vertex_budget_per_signal: 48000, min_points_per_trace: 48, max_color_groups: 20, cursor_detail_traces: 24, max_trace_rows: 10 } });
+    return json(res, 200, { ...envelope(r[1]), bins_per_lap: 160, sector_start_pcts: [0, 0.5], laps: Array.from({ length: 12 }, (_, i) => ({ lap: i + 1, lap_time_s: 15.2, comparison_eligible: true, exclusion_reasons: [], sector_times_s: [7.6, 7.6] })), signals: TRACE_SIGNALS, omitted_signals: [], steering_basis: { basis: "steering_wheel" }, budgets: { vertex_budget_per_signal: 48000, min_points_per_trace: 48, max_color_groups: 20, cursor_detail_traces: 24, max_trace_rows: 10 } });
   if ((r = p.match(/^\/api\/v1\/analyses\/([^/]+)\/traces$/))) {
-    const body = traceBinary(r[1]);
+    const requested = url.searchParams.get("channels")?.split(",").filter(Boolean) ?? null;
+    // Test control: failChannels makes a request for any of those channels answer 503 (a lost channel request, review finding 8).
+    if (requested && requested.some((id) => (state.config.failChannels ?? []).includes(id))) return err(res, 503, "unavailable", "Mock outage");
+    const body = traceBinary(r[1], 12, 160, traceChannels(requested));
     res.writeHead(200, { "Content-Type": "application/vnd.coach.columns", "Content-Length": body.length, "X-Coach-Trace-Laps": "12" });
     return res.end(body);
   }
@@ -200,9 +240,11 @@ async function route(req, res, url) {
     const c = Number(r[1]);
     const car = url.searchParams.get("car_path");
     const q = (url.searchParams.get("q") ?? "").toLowerCase();
-    const raced = url.searchParams.get("raced_only") === "true";
-    let list = (state.setups[c] ?? []).map((s) => s.summary).filter((s) => (!car || s.car_path === car) && (!raced || s.raced) && (!q || [...s.names, s.car_name].join(" ").toLowerCase().includes(q)));
-    return json(res, 200, { setups: list, unlinked_files: state.unlinked[c] ?? [], next_cursor: null });
+    // `raced=true|false` overrides the older `raced_only=true`; raced setups only means no unlinked files.
+    const racedParam = url.searchParams.get("raced");
+    const raced = racedParam === "true" || racedParam === "false" ? racedParam === "true" : url.searchParams.get("raced_only") === "true" ? true : null;
+    let list = (state.setups[c] ?? []).map((s) => s.summary).filter((s) => (!car || s.car_path === car) && (raced === null || s.raced === raced) && (!q || [...s.names, s.car_name].join(" ").toLowerCase().includes(q)));
+    return json(res, 200, { setups: list, unlinked_files: raced === true ? [] : (state.unlinked[c] ?? []), next_cursor: null });
   }
   if ((r = p.match(/^\/api\/v1\/setups\/(\d+)$/))) {
     const s = Object.values(state.setups).flat().find((x) => x.summary.setup_id === Number(r[1]));
@@ -288,8 +330,23 @@ async function route(req, res, url) {
   }
   if ((r = p.match(/^\/api\/v1\/drivers\/(\d+)\/trace-layouts$/))) {
     const c = Number(r[1]);
-    const builtin = { layout_id: "default", name: "Default", version: 1, builtin: true, body: { rows: [{ row_id: "speed", signals: ["speed"] }, { row_id: "inputs", signals: ["throttle", "brake"] }] } };
+    // The server's built-in Default (server/src/hub.rs default_trace_layout): the six critical channels, one per row.
+    const critical = ["speed", "delta", "throttle", "brake", "steering", "slip"];
+    const builtin = { layout_id: "default", name: "Default", version: 1, builtin: true, body: { rows: critical.map((id) => ({ row_id: `critical-${id}`, label: null, signals: [id] })) } };
     return json(res, 200, { layouts: [builtin, ...(state.traceLayouts[c] ?? [])] });
+  }
+  if ((r = p.match(/^\/api\/v1\/drivers\/(\d+)\/trace-layouts\/([a-z0-9-]+)$/)) && m === "DELETE") {
+    const c = Number(r[1]);
+    if (r[2] === "default") return err(res, 403, "builtin_immutable", "Built-in layouts cannot change");
+    const list = state.traceLayouts[c] ?? [];
+    const cur = list.find((l) => l.layout_id === r[2]);
+    if (!cur) return err(res, 404, "not_found", "No such layout");
+    return versioned(req, res, cur, () => {
+      state.traceLayouts[c] = list.filter((l) => l !== cur);
+      state.writes.push({ path: p, method: "DELETE" });
+      res.writeHead(204);
+      res.end();
+    });
   }
   if ((r = p.match(/^\/api\/v1\/drivers\/(\d+)\/trace-layouts\/([a-z0-9-]+)$/)) && m === "PUT") {
     const c = Number(r[1]);
@@ -305,14 +362,15 @@ async function route(req, res, url) {
   }
   if ((r = p.match(/^\/api\/v1\/drivers\/(\d+)\/live-layouts$/))) {
     const c = Number(r[1]);
-    return json(res, 200, { layouts: [...builtinLayouts(), ...(state.liveLayouts[c] ?? [])], active_layout_id: state.activeLayout[c] ?? "factory-default" });
+    const mine = userLayouts(c);
+    return json(res, 200, { layouts: [...onlyBuiltin(), ...mine], active_layout_id: state.activeLayout[c] ?? "factory-default" });
   }
   if ((r = p.match(/^\/api\/v1\/drivers\/(\d+)\/live-layouts\/([a-z0-9-]+)$/))) {
     const c = Number(r[1]);
     const id = r[2];
-    const list = (state.liveLayouts[c] ??= []);
+    const list = userLayouts(c);
     const cur = list.find((l) => l.layout_id === id);
-    if (builtinLayouts().some((l) => l.layout_id === id)) return err(res, 403, "builtin_immutable", "Built-in layouts cannot change");
+    if (onlyBuiltin().some((l) => l.layout_id === id)) return err(res, 403, "builtin_immutable", "Built-in layouts cannot change");
     if (m === "PUT") {
       const body = await readBody(req);
       return versioned(req, res, cur, () => {
@@ -361,6 +419,19 @@ function serveStatic(req, res, url) {
   const ext = path.extname(file);
   res.writeHead(200, { "Content-Type": TYPES[ext] ?? "application/octet-stream", "Cache-Control": ext === ".html" ? "no-cache" : "max-age=3600" });
   fs.createReadStream(file).pipe(res);
+}
+
+// Like the real server (server/src/userdata.rs): only Default is built in. Race and Qualifying are seeded as editable layouts.
+const SEEDED_LAYOUTS = ["factory-race", "factory-qualifying"];
+const onlyBuiltin = () => builtinLayouts().filter((l) => !SEEDED_LAYOUTS.includes(l.layout_id));
+function userLayouts(customer) {
+  const list = (state.liveLayouts[customer] ??= []);
+  state.seededLayouts ??= {};
+  if (!state.seededLayouts[customer]) {
+    state.seededLayouts[customer] = true;
+    for (const l of builtinLayouts()) if (SEEDED_LAYOUTS.includes(l.layout_id)) list.push({ ...l, builtin: false });
+  }
+  return list;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -498,10 +569,11 @@ server.on("upgrade", (req, socket) => {
     for (let i = 0; i < backlogFrames; i++) socket.write(frame(-12 + i / 10, 1 | 64, null));
   }
   let timer = null;
+  // Frames flow while the sim is live, whenever that starts; `liveStalled` stops them on an open socket (a collector that went silent).
   const arm = () => {
     clearInterval(timer);
-    if (!live) return;
     timer = setInterval(() => {
+      if (!state.config.live || state.config.liveStalled) return;
       t += 1 / rate;
       socket.write(frame(t, 1 | 2, { id: 13, priority: 0, evidence: 1, args: [] }));
     }, Math.round(1000 / rate));

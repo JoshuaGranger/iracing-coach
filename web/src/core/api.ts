@@ -1,4 +1,4 @@
-import type { components } from "../gen/api";
+import type { components, paths as paths_ } from "../gen/api";
 import { createStore } from "./store";
 import { uuid4 } from "./uuid";
 
@@ -111,25 +111,35 @@ export async function getJson<T>(path: string, opts?: RequestOptions): Promise<T
   return (await request<T>("GET", path, undefined, opts)).body;
 }
 
-const qs = (params: Record<string, string | number | boolean | null | undefined>): string => {
+type QueryValue = string | number | boolean | null | undefined;
+
+/** Query string; an array repeats its key (`car=a&car=b`), the contract's form for filters that take several values. */
+export const qs = (params: Record<string, QueryValue | readonly QueryValue[]>): string => {
   const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") p.set(k, String(v));
+  const add = (k: string, v: QueryValue) => {
+    if (v !== undefined && v !== null && v !== "") p.append(k, String(v));
+  };
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) for (const item of v) add(k, item);
+    else add(k, v as QueryValue);
+  }
   const s = p.toString();
   return s ? `?${s}` : "";
 };
 
 const enc = encodeURIComponent;
 
+type SessionsQuery = NonNullable<paths_["/api/v1/drivers/{customer_id}/sessions"]["get"]["parameters"]["query"]>;
+
 /** Paths, so the outbox and the cache agree on keys. */
 export const paths = {
   drivers: "/api/v1/drivers",
   status: "/api/v1/status",
-  sessions: (c: number, q: { type?: string; q?: string; cursor?: string | null; limit?: number } = {}) =>
-    `/api/v1/drivers/${c}/sessions${qs(q)}`,
+  sessions: (c: number, q: Omit<SessionsQuery, "cursor"> & { cursor?: string | null } = {}) => `/api/v1/drivers/${c}/sessions${qs(q)}`,
   session: (id: number) => `/api/v1/sessions/${id}`,
   sessionAnalysis: (id: number) => `/api/v1/sessions/${id}/analysis`,
   carsAndTracks: (c: number) => `/api/v1/drivers/${c}/cars-and-tracks`,
-  setups: (c: number, q: { car_path?: string; q?: string; raced_only?: boolean; cursor?: string | null; limit?: number } = {}) =>
+  setups: (c: number, q: { car_path?: string; q?: string; raced?: boolean; cursor?: string | null; limit?: number } = {}) =>
     `/api/v1/drivers/${c}/setups${qs(q)}`,
   setup: (id: number) => `/api/v1/setups/${id}`,
   setupCompare: "/api/v1/setups/compare",

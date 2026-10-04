@@ -18,9 +18,7 @@ export function DriversPage() {
   if (only) return <Loading what="sessions" />;
   if (drivers.length === 0) {
     return (
-      <Empty title="No drivers yet">
-        Recordings appear here after the collector on the sim PC uploads its first session.
-      </Empty>
+      <Empty title="No drivers yet">The first recording from the sim PC appears here.</Empty>
     );
   }
   return (
@@ -33,7 +31,7 @@ export function DriversPage() {
               <span class="card-title">{d.name}</span>
               <span class="card-meta">
                 {d.irating != null ? `${d.irating} iR · ` : ""}
-                {plural(d.session_count, "session")} · last {formatDate(d.last_session_at)}
+                {plural(d.session_count, "session")} · {formatDate(d.last_session_at)}
               </span>
               {d.live ? <Chip tone="good">Live</Chip> : null}
             </a>

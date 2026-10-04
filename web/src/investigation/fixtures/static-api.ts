@@ -14,6 +14,20 @@ export interface StaticAnalysisFiles {
   track: string | null;
   catalog: string;
   ccol: Uint8Array;
+  /** Serve the committed body unchanged for a bare `traces` request (every channel), as the first harness did. */
+  wholeBody?: boolean;
+}
+
+let defaultIdsCache: { catalog: string; ids: string[] } | null = null;
+
+/** The catalog's default channel set (`TraceSignal.default`), in body order. */
+function defaultChannels(files: StaticAnalysisFiles, table: { channels: Map<string, unknown> }): string[] {
+  if (defaultIdsCache?.catalog !== files.catalog) {
+    const catalog = JSON.parse(files.catalog) as { signals?: { id: string; default?: boolean }[] };
+    defaultIdsCache = { catalog: files.catalog, ids: (catalog.signals ?? []).filter((signal) => signal.default === true).map((signal) => signal.id) };
+  }
+  const wanted = new Set(defaultIdsCache.ids);
+  return [...table.channels.keys()].filter((id) => wanted.has(id));
 }
 
 /** `1-40,52` into lap numbers; null when the text is not a lap range list. */
@@ -53,12 +67,13 @@ function traces(files: StaticAnalysisFiles, url: URL): FixtureResponse {
   const contentType = "application/vnd.coach.columns";
   const channelQuery = url.searchParams.get("channels");
   const lapQuery = url.searchParams.get("laps");
-  if (channelQuery === null && lapQuery === null) return { status: 200, contentType, body: files.ccol };
+  if (files.wholeBody && channelQuery === null && lapQuery === null) return { status: 200, contentType, body: files.ccol };
   const buffer = files.ccol.buffer.slice(files.ccol.byteOffset, files.ccol.byteOffset + files.ccol.byteLength) as ArrayBuffer;
   const table = decodeCcol(buffer);
   const wantedLaps = lapQuery === null ? table.laps : parseLapRanges(lapQuery);
   if (wantedLaps === null) return badRequest("laps is not a lap range list");
-  const wantedChannels = channelQuery === null ? [...table.channels.keys()] : channelQuery.split(",").filter((id) => id.length > 0);
+  // Without `channels` the server answers the catalog's default set (openapi `channels` default), not every channel (audit T5).
+  const wantedChannels = channelQuery === null ? defaultChannels(files, table) : channelQuery.split(",").filter((id) => id.length > 0);
   const unknown = wantedChannels.filter((id) => !table.channels.has(id));
   if (unknown.length) return badRequest(`unknown channels ${unknown.join(",")}`);
   const rows = wantedLaps.map((lap) => table.laps.indexOf(lap));

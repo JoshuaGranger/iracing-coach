@@ -121,11 +121,13 @@ pub(crate) fn is_python_imaginary(token: &str) -> bool {
 }
 
 /// A `setup-keys.json` pattern: `^`, then ASCII letters and digits with at most one group
-/// `(a|b|...)` of such non-empty literals, then an optional `$`. Matching folds ASCII case.
+/// `(a|b|...)` of such non-empty literals, which a `?` after it makes optional, then an optional
+/// `$`. A pattern always needs at least one letter outside an optional group, so none matches an
+/// empty segment. Matching folds ASCII case.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LeafPattern {
     head: String,
-    /// One empty entry when the pattern has no group.
+    /// One empty entry when the pattern has no group; an optional group adds an empty entry.
     alternatives: Vec<String>,
     tail: String,
     whole: bool,
@@ -154,17 +156,27 @@ impl LeafPattern {
             None => (body, vec![String::new()], ""),
             Some(open) => {
                 let close = open + body[open..].find(')')?;
-                let alternatives: Vec<String> = body[open + 1..close]
+                let mut alternatives: Vec<String> = body[open + 1..close]
                     .split('|')
                     .map(str::to_owned)
                     .collect();
                 if alternatives.iter().any(|a| a.is_empty() || !literal(a)) {
                     return None;
                 }
-                (&body[..open], alternatives, &body[close + 1..])
+                let rest = &body[close + 1..];
+                let tail = match rest.strip_prefix('?') {
+                    Some(tail) => {
+                        alternatives.push(String::new());
+                        tail
+                    }
+                    None => rest,
+                };
+                (&body[..open], alternatives, tail)
             }
         };
-        if !literal(head) || !literal(tail) || (head.is_empty() && alternatives == [""]) {
+        let may_be_empty = alternatives.iter().any(String::is_empty);
+        if !literal(head) || !literal(tail) || (head.is_empty() && tail.is_empty() && may_be_empty)
+        {
             return None;
         }
         Some(LeafPattern {
@@ -279,13 +291,56 @@ mod tests {
             "^Corner Weight",
             "^Ärger",
             "^a_b",
+            // an optional group: only directly after the group, and never alone
+            "^(a|b)?",
+            "^(a|b)?$",
+            "^(a)?$",
+            "^(a|b)??x",
+            "^(a|b)*x",
+            "^(a|b)+x",
+            "^a?b",
+            "^?a",
+            "^(a|b)x?",
+            "^(?a|b)x",
         ] {
             assert_eq!(LeafPattern::parse(pattern), None, "{pattern}");
         }
     }
 
     #[test]
+    fn an_optional_group_may_be_absent() {
+        let pattern = LeafPattern::parse("^(Arb|TruckArm)?Preload$").expect("in the subset");
+        for yes in [
+            "Preload",
+            "PRELOAD",
+            "ArbPreload",
+            "arbpreload",
+            "TruckArmPreload",
+        ] {
+            assert!(pattern.matches(yes), "{yes}");
+        }
+        for no in [
+            "DiffPreload",
+            "PreloadOffset",
+            "ArbPreloadX",
+            "TruckPreload",
+            "Pre",
+            "",
+        ] {
+            assert!(!pattern.matches(no), "{no}");
+        }
+        let prefix = LeafPattern::parse("^Last(Hot|Cold)?Temp").expect("in the subset");
+        assert!(prefix.matches("LastTempsOMI"));
+        assert!(prefix.matches("LastHotTemp"));
+        assert!(!prefix.matches("LastWarmTemp"));
+        let head_only = LeafPattern::parse("^Ride(Height)?").expect("in the subset");
+        assert!(head_only.matches("Ride"));
+        assert!(head_only.matches("RideHeightLF"));
+    }
+
+    #[test]
     fn leaf_patterns_match_with_ascii_case_folding() {
+        // a required group: one of its literals must be there
         let pattern = LeafPattern::parse("^(Arb|TruckArm)Preload$").expect("in the subset");
         assert!(pattern.matches("ArbPreload"));
         assert!(pattern.matches("TRUCKARMPRELOAD"));

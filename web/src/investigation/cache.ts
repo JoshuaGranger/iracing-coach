@@ -72,7 +72,7 @@ export function createAnalysisCache<T>(options: CacheOptions = {}): AnalysisCach
       total += bytes - slot.bytes;
       slot.bytes = bytes;
       if (total > maxBytes) {
-        // The grown entry alone may not fit: drop the others first, then the entry itself.
+        // The grown entry alone can exceed the budget: drop the others first, then the entry itself.
         evict(key);
         if (total > maxBytes) {
           total -= slot.bytes;

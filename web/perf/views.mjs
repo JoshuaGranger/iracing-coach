@@ -38,7 +38,7 @@ for (const [sizeName, viewport] of Object.entries(VIEWPORTS)) {
       innerWidth: window.innerWidth,
       scrollHeight: document.documentElement.scrollHeight,
       innerHeight: window.innerHeight,
-      small: [...document.querySelectorAll(".ri-tab, .ri-button, .ri-text-button, .ri-lap-row, .ri-section, .ri-comparison")]
+      small: [...document.querySelectorAll(".ri-tab, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-icon-pill, .ri-pqr-seg, .ri-text-button, .ri-lap-row, .ri-section, .ri-comparison")]
         .map((element) => ({ name: element.className, box: element.getBoundingClientRect() }))
         .filter((item) => item.box.width > 0 && item.box.height > 0 && item.box.height < 44)
         .map((item) => `${item.name}:${Math.round(item.box.height)}`),
@@ -70,9 +70,40 @@ for (const [sizeName, viewport] of Object.entries(VIEWPORTS)) {
       const diag = await page.evaluate(() => window.__g2.diagnostics());
       check(`${label} cursor draws markers and cards`, diag.cursor.markersDrawn > 0 && diag.cursor.cardsDrawn > 0, JSON.stringify({ markers: diag.cursor.markersDrawn, cards: diag.cursor.cardsDrawn }));
       check(`${label} shows the six critical rows`, (await page.locator("[data-analysis-render-row]").count()) === 6);
-      const readout = await page.locator(".ri-cursor-readout strong").textContent();
+      const readout = await page.locator(".ri-readout-head strong").textContent();
       check(`${label} map readout follows the cursor`, readout !== "25.0%", readout ?? "");
       await page.screenshot({ path: path.join(shots, `${sizeName}-traces-hover.png`) });
+      if (sizeName !== "phone") {
+        // The rail is one grid: every visible cell starts where its header column starts.
+        const misaligned = await page.evaluate(() => {
+          const head = [...document.querySelectorAll(".ri-rail-cols > span")].map((cell) => cell.getBoundingClientRect());
+          let bad = 0;
+          for (const row of [...document.querySelectorAll(".ri-lap-row")].slice(0, 30)) {
+            [...row.children].forEach((cell, index) => {
+              const box = cell.getBoundingClientRect();
+              if (box.width > 0 && head[index] && head[index].width > 0 && Math.abs(box.left - head[index].left) > 0.5) bad += 1;
+            });
+          }
+          return bad;
+        });
+        check(`${label} rail cells sit in their header columns`, misaligned === 0, `${misaligned} off`);
+        const zero = await page.locator("[data-zero-lap]").textContent();
+        check(`${label} names the zero lap`, /Δ vs L\d+/.test(zero ?? ""), zero ?? "");
+        // A click selects without leaving a focus box; the keyboard still shows one.
+        const row = page.locator(".ri-lap-row[data-lap='9']");
+        await row.click();
+        const ring = await row.evaluate((element) => getComputedStyle(element).outlineStyle);
+        check(`${label} a clicked lap shows no focus box`, ring === "none", ring);
+        await page.keyboard.press("ArrowDown");
+        const keyed = await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle);
+        check(`${label} the keyboard shows the focus ring`, keyed !== "none", keyed);
+        await page.getByRole("button", { name: "All", exact: true }).click();
+        const selectedCount = await page.locator(".ri-lap-row.selected").count();
+        check(`${label} All selects every lap the filters allow`, selectedCount === fixture.laps, `${selectedCount} of ${fixture.laps}`);
+        await page.getByRole("button", { name: "Clean", exact: true }).click();
+        const cleanRows = await page.locator(".ri-lap-row").count();
+        check(`${label} Clean keeps the clean laps`, cleanRows > 0 && cleanRows < fixture.laps, `${cleanRows}`);
+      }
     } else {
       await page.screenshot({ path: path.join(shots, `${sizeName}-${view}.png`) });
     }
@@ -123,6 +154,9 @@ for (const sizeName of ["desktop", "laptop", "large", "tablet"]) {
     }
     if (view === "traces") {
       check(`${label} track map is inside the window`, inside(await box(".ri-track-map"), viewport));
+      check(`${label} lap rail is inside the window`, inside(await box(".ri-lap-rail"), viewport));
+      const railScrolls = await page.evaluate(() => { const element = document.querySelector(".ri-lap-scroll"); return element.scrollHeight > element.clientHeight; });
+      check(`${label} the rail scrolls inside its card`, railScrolls);
       const rows = await Promise.all([0, 1, 2, 3, 4, 5].map((index) => page.locator("[data-analysis-render-row]").nth(index).boundingBox()));
       check(`${label} six critical rows are inside the window`, rows.every((item) => inside(item, viewport)), rows.map((item) => item && Math.round(item.height)).join(","));
       const crowded = await page.evaluate(() => [...document.querySelectorAll(".trace-row-label-shell")].filter((shell) => shell.firstElementChild.scrollHeight > shell.clientHeight + 1).length);

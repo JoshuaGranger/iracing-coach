@@ -1,16 +1,16 @@
 import { useEffect, useRef } from "preact/hooks";
 import { CHANNEL_INDEX, type TileSpec } from "../gen/live-channels";
-import type { LiveFrame } from "./frame";
+import { FrameFlag, type LiveFrame } from "./frame";
 import { LiveHistory, TREND_WINDOW_SPECS, downsample } from "./history";
 import type { LiveTileCfg } from "./layout";
-import { type TileText, formatTile, resolveUnit, tileRange, unitConverter } from "./tiles";
+import { type TileText, displayRange, formatTile, secondaryLine, tileRange, tileTrend } from "./tiles";
 
 const ACCENT_VAR: Record<string, string> = {
-  default: "var(--color-accent)",
-  blue: "var(--color-info)",
-  green: "var(--color-success)",
-  amber: "var(--color-warning)",
-  coral: "var(--color-danger)",
+  default: "var(--color-interaction)",
+  blue: "var(--race-pit)",
+  green: "var(--race-green)",
+  amber: "var(--race-fuel)",
+  coral: "var(--race-loss)",
   violet: "var(--telemetry-steering)",
 };
 
@@ -30,10 +30,15 @@ export function tileColor(cfg: LiveTileCfg): string {
 
 function resolveColor(el: HTMLElement, value: string): string {
   const m = /^var\((--[\w-]+)\)$/.exec(value);
-  return m ? getComputedStyle(el).getPropertyValue(m[1]!).trim() || "#5CE8C3" : value;
+  return m ? getComputedStyle(el).getPropertyValue(m[1]!).trim() || "#EAF2F6" : value;
 }
 
-/** Trend: min/max per pixel column over the tile's window, drawn on a canvas; redrawn only when a frame arrived. */
+/**
+ * Trend: min/max per pixel column over the tile's window, drawn on a canvas; redrawn only when a frame arrived. The line is the
+ * tile's own value (display unit, flag step, phase, pace midpoint, cue priority). It breaks where samples are missing or time
+ * jumps. A "1 lap" or "3 laps" window is a rolling lap distance drawn on a lap-distance axis. Brake with Mark ABS draws the
+ * stretches where ABS was active over the line.
+ */
 export function TrendCanvas({ cfg, spec, history, frame, tick }: { cfg: LiveTileCfg; spec: TileSpec; history: LiveHistory; frame: LiveFrame | null; tick: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -49,26 +54,21 @@ export function TrendCanvas({ cfg, spec, history, frame, tick }: { cfg: LiveTile
     const g = canvas.getContext("2d");
     if (!g) return;
     g.clearRect(0, 0, w, h);
-    const channel = spec.channels[0];
     const newest = history.latestTime();
-    if (!channel || newest === null) return;
+    // No fresh frame: the tile reads Waiting and the old line goes with it.
+    if (spec.channels.length === 0 || newest === null || !frame || (frame.flags & FrameFlag.SimConnected) === 0) return;
     const win = TREND_WINDOW_SPECS[cfg.trend_window ?? "s30"] ?? { seconds: 30 };
-    const series = history.series(channel, win);
+    const series = tileTrend(history, spec, cfg, win);
     if (series.t.length === 0) return;
-    const conv = unitConverter(channel, resolveUnit(spec, cfg.unit));
-    for (let i = 0; i < series.v.length; i++) series.v[i] = conv.fn(series.v[i]!);
-    const t1 = series.t[series.t.length - 1]!;
-    const t0 = win.seconds !== undefined ? t1 - win.seconds : series.t[0]!;
-    const cols = downsample(series, t0, Math.max(t1, t0 + 1e-6), w);
+    const x1 = series.x[series.x.length - 1]!;
+    const span = series.axis === "distance" ? (win.laps ?? 1) : (win.seconds ?? (win.laps ?? 1) * 120);
+    const x0 = x1 - span;
+    const cols = downsample(series, x0, Math.max(x1, x0 + 1e-6), w);
     if (cols.length === 0) return;
-    const range = tileRange(spec, frame, { unit: cfg.unit });
-    let lo = range.min ?? Math.min(...cols.map((c) => c.min));
-    let hi = range.max ?? Math.max(...cols.map((c) => c.max));
-    if (range.min === null || range.max === null) {
-      const pad = (hi - lo || 1) * 0.08;
-      if (range.min === null) lo -= pad;
-      if (range.max === null) hi += pad;
-    }
+    const text = formatTile(spec, cfg, frame);
+    const range = displayRange(spec, text.value ?? series.v[series.v.length - 1]!, tileRange(spec, frame, cfg), series.v);
+    let lo = range?.min ?? Math.min(...cols.map((c) => c.min));
+    let hi = range?.max ?? Math.max(...cols.map((c) => c.max));
     if (hi <= lo) hi = lo + 1;
     const y = (v: number) => h - 2 - ((v - lo) / (hi - lo)) * (h - 4);
     g.strokeStyle = resolveColor(canvas, tileColor(cfg));
@@ -78,7 +78,7 @@ export function TrendCanvas({ cfg, spec, history, frame, tick }: { cfg: LiveTile
     let prevY = 0;
     for (const c of cols) {
       const x = c.x + 0.5;
-      if (!started) {
+      if (!started || c.gap) {
         g.moveTo(x, y(c.max));
         started = true;
       } else if (spec.step) {
@@ -89,6 +89,23 @@ export function TrendCanvas({ cfg, spec, history, frame, tick }: { cfg: LiveTile
       prevY = y(c.min !== c.max ? c.min : c.max);
     }
     g.stroke();
+    if (cfg.highlight_abs && spec.id === "brake" && history.hasChannel("abs_active")) {
+      const abs = history.series("abs_active", win);
+      g.strokeStyle = resolveColor(canvas, "var(--race-loss)");
+      g.lineWidth = Math.max(2, 2 * dpr);
+      g.beginPath();
+      let open = false;
+      for (let i = 0; i < series.v.length && i < abs.v.length; i++) {
+        const on = abs.v[i] === 1 && !Number.isNaN(series.v[i]!);
+        const px = ((series.x[i]! - x0) / (x1 - x0 || 1)) * w;
+        if (on) {
+          if (!open) g.moveTo(px, y(series.v[i]!));
+          else g.lineTo(px, y(series.v[i]!));
+          open = true;
+        } else open = false;
+      }
+      g.stroke();
+    }
   }, [tick, cfg, spec, history, frame]);
   return <canvas ref={ref} class="trend-canvas" aria-hidden="true" />;
 }
@@ -112,24 +129,18 @@ export interface TileViewProps {
   frame: LiveFrame | null;
   history: LiveHistory;
   tick: number;
-  /** Observed range kept by the page so bars and gauges only widen between resets. */
-  observed: Map<string, { min: number; max: number }>;
 }
 
-export function TileView({ cfg, spec, frame, history, tick, observed }: TileViewProps) {
+export function TileView({ cfg, spec, frame, history, tick }: TileViewProps) {
   const text: TileText = formatTile(spec, { unit: cfg.unit, precision: cfg.precision }, frame);
-  const semantic = tileRange(spec, frame, { unit: cfg.unit });
-  let { min, max } = semantic;
-  if (text.value !== null && (min === null || max === null)) {
-    const o = observed.get(cfg.tile_id) ?? { min: text.value, max: text.value };
-    o.min = Math.min(o.min, text.value);
-    o.max = Math.max(o.max, text.value);
-    observed.set(cfg.tile_id, o);
-    const pad = (o.max - o.min || 1) * 0.08;
-    if (min === null) min = o.min - pad;
-    if (max === null) max = o.max + pad;
-  }
   const style = cfg.style;
+  const line = secondaryLine(spec, text);
+  // Gauges and bars take their range from the tile's trend window, so it follows the data and shrinks after a spike.
+  let range: { min: number; max: number } | null = null;
+  if ((style === "gauge" || style === "bar") && text.value !== null) {
+    const win = TREND_WINDOW_SPECS[cfg.trend_window ?? "s30"] ?? { seconds: 30 };
+    range = displayRange(spec, text.value, tileRange(spec, frame, cfg), tileTrend(history, spec, cfg, win).v);
+  }
   const absHot = cfg.highlight_abs && frame && frame.values[CHANNEL_INDEX.abs_active!] === 1;
   return (
     <div class={`tile style-${style} tone-${text.tone} state-${text.state}${absHot ? " abs" : ""}`} style={{ color: style === "gauge" || style === "bar" ? tileColor(cfg) : undefined }} data-metric={cfg.metric}>
@@ -138,20 +149,20 @@ export function TileView({ cfg, spec, frame, history, tick, observed }: TileView
         <div class="tile-status">{text.primary}</div>
       ) : (
         <div class="tile-body">
-          {style === "gauge" ? <Gauge value={text.value} min={min ?? 0} max={max ?? 1} /> : null}
+          {style === "gauge" ? <Gauge value={text.value} min={range?.min ?? 0} max={range?.max ?? 1} /> : null}
           <div class="tile-value">
             <span class="tile-primary">{text.amount}</span>
             {text.unit ? <span class="tile-unit">{text.unit}</span> : null}
           </div>
           {style === "bar" ? (
             <div class="tile-bar" aria-hidden="true">
-              <i style={{ width: `${text.value === null || max === null || min === null || max <= min ? 0 : Math.min(100, Math.max(0, ((text.value - min) / (max - min)) * 100))}%` }} />
+              <i style={{ width: `${text.value === null || range === null || range.max <= range.min ? 0 : Math.min(100, Math.max(0, ((text.value - range.min) / (range.max - range.min)) * 100))}%` }} />
             </div>
           ) : null}
           {style === "trend" ? <TrendCanvas cfg={cfg} spec={spec} history={history} frame={frame} tick={tick} /> : null}
         </div>
       )}
-      {text.secondary ? <div class="tile-secondary">{text.secondary}</div> : null}
+      {line ? <div class="tile-secondary">{line}</div> : null}
     </div>
   );
 }

@@ -4,11 +4,16 @@ import { humanize } from "./format";
 import { events } from "./sse";
 
 export type Job = Schemas["Job"];
-const TERMINAL = new Set<string>(["succeeded", "failed", "cancelled", "deferred"]);
+const TERMINAL = new Set<string>(["succeeded", "failed", "cancelled", "deferred", "interrupted"]);
+
+/** A job in one of these states will not change again (an interrupted job stays interrupted after its second interruption). */
+export function isFinalJobState(state: string): boolean {
+  return TERMINAL.has(state);
+}
 
 /**
- * Resolves with the finished job. Uses `job_state` events and polls every `pollMs` as a fallback (the stream may be
- * down; polling also covers a missed event). Rejects only when aborted.
+ * Resolves with the finished job: succeeded, failed, cancelled, deferred or interrupted. Uses `job_state` events and polls
+ * every `pollMs` as a fallback (the stream may be down; polling also covers a missed event). Rejects only when aborted.
  */
 export function waitForJob(id: number, opts: { signal?: AbortSignal; pollMs?: number } = {}): Promise<Job> {
   return new Promise<Job>((resolve, reject) => {
@@ -25,12 +30,12 @@ export function waitForJob(id: number, opts: { signal?: AbortSignal; pollMs?: nu
       checking = true;
       try {
         const job = await api.job(id);
-        if (!finished && TERMINAL.has(job.state)) {
+        if (!finished && isFinalJobState(job.state)) {
           end();
           resolve(job);
         }
       } catch {
-        /* unreachable or not yet visible: the next tick tries again */
+        /* the next tick tries again */
       } finally {
         checking = false;
       }
@@ -52,6 +57,7 @@ export function waitForJob(id: number, opts: { signal?: AbortSignal; pollMs?: nu
 /** The job's own words for why it did not produce a result. */
 export function jobFailure(job: Job): string {
   if (job.state === "cancelled") return "Cancelled.";
+  if (job.state === "interrupted") return job.error_message ?? "Interrupted. Run it again.";
   if (job.state === "deferred") return job.error_message ?? `Deferred: ${humanize(job.error_code ?? "exceeds_memory_budget").toLowerCase()}.`;
   return job.error_message ?? (job.error_code ? humanize(job.error_code) : "The job failed.");
 }

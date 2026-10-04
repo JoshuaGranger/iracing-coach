@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventPhases, formatLapTime, formatSigned, humanize, sessionTypeLabel, trackLabel } from "./format";
+import { eventPhases, formatDate, formatDateTime, formatLapTime, formatSigned, humanize, sessionTypeLabel, trackLabel } from "./format";
 
 describe("format", () => {
   it("formats lap times", () => {
@@ -13,6 +13,12 @@ describe("format", () => {
     expect(formatSigned(0.1234)).toBe("+0.123");
     expect(formatSigned(-0.5, 1, "s")).toBe("-0.5 s");
     expect(formatSigned(undefined)).toBe("-");
+  });
+  it("shows dates and times in the driver's local zone (audit S1)", () => {
+    expect(formatDate("2026-09-29T00:30:00Z", "America/Chicago")).toBe("Sep 28, 2026");
+    expect(formatDateTime("2026-09-29T00:30:00Z", "America/Chicago")).toBe("Sep 28, 2026 7:30 pm");
+    expect(formatDate(null)).toBe("-");
+    expect(formatDateTime("not a date")).toBe("-");
   });
   it("labels", () => {
     expect(humanize("worker_crash")).toBe("Worker crash");

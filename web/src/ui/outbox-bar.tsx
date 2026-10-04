@@ -36,9 +36,9 @@ export function OutboxBar() {
               <span class="outbox-label">
                 {e.label}
                 <small>
-                  {e.state === "pending" ? (e.attempts ? " waiting for the server" : " queued") : null}
+                  {e.state === "pending" ? (e.attempts ? " retrying" : " queued") : null}
                   {e.state === "sending" ? " sending" : null}
-                  {e.state === "conflict" ? " changed on the server meanwhile" : null}
+                  {e.state === "conflict" ? " changed on the server" : null}
                   {e.state === "failed" ? ` not saved: ${e.error ?? "rejected"}` : null}
                 </small>
               </span>

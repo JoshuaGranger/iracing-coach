@@ -8,9 +8,7 @@ import { type Store, createStore, safeStorage } from "./store";
  * a percentage of the browser default. Every type size, control and space is rem, so one step scales the whole app.
  *
  * Where it lives: the driver's prefs on the server (`text_size`, so it follows the driver to every device) is the truth;
- * localStorage keeps only a hint so the first paint on this device is already the right size. `text_size` is not a declared field of
- * `DriverPrefs` in the API contract. The server keeps unknown top-level prefs fields (PUT is a top-level merge into `prefs_json`,
- * `server/src/userdata.rs`), so it round-trips; an unknown value reads as Default.
+ * localStorage keeps only a hint so the first paint on this device is already the right size. An unknown value reads as Default.
  */
 export type TextSize = (typeof theme.typography.textSizes)[number]["id"];
 export const TEXT_SIZES = theme.typography.textSizes;

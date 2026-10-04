@@ -379,15 +379,16 @@ pub struct CarSetup {
 
 ```rust
 /// setup-keys.json: drop keys whose last segment matches an EXCLUDED_LEAF_PATTERNS entry
-/// (case-insensitive); for the rest in ascending UTF-8 byte order hash key + 0x1F + value.trim()
-/// + 0x1E with SHA-256; lowercase hex, first 32 characters. Patterns use only the subset stated in
-/// setup-keys.json, matched by a hand-written matcher with ASCII case folding; a unit test over
-/// EXCLUDED_LEAF_PATTERNS fails on any pattern outside the subset.
+/// (case-insensitive, `_` in the segment ignored); for the rest in ascending UTF-8 byte order hash
+/// key + 0x1F + value.trim() + 0x1E with SHA-256; lowercase hex, first 32 characters. Patterns use
+/// only the subset stated in setup-keys.json (one group, optional with `?`), matched by a
+/// hand-written matcher with ASCII case folding; a unit test over EXCLUDED_LEAF_PATTERNS fails on
+/// any pattern outside the subset.
 pub fn setup_values_fingerprint(values: &std::collections::BTreeMap<String, String>) -> String;
 pub fn is_identity_excluded(key: &str) -> bool;
 ```
 
-These two functions are the only Rust implementation of the `setup-keys.json` rules: the server or collector code that needs the rules (fingerprints, excluded-key lists, tolerance matching) calls them and never compiles the patterns with a regular-expression engine of their own, whose Unicode case folding would match keys the subset matcher does not (the Kelvin sign is not `k`). The browser may use `RegExp(pattern, "i")` without the `u` flag: that mode never folds a non-ASCII character to an ASCII one, so over these ASCII patterns it agrees with the subset matcher.
+These two functions are the only Rust implementation of the `setup-keys.json` rules: the server or collector code that needs the rules (fingerprints, excluded-key lists, tolerance matching) calls them and never compiles the patterns with a regular-expression engine of their own, whose Unicode case folding would match keys the subset matcher does not (the Kelvin sign is not `k`). The browser may use `RegExp(pattern, "i")` without the `u` flag: that mode never folds a non-ASCII character to an ASCII one, so over these ASCII patterns it agrees with the subset matcher on `CarSetup` keys. On the snake_case keys of a garage `.htm` export it agrees only after removing `_` from the segment; a setup's `SetupDetail.identity_excluded_keys` carries the server's answer for either kind.
 
 ### 3.7 Finalization gate and hashing
 
@@ -836,7 +837,7 @@ Epoch marker (W3): `first_of_epoch` marks an engine state, but the collector sen
 Reads one `analysis.json` (streaming, only the needed subtrees) and writes the bounded view files the server serves. Accepted input: the worker's persisted document, flat (`analysis_id`, `schema_version` 2 and the analysis_view keys at the top level), or the analyze-result form `{analysis_id, analysis_view}` whose `analysis_view.schema_version` is 1; `race_investigation.schema_version` must be 2. Anything else is `IncompatibleVersion`. Copies backend values; the only rules it applies are the C# mapping rules named in `api.openapi.yaml` descriptions (tuning identity and map, lap exclusion reasons, representative runs). Non-finite numbers and legacy `Infinity`/`NaN` tokens become null.
 
 ```rust
-pub const PROJECTION_VERSION: u32 = 1;
+pub const PROJECTION_VERSION: u32 = 2;
 
 /// Writes every view file into `out_dir` (`/data/views/<analysis_id>/p<PROJECTION_VERSION>/`),
 /// which must not exist: files go to a sibling `<out_dir>.tmp-<random>` that is fsynced and
@@ -876,6 +877,8 @@ pub enum ViewKind { Race, Runs, Investigation, TraceCatalog, Traces, Track, Tuni
 | Tuning | `tuning.json` | `TuningContextProjection` | 1 MiB | never |
 
 When a JSON view would exceed its bound, the `x-source` subtrees whose `x-consumed-fields` is empty are emptied first: set to null where the schema allows null, else to `{}` (for example `TrackGeometry.provenance`, a required non-null object), so the shrunk view still validates against its schema. If it still exceeds, fields outside the consumed lists are removed from the remaining `x-source` objects (`api.openapi.yaml` info.description allows it). If it still exceeds, `project` fails with `TooLarge` (a defect to fix, never served).
+
+Projector-written fields beside the backend's (version 2): `RaceView.pit_stops[]` lists each run's `pit_service` as a `PitStop` (the run's `end_lap`, the service window, the tires the backend observed changed, fuel added in litres and in gallons as litres over 3.785411784 rounded to 3 decimals, null where the backend reports nothing); `TraceLap.sector_times_s[]` gives each lap's seconds per sector, the session time at a sector's end fraction minus its start fraction, each linearly interpolated between the two `session-time` bins that straddle it (the desktop app's `TimeAtPercent`), the last sector ending at fraction 1, 3 decimals, null where the lap's bins stop more than two bins short of a boundary or the time is missing or negative, and present only when the catalog has at least two `sector_start_pcts`. Both are derived from backend values, not recomputed telemetry.
 
 The trace catalog serves at most 128 signals (`TraceCatalog.signals` maxItems): the fixed signals first, then the backend's additional signals in their order; the source keys beyond the cap are listed in `omitted_signals` and are not in `traces.ccol`. A real 82-lap recording gives 76 (wave 1).
 

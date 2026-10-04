@@ -104,10 +104,17 @@ impl RecordingParser for FakeParser {
             track_config: meta["track_config"].as_str().map(str::to_string),
             car_path: meta["car_path"].as_str().map(str::to_string),
             car_name: meta["car_name"].as_str().map(str::to_string),
-            series_name: Some("Stub Series".into()),
+            series_name: Some(meta["series"].as_str().unwrap_or("Stub Series").to_string()),
             season_name: None,
             start_time_utc: meta["start"].as_str().map(str::to_string),
-            header_json: json!({"buffer_length": 512, "variable_count": 12}),
+            // the real parser stores the header summary; `fixed_setup` stands for IsFixedSetup
+            header_json: match meta["fixed_setup"].as_bool() {
+                Some(fixed) => json!({"buffer_length": 512, "variable_count": 12,
+                                      "summary": {"is_fixed_setup": fixed}}),
+                None => {
+                    json!({"buffer_length": 512, "variable_count": 12, "summary": {"is_fixed_setup": null}})
+                }
+            },
             setup,
         })
     }
@@ -431,12 +438,34 @@ impl Env {
         env
     }
 
+    /// An environment that serves its views through `projector` (the real `coach-views` one) instead
+    /// of the fake; `Env::projector` is then an unused fake.
+    pub async fn with_projector(projector: Arc<dyn Projector>) -> Env {
+        let temp = TempDir::new().expect("tempdir");
+        let dir = Arc::new(Dir {
+            path: temp.path().to_path_buf(),
+            _temp: Some(temp),
+        });
+        let python = python();
+        let cfg = base_config(dir.path(), python.as_deref());
+        Env::start_with(dir, cfg, python, Some(projector)).await
+    }
+
     async fn start(dir: Arc<Dir>, cfg: Config, python: Option<String>) -> Env {
+        Env::start_with(dir, cfg, python, None).await
+    }
+
+    async fn start_with(
+        dir: Arc<Dir>,
+        cfg: Config,
+        python: Option<String>,
+        views: Option<Arc<dyn Projector>>,
+    ) -> Env {
         let faults = Arc::new(Faults::default());
         let projector = Arc::new(FakeProjector::default());
         let parts = Parts {
             parser: Arc::new(FakeParser),
-            projector: projector.clone(),
+            projector: views.unwrap_or_else(|| projector.clone()),
             disk: Arc::new(coach_server::app::SystemDisk),
             faults: faults.clone(),
             worker_identity: Some(coach_server::app::WorkerIdentity {

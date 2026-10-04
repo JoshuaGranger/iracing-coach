@@ -14,6 +14,8 @@ describe("router", () => {
     expect(parseHash("#/d/42/tuning")).toMatchObject({ page: "tuning", analysisId: null });
     expect(parseHash("#/d/42/tuning/an%2F1")).toMatchObject({ page: "tuning", analysisId: "an/1" });
     expect(parseHash("#/d/42/live")).toMatchObject({ page: "live" });
+    expect(parseHash("#/__kit")).toMatchObject({ page: "kit" });
+    expect(formatRoute({ page: "kit" })).toBe("#/__kit");
   });
 
   it("rejects malformed routes", () => {

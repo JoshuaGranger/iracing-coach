@@ -1,18 +1,16 @@
-import type { ComponentChildren, ComponentType } from "preact";
+import type { ComponentType } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { type Schemas, api, paths } from "../core/api";
-import { type EventPhase, eventPhases, sessionTypeLabel } from "../core/format";
 import { outbox } from "../core/outbox";
 import { rememberInvestigation, savePrefs, usePrefs, useReducedMotion } from "../core/prefs";
 import { invalidate, useResource } from "../core/resource";
 import { type InvestigationView, formatRoute, navigate } from "../core/router";
-import { newLayoutId } from "../core/ids";
 import { Empty, ErrorLine, Loading, Notice } from "./kit";
 
 /**
  * Mounts the investigation workspace (W8, `web/src/investigation/`). The shell resolves the session to its current
- * analysis, keeps the route, the last-investigation preference and the trace layouts in step with the workspace's
- * selection, and supplies the single session picker. The workspace makes the view requests itself (`createAnalysisLoader`).
+ * analysis, keeps the route, the last-investigation preference and the saved trace layouts in step with the workspace, and
+ * supplies the event's phases for the P Q R selector. The workspace makes the view requests itself (`createAnalysisLoader`).
  */
 export interface InvestigationProps {
   customerId: number;
@@ -32,6 +30,21 @@ interface Selection {
   sectionId: string | null;
 }
 
+/** A saved chart layout as the workspace takes it (`investigation/layout-sets.ts`). */
+interface NamedLayout {
+  id: string;
+  name: string;
+  builtin: boolean;
+  body: TraceLayoutBody;
+}
+
+/** A saved-layout change from the workspace (New, Copy, Delete, select, or an edit). */
+type TraceLayoutCommand =
+  | { type: "select"; id: string }
+  | { type: "create"; layout: NamedLayout }
+  | { type: "edit"; layout: NamedLayout; created: boolean }
+  | { type: "delete"; id: string };
+
 /** The part of W8's contract the shell uses (`investigation/README.md`). */
 interface WorkspaceProps {
   loader: unknown;
@@ -40,11 +53,15 @@ interface WorkspaceProps {
   comparisonId?: string | null;
   sectionId?: string | null;
   onSelectionChange?(selection: Selection): void;
-  traceLayout?: TraceLayoutBody;
-  traceLayoutName?: string;
-  onTraceLayoutChange?(body: TraceLayoutBody): void;
   reducedMotion?: boolean;
-  sessionPicker?: ComponentChildren;
+  /** The event's phases (P, Q, R) with the state of each analysis, the open session, and the switch. */
+  phases?: { sessionId: number; sessionType: string | null; state?: string | null; reason?: string | null }[];
+  currentSessionId?: number;
+  onPhase?(sessionId: number): void;
+  /** The driver's saved layouts (the built-in Default included), the active one, and the changes to persist. */
+  traceLayouts?: NamedLayout[];
+  activeTraceLayoutId?: string;
+  onTraceLayoutCommand?(command: TraceLayoutCommand): void;
 }
 
 interface InvestigationModule {
@@ -59,60 +76,84 @@ let loaderInstance: unknown = null;
 
 type LayoutList = { layouts: Schemas["TraceLayout"][] };
 
-function SessionPicker({ customerId, sessionId, view, sessions }: { customerId: number; sessionId: number; view: InvestigationView; sessions: EventPhase[] }) {
-  if (sessions.length < 2) return null;
-  return (
-    <label class="select-field inline">
-      <span class="visually-hidden">Session</span>
-      <select value={sessionId} aria-label="Session" onChange={(e) => navigate({ page: "investigation", customerId, sessionId: Number((e.currentTarget as HTMLSelectElement).value), view })}>
-        {sessions.map((s) => (
-          <option key={s.session_id} value={s.session_id}>
-            {sessionTypeLabel(s.session_type)}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+/** The event's phases for the P Q R selector: the open session and the other phases, each with the state of its analysis. */
+function phasesOf(detail: Schemas["SessionDetail"]): NonNullable<WorkspaceProps["phases"]> {
+  const others = (detail.event_sessions ?? []).filter((o) => o.session_id !== detail.session.session_id);
+  const me = detail.session;
+  return [
+    { sessionId: me.session_id, sessionType: me.session_type ?? null, state: me.analysis_state, reason: me.analysis_reason ?? null },
+    ...others.map((o) => ({ sessionId: o.session_id, sessionType: o.session_type, state: o.analysis_state ?? null, reason: o.analysis_reason ?? null })),
+  ];
+}
+
+function namedLayouts(list: readonly Schemas["TraceLayout"][]): NamedLayout[] {
+  return list.map((l) => ({ id: l.layout_id, name: l.name || (l.builtin ? "Default" : "Layout"), builtin: l.builtin, body: l.body as TraceLayoutBody }));
+}
+
+const sameIds = (a: readonly NamedLayout[], b: readonly NamedLayout[]) => a.length === b.length && a.every((l, i) => l.id === b[i]?.id);
+
+/**
+ * Saved chart layouts: the server's list (`trace-layouts`, Default built in) and the active one (`active_trace_layout_id`). A change
+ * shows at once and is written through the outbox: New and Copy PUT a new layout, an edit PUTs the layout (an edit of Default
+ * arrives as a new layout), Delete removes it; the active id follows in the driver's prefs.
+ */
+function useTraceLayouts(customerId: number, activeId: string | null | undefined) {
+  const layoutsKey = paths.traceLayouts(customerId);
+  const layouts = useResource<LayoutList>(layoutsKey);
+  const server = useMemo(() => namedLayouts(layouts.data?.layouts ?? []), [layouts.data]);
+  (layouts.data?.layouts ?? []).forEach((l) => outbox.observe(paths.traceLayout(customerId, l.layout_id), l.version));
+  const [pending, setPending] = useState<{ layouts: NamedLayout[]; activeId: string } | null>(null);
+  // The server's list takes over once it holds the same layouts as the change shown.
+  useEffect(() => {
+    if (pending && sameIds(pending.layouts, server)) setPending(null);
+  }, [server]);
+  const list = pending?.layouts ?? server;
+  const builtinId = list.find((l) => l.builtin)?.id ?? list[0]?.id;
+  const active = pending?.activeId ?? (activeId && list.some((l) => l.id === activeId) ? activeId : builtinId);
+
+  const put = (layout: NamedLayout) =>
+    void outbox
+      .enqueue({ method: "PUT", path: paths.traceLayout(customerId, layout.id), body: { name: layout.name, body: layout.body }, label: "Trace layout", coalesceKey: `trace:${layout.id}` })
+      .then(() => invalidate(layoutsKey), () => undefined);
+  const activate = (id: string) => void savePrefs(customerId, { active_trace_layout_id: id });
+
+  const command = (c: TraceLayoutCommand) => {
+    if (c.type === "select") {
+      setPending({ layouts: list, activeId: c.id });
+      activate(c.id);
+    } else if (c.type === "create" || (c.type === "edit" && c.created)) {
+      setPending({ layouts: [...list, c.layout], activeId: c.layout.id });
+      put(c.layout);
+      activate(c.layout.id);
+    } else if (c.type === "edit") {
+      setPending({ layouts: list.map((l) => (l.id === c.layout.id ? c.layout : l)), activeId: c.layout.id });
+      put(c.layout);
+    } else {
+      const fallback = list.find((l) => l.builtin)?.id ?? "default";
+      setPending({ layouts: list.filter((l) => l.id !== c.id), activeId: fallback });
+      void outbox.enqueue({ method: "DELETE", path: paths.traceLayout(customerId, c.id), label: "Trace layout" }).then(() => invalidate(layoutsKey), () => undefined);
+      activate(fallback);
+    }
+  };
+  return { layouts: list.length ? list : undefined, activeId: active, command };
 }
 
 function Host({ mod, customerId, sessionId, view, query }: InvestigationProps & { mod: InvestigationModule }) {
   const detail = useResource(paths.session(sessionId), () => api.session(sessionId));
   const { prefs } = usePrefs(customerId);
-  const layoutsKey = paths.traceLayouts(customerId);
-  const layouts = useResource<LayoutList>(layoutsKey);
   const reduced = useReducedMotion(prefs);
   const loader = useMemo(() => (loaderInstance ??= mod.createAnalysisLoader()), [mod]);
-
-  const list = layouts.data?.layouts ?? [];
-  list.forEach((l) => outbox.observe(paths.traceLayout(customerId, l.layout_id), l.version));
-  const active = list.find((l) => l.layout_id === prefs?.active_trace_layout_id) ?? list.find((l) => l.builtin) ?? list[0];
+  const traceLayouts = useTraceLayouts(customerId, prefs?.active_trace_layout_id);
 
   if (!detail.data) return detail.error ? <ErrorLine error={detail.error} /> : <Loading what="session" />;
   const analyses = detail.data.analyses;
   const analysis = (query.analysis ? analyses.find((a) => a.analysis_id === query.analysis) : undefined) ?? analyses.find((a) => a.current) ?? analyses[0];
-  if (!analysis) return <Empty title="Not analyzed yet">Analyze this session from the library to open it here.</Empty>;
+  if (!analysis) return <Empty title="Not analyzed" />;
 
   const onSelectionChange = (s: Selection) => {
     const q = { comparison: s.comparisonId, section: s.sectionId, analysis: query.analysis ?? null };
     navigate(formatRoute({ page: "investigation", customerId, sessionId, view: s.view }, q), { replace: s.view === view });
     rememberInvestigation(customerId, { session_id: sessionId, analysis_id: analysis.analysis_id, view: s.view, comparison_id: s.comparisonId, section_id: s.sectionId });
-  };
-
-  const onTraceLayoutChange = (body: TraceLayoutBody) => {
-    if (!active) return;
-    if (active.builtin) {
-      const id = newLayoutId("my-layout", list.map((l) => l.layout_id));
-      void outbox
-        .enqueue({ method: "PUT", path: paths.traceLayout(customerId, id), body: { name: "My layout", body }, label: "Trace layout" })
-        .then(() => {
-          invalidate(layoutsKey);
-          return savePrefs(customerId, { active_trace_layout_id: id });
-        }, () => undefined);
-    } else {
-      void outbox
-        .enqueue({ method: "PUT", path: paths.traceLayout(customerId, active.layout_id), body: { name: active.name, body }, ifMatch: String(active.version), label: "Trace layout", coalesceKey: `trace:${active.layout_id}` })
-        .then(() => invalidate(layoutsKey), () => undefined);
-    }
   };
 
   const Workspace = mod.InvestigationWorkspace;
@@ -124,11 +165,13 @@ function Host({ mod, customerId, sessionId, view, query }: InvestigationProps & 
       comparisonId={query.comparison ?? null}
       sectionId={query.section ?? null}
       onSelectionChange={onSelectionChange}
-      traceLayout={active ? (active.body as TraceLayoutBody) : undefined}
-      traceLayoutName={active?.name}
-      onTraceLayoutChange={onTraceLayoutChange}
+      traceLayouts={traceLayouts.layouts}
+      activeTraceLayoutId={traceLayouts.activeId}
+      onTraceLayoutCommand={traceLayouts.command}
       reducedMotion={reduced}
-      sessionPicker={<SessionPicker customerId={customerId} sessionId={sessionId} view={view} sessions={eventPhases(detail.data.session, detail.data.event_sessions ?? [])} />}
+      phases={phasesOf(detail.data)}
+      currentSessionId={sessionId}
+      onPhase={(id) => navigate({ page: "investigation", customerId, sessionId: id, view })}
     />
   );
 }
@@ -148,7 +191,7 @@ export function InvestigationSlot(props: InvestigationProps) {
       (e: unknown) => setError(e instanceof Error ? e : new Error(String(e))),
     );
   }, [mod]);
-  if (!loadModule) return <Notice>The investigation workspace is not installed in this build.</Notice>;
+  if (!loadModule) return <Notice>Investigation is not in this build.</Notice>;
   if (error) return <ErrorLine error={error} />;
   if (!mod) return <Loading what="investigation" />;
   return <Host {...props} mod={mod} />;

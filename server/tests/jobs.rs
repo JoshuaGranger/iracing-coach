@@ -1054,13 +1054,23 @@ async fn htm_exports_become_setup_observations() {
     );
     assert_eq!(job_state(&env, "setup_files")[0].0, "succeeded");
     let page = env.get("/api/v1/drivers/1001/setups").await.json();
-    assert!(page["setups"].as_array().unwrap().iter().any(|s| {
-        s["sources"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|v| v == "htm_export")
-    }));
+    let export = page["setups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| {
+            s["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == "htm_export")
+        })
+        .expect("the export's setup");
+    assert_eq!(
+        export["names"],
+        json!(["baseline"]),
+        "no .sto name is known: the export's file name without its extension"
+    );
 }
 
 #[tokio::test]

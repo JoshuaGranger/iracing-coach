@@ -20,6 +20,8 @@ pub(crate) const MAX_SIGNALS: usize = 128;
 const DEFAULT_BINS: usize = 160;
 const MAX_BINS: usize = 4096;
 const PREAMBLE_LEN: usize = 12;
+/// Index of `session-time` in `CORE`.
+const SESSION_TIME: usize = 1;
 
 pub(crate) struct CoreSignal {
     pub id: &'static str,
@@ -527,6 +529,53 @@ fn signal_json(signal: &Signal) -> Value {
     })
 }
 
+/// Session time at `target` (a lap fraction), linearly interpolated between the two distance bins
+/// that straddle it (`TelemetryWorkspace.TimeAtPercent`). `None` when the lap's bins stop more than
+/// two bins short of the target, so a partial lap has no time at a boundary it never reached.
+fn time_at(points: &[(f64, f64)], target: f64, bins: usize) -> Option<f64> {
+    let slack = 2.0 / bins as f64;
+    let (first, last) = (points.first()?, points.last()?);
+    if target < first.0 - slack || target > last.0 + slack {
+        return None;
+    }
+    if target <= first.0 {
+        return Some(first.1);
+    }
+    if target >= last.0 {
+        return Some(last.1);
+    }
+    let after = points.iter().position(|p| p.0 >= target)?;
+    let (before, after) = (points[after - 1], points[after]);
+    let span = after.0 - before.0;
+    if span <= 1e-6 {
+        return Some(after.1);
+    }
+    Some(before.1 + (after.1 - before.1) * ((target - before.0) / span))
+}
+
+/// Seconds spent in each sector (`sector_times_s`): the session-time difference between the sector's
+/// boundaries, from the lap's `session-time` bins. `None` for a sector the lap's bins do not span,
+/// whose session time is missing, or whose end reads before its start. The last sector ends at lap
+/// fraction 1.
+fn sector_times(trace: &RawTrace, starts: &[f64], bins: usize) -> Vec<Option<f64>> {
+    let mut points: Vec<(f64, f64)> = trace
+        .lap_pct
+        .iter()
+        .zip(&trace.core[SESSION_TIME])
+        .filter(|(_, time)| time.is_finite())
+        .map(|(pct, time)| (*pct, *time))
+        .collect();
+    points.sort_by(|a, b| a.0.total_cmp(&b.0));
+    (0..starts.len())
+        .map(|i| {
+            let end = starts.get(i + 1).copied().unwrap_or(1.0);
+            let begin = time_at(&points, starts[i], bins)?;
+            let finish = time_at(&points, end, bins)?;
+            (finish >= begin).then(|| ((finish - begin) * 1000.0).round() / 1000.0)
+        })
+        .collect()
+}
+
 pub(crate) struct CatalogInputs<'a> {
     pub envelope: &'a Envelope,
     pub prepared: &'a Prepared,
@@ -538,6 +587,11 @@ pub(crate) struct CatalogInputs<'a> {
 
 pub(crate) fn catalog_json(input: &CatalogInputs) -> Value {
     let prepared = input.prepared;
+    let mut sectors: Vec<f64> = match input.sector_start_pcts {
+        Some(Value::Array(items)) => items.iter().filter_map(num_of).collect(),
+        _ => Vec::new(),
+    };
+    sectors.sort_by(f64::total_cmp);
     let laps: Vec<Value> = input
         .traces
         .iter()
@@ -545,6 +599,12 @@ pub(crate) fn catalog_json(input: &CatalogInputs) -> Value {
         .map(|(trace, lap)| {
             let mut row = trace.meta.clone();
             row.insert("lap".into(), json!(lap));
+            if sectors.len() > 1 {
+                row.insert(
+                    "sector_times_s".into(),
+                    json!(sector_times(trace, &sectors, prepared.bins)),
+                );
+            }
             match input.records.iter().find(|r| r.lap == *lap) {
                 Some(record) => {
                     row.insert("comparison_eligible".into(), json!(record.eligible));
@@ -567,11 +627,6 @@ pub(crate) fn catalog_json(input: &CatalogInputs) -> Value {
             Value::Object(row)
         })
         .collect();
-    let mut sectors: Vec<f64> = match input.sector_start_pcts {
-        Some(Value::Array(items)) => items.iter().filter_map(num_of).collect(),
-        _ => Vec::new(),
-    };
-    sectors.sort_by(f64::total_cmp);
     let mut view = Map::new();
     input.envelope.apply(&mut view);
     view.insert("bins_per_lap".into(), json!(prepared.bins));

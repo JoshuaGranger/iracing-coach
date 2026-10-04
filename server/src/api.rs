@@ -510,7 +510,39 @@ async fn driver(State(app): State<AppState>, Path(customer): Path<i64>) -> Resp 
     )
 }
 
-const SESSION_SELECT: &str = "SELECT s.session_id, s.customer_id, s.group_key, s.session_type, s.track, s.car_path,
+/// The session's value of one recording column: the first recording (by start) that has one.
+macro_rules! first_recording_value {
+    ($value:literal, $present:literal) => {
+        concat!(
+            "(SELECT ",
+            $value,
+            " FROM session_recordings sr JOIN recordings r ON r.sha256 = sr.recording_sha256
+               WHERE sr.session_id = s.session_id AND ",
+            $present,
+            " ORDER BY r.start_time_utc LIMIT 1)"
+        )
+    };
+}
+
+/// `WeekendInfo.SeriesName` of the session's first recording that names one.
+macro_rules! series_of {
+    () => {
+        first_recording_value!("r.series_name", "r.series_name IS NOT NULL")
+    };
+}
+
+/// `WeekendOptions.IsFixedSetup` (1, 0 or NULL) from the header summary the ingest stored.
+macro_rules! fixed_setup_of {
+    () => {
+        first_recording_value!(
+            "json_extract(r.header_json, '$.summary.is_fixed_setup')",
+            "json_valid(r.header_json) AND json_extract(r.header_json, '$.summary.is_fixed_setup') IS NOT NULL"
+        )
+    };
+}
+
+const SESSION_SELECT: &str = concat!(
+    "SELECT s.session_id, s.customer_id, s.group_key, s.session_type, s.track, s.car_path,
     s.subsession_id, s.sim_session_num, s.start_time_utc, s.analysis_state, s.analysis_reason,
     s.current_analysis_id, s.overview_json,
     (SELECT COUNT(*) FROM session_recordings sr WHERE sr.session_id = s.session_id),
@@ -518,12 +550,17 @@ const SESSION_SELECT: &str = "SELECT s.session_id, s.customer_id, s.group_key, s
        WHERE sr.session_id = s.session_id ORDER BY r.start_time_utc LIMIT 1),
     (SELECT r.car_name FROM session_recordings sr JOIN recordings r ON r.sha256 = sr.recording_sha256
        WHERE sr.session_id = s.session_id AND r.car_name IS NOT NULL ORDER BY r.start_time_utc LIMIT 1),
-    (SELECT r.series_name FROM session_recordings sr JOIN recordings r ON r.sha256 = sr.recording_sha256
-       WHERE sr.session_id = s.session_id AND r.series_name IS NOT NULL ORDER BY r.start_time_utc LIMIT 1),
+    ",
+    series_of!(),
+    ",
     (SELECT r.season_name FROM session_recordings sr JOIN recordings r ON r.sha256 = sr.recording_sha256
        WHERE sr.session_id = s.session_id AND r.season_name IS NOT NULL ORDER BY r.start_time_utc LIMIT 1),
-    (SELECT MIN(sr.recording_sha256) FROM session_recordings sr WHERE sr.session_id = s.session_id)
-  FROM sessions s";
+    (SELECT MIN(sr.recording_sha256) FROM session_recordings sr WHERE sr.session_id = s.session_id),
+    ",
+    fixed_setup_of!(),
+    "
+  FROM sessions s"
+);
 
 fn session_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     let subsession: Option<i64> = r.get(6)?;
@@ -550,6 +587,7 @@ fn session_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
         "car_name": r.get::<_, Option<String>>(15)?,
         "series_name": r.get::<_, Option<String>>(16)?,
         "season_name": r.get::<_, Option<String>>(17)?,
+        "is_fixed_setup": r.get::<_, Option<i64>>(19)?.map(|v| v != 0),
         "subsession_id": subsession,
         "sim_session_num": r.get::<_, Option<i64>>(7)?,
         "start_time_utc": r.get::<_, Option<String>>(8)?,
@@ -561,40 +599,122 @@ fn session_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     }))
 }
 
+/// Every value of a repeated query parameter, trimmed, blanks dropped.
+fn query_values(pairs: &[(String, String)], name: &str) -> Vec<String> {
+    pairs
+        .iter()
+        .filter(|(key, _)| key == name)
+        .map(|(_, value)| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+/// `AND lower(<column>) IN (?, ?)` over lowercased values, so the match ignores case; the arguments
+/// are pushed. `column` yields text.
+fn push_in(
+    sql: &mut String,
+    args: &mut Vec<rusqlite::types::Value>,
+    column: &str,
+    values: &[String],
+) {
+    let marks: Vec<String> = values
+        .iter()
+        .map(|value| {
+            args.push(value.to_lowercase().into());
+            format!("?{}", args.len())
+        })
+        .collect();
+    sql.push_str(&format!(
+        " AND lower(COALESCE({column}, '')) IN ({})",
+        marks.join(", ")
+    ));
+}
+
 async fn sessions(
     State(app): State<AppState>,
     Path(customer): Path<i64>,
-    Query(q): Query<HashMap<String, String>>,
+    Query(pairs): Query<Vec<(String, String)>>,
 ) -> Resp {
-    let kind = q.get("type").cloned().unwrap_or_else(|| "all".into());
-    if !["all", "race", "qualify", "practice", "test"].contains(&kind.as_str()) {
-        return Err(Error::invalid(
-            "type must be all, race, qualify, practice or test",
-        ));
+    let one = |name: &str| {
+        pairs
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
+    };
+    let mut kinds = query_values(&pairs, "type");
+    if let Some(bad) = kinds
+        .iter()
+        .find(|k| !["all", "race", "qualify", "practice", "test"].contains(&k.as_str()))
+    {
+        return Err(Error::invalid(format!(
+            "type must be all, race, qualify, practice or test, not {bad}"
+        )));
     }
-    let limit: usize = q
-        .get("limit")
+    if kinds.iter().any(|k| k == "all") {
+        kinds.clear();
+    }
+    let setup = match one("setup").as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some("fixed") => Some(true),
+        Some("open") => Some(false),
+        Some(_) => return Err(Error::invalid("setup must be fixed or open")),
+    };
+    let (cars, tracks, series) = (
+        query_values(&pairs, "car"),
+        query_values(&pairs, "track"),
+        query_values(&pairs, "series"),
+    );
+    let limit: usize = one("limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(50)
         .clamp(1, 200);
-    let needle = q
-        .get("q")
-        .map(|v| util::like_pattern(v.trim()))
-        .filter(|_| q.get("q").is_some_and(|v| !v.trim().is_empty()));
-    let cursor = q.get("cursor").cloned();
+    let needle = one("q")
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .map(|v| util::like_pattern(&v));
+    let cursor = one("cursor");
     let page = app
         .store
         .read(move |conn| {
             let mut sql = format!("{SESSION_SELECT} WHERE s.customer_id = ?1");
-            let type_clause = match kind.as_str() {
-                "race" => " AND lower(COALESCE(s.session_type, '')) LIKE 'race%'",
-                "qualify" => " AND lower(COALESCE(s.session_type, '')) LIKE '%qualify%'",
-                "practice" => " AND lower(COALESCE(s.session_type, '')) LIKE 'practice%'",
-                "test" => " AND (lower(COALESCE(s.session_type, '')) LIKE 'offline%' OR lower(COALESCE(s.session_type, '')) LIKE '%test%')",
-                _ => "",
-            };
-            sql.push_str(type_clause);
             let mut args: Vec<rusqlite::types::Value> = vec![customer.into()];
+            if !kinds.is_empty() {
+                let clauses: Vec<&str> = kinds
+                    .iter()
+                    .map(|kind| match kind.as_str() {
+                        "race" => "lower(COALESCE(s.session_type, '')) LIKE 'race%'",
+                        "qualify" => "lower(COALESCE(s.session_type, '')) LIKE '%qualify%'",
+                        "practice" => "lower(COALESCE(s.session_type, '')) LIKE 'practice%'",
+                        _ => "(lower(COALESCE(s.session_type, '')) LIKE 'offline%' OR lower(COALESCE(s.session_type, '')) LIKE '%test%')",
+                    })
+                    .collect();
+                sql.push_str(&format!(" AND ({})", clauses.join(" OR ")));
+            }
+            if !cars.is_empty() {
+                push_in(&mut sql, &mut args, "s.car_path", &cars);
+            }
+            if !tracks.is_empty() {
+                // the discovery's track name, or the recordings' display name
+                let marks: Vec<String> = tracks
+                    .iter()
+                    .map(|value| {
+                        args.push(value.to_lowercase().into());
+                        format!("?{}", args.len())
+                    })
+                    .collect();
+                let marks = marks.join(", ");
+                sql.push_str(&format!(
+                    " AND (lower(COALESCE(s.track, '')) IN ({marks}) OR EXISTS (SELECT 1 FROM session_recordings sr
+                        JOIN recordings r ON r.sha256 = sr.recording_sha256 WHERE sr.session_id = s.session_id
+                        AND lower(COALESCE(r.track, '')) IN ({marks})))"
+                ));
+            }
+            if !series.is_empty() {
+                push_in(&mut sql, &mut args, series_of!(), &series);
+            }
+            if let Some(fixed) = setup {
+                sql.push_str(&format!(" AND {} = {}", fixed_setup_of!(), i64::from(fixed)));
+            }
             if let Some(n) = &needle {
                 sql.push_str(&format!(
                     " AND (lower(COALESCE(s.track,'') || ' ' || COALESCE(s.car_path,'') || ' ' ||
@@ -709,11 +829,17 @@ async fn session_detail(State(app): State<AppState>, Path(session_id): Path<i64>
             let event_sessions: Vec<Value> = match subsession.filter(|s| *s != 0) {
                 Some(sub) => conn
                     .prepare(
-                        "SELECT session_id, session_type FROM sessions WHERE customer_id = ?1 AND subsession_id = ?2
+                        "SELECT session_id, session_type, analysis_state, analysis_reason FROM sessions
+                         WHERE customer_id = ?1 AND subsession_id = ?2
                          AND session_id <> ?3 ORDER BY sim_session_num, session_id",
                     )?
                     .query_map(params![customer, sub, session_id], |r| {
-                        Ok(json!({"session_id": r.get::<_, i64>(0)?, "session_type": r.get::<_, Option<String>>(1)?}))
+                        Ok(json!({
+                            "session_id": r.get::<_, i64>(0)?,
+                            "session_type": r.get::<_, Option<String>>(1)?,
+                            "analysis_state": r.get::<_, String>(2)?,
+                            "analysis_reason": r.get::<_, Option<String>>(3)?,
+                        }))
                     })?
                     .collect::<rusqlite::Result<_>>()?,
                 None => Vec::new(),
@@ -983,6 +1109,12 @@ async fn setup_library(
         .unwrap_or(50)
         .clamp(1, 200);
     let raced = q.get("raced_only").is_some_and(|v| v == "true" || v == "1");
+    let raced_filter = match q.get("raced").map(String::as_str) {
+        None | Some("") => None,
+        Some("true" | "1") => Some(true),
+        Some("false" | "0") => Some(false),
+        Some(_) => return Err(Error::invalid("raced must be true or false")),
+    };
     let (car, text, cursor) = (
         q.get("car_path").cloned(),
         q.get("q").cloned(),
@@ -998,6 +1130,7 @@ async fn setup_library(
                     car_path: car.as_deref(),
                     q: text.as_deref(),
                     raced_only: raced,
+                    raced: raced_filter,
                     cursor: cursor.as_deref(),
                     limit,
                 },
@@ -1050,11 +1183,15 @@ async fn setup_compare(State(app): State<AppState>, body: Bytes) -> Resp {
             "a setup without values cannot be compared",
         ));
     }
-    let scheme = if left_export || right_export {
-        "export"
-    } else {
-        "recording"
-    };
+    if left_export != right_export {
+        // A garage export keys its values differently from a recording; compared, every row would
+        // read unknown.
+        return Err(Error::unprocessable(
+            "different_schemes",
+            "a setup known only from a garage export cannot be compared with a recorded one",
+        ));
+    }
+    let scheme = if left_export { "export" } else { "recording" };
     let customer: Option<i64> = app
         .store
         .read(move |conn| {

@@ -1,15 +1,19 @@
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import { type Schemas, api, paths, request } from "../core/api";
 import { formatDateTime, plural } from "../core/format";
 import { useJobRun } from "../core/jobs";
 import { useResource } from "../core/resource";
 import { uuid4 } from "../core/uuid";
 import { href, navigate } from "../core/router";
-import { Chip, ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
+import { ErrorLine, Loading, Notice } from "../ui/kit";
 import { NotesPanel } from "../ui/notes";
-import { SOURCE_LABEL, classifyCompare, groupSetupValues, sameNameAs, seenSpan, setupTitle, tuneTarget, uniqueSources } from "../setups/model";
+import { carColors } from "../setups/library";
+import { CheckeredFlag, Chevron } from "../setups/glyphs";
+import { SOURCE_LABEL, type Setup, classifyCompare, comparePicks, groupSetupValues, sameNameAs, seenSpan, setupTitle, tuneTarget, uniqueSources } from "../setups/model";
+import "../setups/setups.css";
 
 type Result = Schemas["SetupCompareResult"];
+const SIGHTINGS_SHOWN = 25;
 
 function ValueGroups({ groups }: { groups: ReturnType<typeof groupSetupValues>["settings"] }) {
   return (
@@ -31,22 +35,29 @@ function ValueGroups({ groups }: { groups: ReturnType<typeof groupSetupValues>["
   );
 }
 
-function CompareTable({ result, leftName, rightName }: { result: Result; leftName: string; rightName: string }) {
+function CompareTable({ result, left, right }: { result: Result; left: Setup; right: Setup }) {
   const [all, setAll] = useState(false);
   const rows = classifyCompare(result.rows);
   const row = (r: (typeof rows.changed)[number]) => (
-    <tr key={r.key} data-kind={r.kind} title={r.kind === "unknown" ? "Missing or unreadable on one side; never treated as equal." : undefined}>
+    <tr key={r.key} data-kind={r.kind} data-readout={r.readout ? "true" : undefined}>
       <th scope="row">{r.label}</th>
       <td>{r.left}</td>
       <td>{r.right}</td>
     </tr>
   );
+  const readouts = all ? rows.readouts : rows.readouts.filter((r) => r.kind !== "identical");
+  const head = (s: Setup) => (
+    <th scope="col">
+      {setupTitle(s)}
+      <small>{seenSpan(s)}</small>
+    </th>
+  );
   return (
     <div class="compare">
       <p class="compare-summary" data-testid="compare-summary">
-        <b>{rows.changed.length} changed</b> · <b>{rows.unknown.length} unknown</b> · {result.identical_count} identical
-        {rows.readout.length ? ` · ${plural(rows.readout.length, "garage readout")} moved` : ""}
-        {rows.identical.length > 0 ? (
+        <b>{rows.changed.length} changed</b> · <b>{rows.unknown.length} unknown</b> · {rows.identical.length} identical
+        {rows.readoutsMoved ? ` · ${plural(rows.readoutsMoved, "readout")} moved` : ""}
+        {rows.identical.length + rows.readouts.filter((r) => r.kind === "identical").length > 0 ? (
           <button type="button" class="link-btn" aria-pressed={all} onClick={() => setAll(!all)}>
             {all ? "Hide identical" : "Show all values"}
           </button>
@@ -57,45 +68,88 @@ function CompareTable({ result, leftName, rightName }: { result: Result; leftNam
           <thead>
             <tr>
               <th scope="col">Setting</th>
-              <th scope="col">{leftName}</th>
-              <th scope="col">{rightName}</th>
+              {head(left)}
+              {head(right)}
             </tr>
           </thead>
           <tbody>
             {rows.changed.map(row)}
             {rows.unknown.map(row)}
-            {rows.readout.length ? (
+            {all ? rows.identical.map(row) : null}
+            {readouts.length ? (
               <tr class="group-head">
-                <th colSpan={3}>Garage readouts (not counted as changes)</th>
+                <th colSpan={3}>Garage readouts</th>
               </tr>
             ) : null}
-            {rows.readout.map(row)}
-            {all ? rows.identical.map(row) : null}
+            {readouts.map(row)}
           </tbody>
         </table>
       </div>
-      {rows.changed.length === 0 && rows.unknown.length === 0 ? <p class="sub">Every readable setting matches.</p> : null}
     </div>
+  );
+}
+
+function Versions({ current, twins, customerId }: { current: Setup; twins: Setup[]; customerId: number }) {
+  const all = [current, ...twins].sort((a, b) => Date.parse(a.first_seen_at) - Date.parse(b.first_seen_at) || a.setup_id - b.setup_id);
+  const numbered = all.map((s, i) => ({ s, number: i + 1, latest: i === all.length - 1 })).reverse();
+  return (
+    <section class="d-card versions-board" aria-label="Versions" data-testid="versions">
+      <h2>
+        Versions <span class="count">{all.length}</span>
+      </h2>
+      <ul class="sight-list">
+        {numbered.map(({ s, number, latest }) => (
+          <li key={s.setup_id} class={`s-grid s-row${s.setup_id === current.setup_id ? " here" : ""}`} data-version={number} aria-current={s.setup_id === current.setup_id ? "true" : undefined}>
+            {s.setup_id === current.setup_id ? (
+              <span class="s-name">
+                <span class="s-title">Version {number}</span>
+                {latest ? <span class="tag">Latest</span> : null}
+                <span class="tag solid">Viewing</span>
+              </span>
+            ) : (
+              <a class="s-name" href={href({ page: "setup", customerId, setupId: s.setup_id })}>
+                <span class="s-title">Version {number}</span>
+                {latest ? <span class="tag">Latest</span> : null}
+              </a>
+            )}
+            {s.raced ? (
+              <span class="raced">
+                <CheckeredFlag />
+                Raced
+              </span>
+            ) : (
+              <span />
+            )}
+            <span class="num">{s.observation_count}×</span>
+            <span class="date">{seenSpan(s)}</span>
+            <span class="go">{s.setup_id === current.setup_id ? null : <Chevron />}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
 export default function SetupDetailPage({ customerId, setupId }: { customerId: number; setupId: number }) {
   const res = useResource(paths.setup(setupId), (signal) => api.setup(setupId, { signal }));
+  const options = useResource(paths.carsAndTracks(customerId), () => api.carsAndTracks(customerId));
   const detail = res.data;
   const car = detail?.setup.car_path ?? null;
   const siblings = useResource(car ? paths.setups(customerId, { car_path: car, limit: 200 }) : null, () => api.setups(customerId, { car_path: car!, limit: 200 }));
   const [otherId, setOtherId] = useState<number | null>(null);
   const compare = useJobRun<Result>();
   const [tuneError, setTuneError] = useState<string | null>(null);
+  const [allSightings, setAllSightings] = useState(false);
+  const colors = useMemo(() => carColors((options.data?.cars ?? []).map((c) => c.car_path), car ? [car] : []), [options.data, car]);
 
   if (!detail) return res.error ? <ErrorLine error={res.error} /> : <Loading what="setup" />;
   const s = detail.setup;
-  const { settings, readouts, settingCount } = groupSetupValues(detail.values, detail.identity_excluded_keys);
-  const others = (siblings.data?.setups ?? []).filter((x) => x.setup_id !== setupId);
+  const { settings, readouts, readings, settingCount } = groupSetupValues(detail.values);
+  const picks = comparePicks(s, siblings.data?.setups ?? []);
+  const others = picks.map((p) => p.setup);
   const twins = sameNameAs(s, others);
-  const recordings = new Set(detail.observations.filter((o) => o.session_id != null).map((o) => o.session_id)).size;
-  const visits = new Set(detail.observations.filter((o) => o.visit_id).map((o) => o.visit_id)).size;
   const other = others.find((x) => x.setup_id === otherId);
+  const color = colors.get(s.car_path.toLowerCase());
 
   function pick(id: number | null) {
     setOtherId(id);
@@ -111,94 +165,122 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   }
 
   const linked = detail.observations.some((o) => o.session_id != null);
+  const sightings = allSightings ? detail.observations : detail.observations.slice(0, SIGHTINGS_SHOWN);
+  const optionLabel = (o: Setup) => `${setupTitle(o)} · ${seenSpan(o)}`;
   return (
-    <>
+    <div class="setup-detail ds">
       <p class="crumbs">
         <a href={href({ page: "setups", customerId })}>Setups</a>
       </p>
-      <PageHead title={setupTitle(s)} sub={`${s.car_name ?? s.car_path} · first seen ${formatDateTime(s.first_seen_at)}`}>
-        <button type="button" class="btn btn-accent" disabled={!linked} title={linked ? "Tune from the recording that used this setup" : "Needs a recording with this setup"} onClick={tune}>
+      <header class="d-head" style={color ? `--car:${color}` : undefined}>
+        <div>
+          <h1>{setupTitle(s)}</h1>
+          <p class="meta">
+            <span>{s.car_name ?? s.car_path}</span>
+            {settingCount > 0 || readouts.length > 0 ? <span class="vk">Values known</span> : <span class="vu">Values unknown</span>}
+            {s.raced ? (
+              <span class="raced">
+                <CheckeredFlag />
+                Raced
+              </span>
+            ) : null}
+            <span class="date">First seen {formatDateTime(s.first_seen_at)}</span>
+          </p>
+          <p class="meta" aria-label="Sources">
+            {uniqueSources(s.sources).map((x) => (
+              <span key={x} class="tag">
+                {x}
+              </span>
+            ))}
+            {s.names.map((n) => (
+              <span key={n} class="tag dashed" title="Setup file name">
+                {n}
+              </span>
+            ))}
+          </p>
+        </div>
+        <button type="button" class="pill primary" disabled={!linked} title={linked ? undefined : "No recording yet"} onClick={tune}>
           Tune this setup
         </button>
-      </PageHead>
+      </header>
       {tuneError ? <Notice tone="warn">{tuneError}</Notice> : null}
-      <p class="chips">
-        {s.raced ? <Chip tone="good">Raced</Chip> : null}
-        {uniqueSources(s.sources).map((x) => (
-          <Chip key={x}>{x}</Chip>
-        ))}
-        {s.names.map((n) => (
-          <Chip key={n} title="Setup file name">
-            {n}
-          </Chip>
-        ))}
-      </p>
 
-      {twins.length > 0 ? (
-        <p class="sub" data-testid="same-name">
-          {twins.length === 1 ? "Another setup carries" : `${twins.length} other setups carry`} the file name {s.names.find((n) => twins.some((t) => t.names.includes(n)))}: the file was changed between sessions, so each version has its own values. This one was seen {seenSpan(s)}, in{" "}
-          {[recordings ? plural(recordings, "recording") : "", visits ? plural(visits, "garage visit") : ""].filter(Boolean).join(" and ") || "no recording or garage visit"}. Compare with the others below.
-        </p>
-      ) : null}
+      {twins.length > 0 ? <Versions current={s} twins={twins} customerId={customerId} /> : null}
 
-      <section class="panel" aria-label="Compare">
-        <h2>Compare</h2>
-        {others.length === 0 ? (
-          <p class="sub">No other setup of this car to compare with.</p>
-        ) : (
+      {others.length > 0 ? (
+        <section class="d-card" aria-label="Compare">
+          <h2>Compare</h2>
           <label class="select-field">
             <span>With</span>
             <select value={otherId ?? ""} onChange={(e) => pick((e.currentTarget as HTMLSelectElement).value ? Number((e.currentTarget as HTMLSelectElement).value) : null)}>
               <option value="">No comparison</option>
-              {others.map((o) => (
-                <option key={o.setup_id} value={o.setup_id}>
-                  {setupTitle(o)} · {sameNameAs(o, [s, ...others]).length > 0 ? seenSpan(o) : formatDateTime(o.last_seen_at)}
+              {picks.map(({ setup: o, blocked }) => (
+                <option key={o.setup_id} value={o.setup_id} disabled={blocked !== null}>
+                  {optionLabel(o)}
+                  {blocked ? ` · ${blocked}` : ""}
                 </option>
               ))}
             </select>
           </label>
-        )}
-        {compare.state.phase === "running" ? <Loading what="comparison" /> : null}
-        {compare.state.phase === "error" ? <Notice tone="warn">{compare.state.message}</Notice> : null}
-        {compare.state.phase === "done" && other ? <CompareTable result={compare.state.result} leftName={setupTitle(s)} rightName={setupTitle(other)} /> : null}
-      </section>
+          {compare.state.phase === "running" ? <Loading what="comparison" /> : null}
+          {compare.state.phase === "error" ? <Notice tone="warn">{compare.state.message}</Notice> : null}
+          {compare.state.phase === "done" && other ? <CompareTable result={compare.state.result} left={s} right={other} /> : null}
+        </section>
+      ) : null}
 
       {compare.state.phase !== "done" ? (
-        <section class="panel" aria-label="Setup values">
+        <section class="d-card" aria-label="Setup values">
           <h2>
             Values <span class="count">{settingCount}</span>
           </h2>
-          {settingCount === 0 ? <p class="sub">Values unknown for this setup.</p> : <ValueGroups groups={settings} />}
+          {settingCount === 0 ? (
+            <p>
+              <span class="vu">Values unknown</span>
+            </p>
+          ) : (
+            <ValueGroups groups={settings} />
+          )}
           {readouts.length > 0 ? (
-            <>
-              <h3 class="readout-head">Readouts, not setup values</h3>
-              <p class="sub">Computed by the garage or read from the last run. They change without a setup change and are never compared.</p>
+            <section aria-label="Garage readouts">
+              <h3 class="readout-head">Garage readouts</h3>
               <ValueGroups groups={readouts} />
-            </>
+            </section>
+          ) : null}
+          {readings.length > 0 ? (
+            <section aria-label="Run readings">
+              <h3 class="readout-head">Run readings</h3>
+              <ValueGroups groups={readings} />
+            </section>
           ) : null}
         </section>
       ) : null}
 
-      <section class="panel" aria-label="Sightings">
+      <section class="d-card" aria-label="Sightings">
         <h2>
           Sightings <span class="count">{detail.observations.length}</span>
         </h2>
-        <ul class="rows compact">
-          {detail.observations.slice(0, 25).map((o, i) => (
-            <li key={i} class="row-link row-static">
-              <span class="row-main">
-                <Chip>{SOURCE_LABEL[o.source]}</Chip>
-                <span class="row-title">{o.setup_name ?? "Name unknown"}</span>
-                {o.is_modified != null ? <Chip tone={o.is_modified ? "warn" : undefined}>{o.is_modified ? "Modified" : "Unmodified"}</Chip> : null}
-                {o.session_id != null ? <a href={href({ page: "investigation", customerId, sessionId: o.session_id, view: "race" })}>Session {o.session_id}</a> : null}
+        <ul class="sight-list">
+          {sightings.map((o, i) => (
+            <li key={i} class="sight">
+              <span class="tag">{SOURCE_LABEL[o.source]}</span>
+              <span>
+                {o.setup_name ?? "Name unknown"}
+                {o.is_modified != null ? <span class={`tag${o.is_modified ? " dashed" : ""}`}>{o.is_modified ? "Modified" : "Unmodified"}</span> : null}
               </span>
-              <span class="row-meta">{formatDateTime(o.observed_at)}</span>
+              {o.session_id != null ? <a href={href({ page: "investigation", customerId, sessionId: o.session_id, view: "race" })}>Session {o.session_id}</a> : <span />}
+              <span class="date">{formatDateTime(o.observed_at)}</span>
             </li>
           ))}
         </ul>
+        {detail.observations.length > SIGHTINGS_SHOWN && !allSightings ? (
+          <button type="button" class="pill" onClick={() => setAllSightings(true)}>
+            Show all {detail.observations.length}
+          </button>
+        ) : null}
       </section>
 
       <NotesPanel customerId={customerId} kind="setup" subjectId={String(setupId)} />
-    </>
+    </div>
   );
 }
+

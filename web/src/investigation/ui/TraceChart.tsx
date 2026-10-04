@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef } from "preact/hooks";
-import { buildCursorConfig, chartMetrics, type CursorConfig } from "../cursor/cursor-config";
+import { buildCursorConfig, chartContentHeight, chartMetrics, type CursorConfig } from "../cursor/cursor-config";
 import { createTelemetryCursor, type TelemetryCursor } from "../cursor/telemetry-cursor";
 import type { MapPoint } from "../geometry/map-model";
 import {
   chartPathGroups,
   hasSignalData,
-  referenceLapFor,
   resolve,
   signalRange,
   type TraceData,
@@ -21,6 +20,8 @@ export interface TraceChartProps {
   rows: readonly TraceRowSpec[];
   selected: readonly number[];
   spotlight: number | null;
+  /** The time-delta zero lap (the clean rule over the selection), named in the delta row's label. */
+  zeroLap: number | null;
   editing: boolean;
   region: { start: number; end: number } | null;
   trackRefs: TrackRefs;
@@ -32,29 +33,43 @@ export interface TraceChartProps {
   onRemoveRow(rowId: string): void;
   onMoveRow(rowId: string, direction: number): void;
   onCursor?(cursor: TelemetryCursor | null): void;
+  /** Bumped when channels arrive (the trace data object is filled in place). */
+  loadTick?: number;
+  /** Channels whose request failed: their rows say Failed. */
+  failedChannels?: readonly string[];
+}
+
+/** The map readouts the cursor writes, back to empty, and its marker hidden. */
+function resetTrackReadouts(refs: TrackRefs): void {
+  const fields = refs.fields;
+  if (fields) for (const key of Object.keys(fields) as (keyof typeof fields)[]) { const element = fields[key].current; if (element) element.textContent = "—"; }
+  if (refs.summary.current) refs.summary.current.textContent = "No sample";
+  if (refs.marker.current) refs.marker.current.style.visibility = "hidden";
 }
 
 function rowName(data: TraceData, row: TraceRowSpec): string {
   return row.signals.map((id) => resolve(data, id)?.name ?? id).join(" / ");
 }
 
-function rowUnit(data: TraceData, row: TraceRowSpec): string {
-  return [...new Set(row.signals.map((id) => resolve(data, id)?.unit ?? ""))].filter(Boolean).join(" / ");
+function rowUnit(data: TraceData, row: TraceRowSpec, zeroLap: number | null): string {
+  return [...new Set(row.signals.map((id) => (id === "delta" ? (zeroLap !== null ? `s · vs L${zeroLap}` : "s") : resolve(data, id)?.unit ?? "")))].filter(Boolean).join(" / ");
 }
 
 function rowHelp(data: TraceData, row: TraceRowSpec, available: boolean[]): string {
-  const parts: string[] = [];
-  const rendered = row.signals.map((id, index) => ({ id, index })).filter((item) => available[item.index]);
-  const missing = row.signals.filter((_, index) => !available[index]);
   const name = (id: string): string => resolve(data, id)?.name ?? id;
   const unit = (id: string): string => resolve(data, id)?.unit ?? "";
-  if (rendered.length === 1) parts.push(rendered[0]!.index === 0 ? `${name(rendered[0]!.id)} (${unit(rendered[0]!.id)}).` : `Dashed: ${name(rendered[0]!.id)} (${unit(rendered[0]!.id)}).`);
-  else if (rendered.length > 1) {
-    parts.push(`Solid: ${name(rendered[0]!.id)} (${unit(rendered[0]!.id)}).`, `Dashed: ${name(rendered[1]!.id)} (${unit(rendered[1]!.id)}).`, "Each line uses its own vertical scale.");
-  }
-  if (missing.length > 0) parts.push(`Not recorded for the selected laps: ${missing.map(name).join(", ")}.`);
-  if (parts.length === 0) parts.push("No values were recorded for the selected laps.");
+  const parts = row.signals.map((id, index) => `${row.signals.length > 1 ? (index === 0 ? "Solid · " : "Dashed · ") : ""}${name(id)} · ${unit(id)}${available[index] ? "" : " · not recorded"}`);
+  if (row.signals.length > 1) parts.push("Own scales");
   return parts.join("\n");
+}
+
+/** What an empty row says: a failed channel request, a channel still on its way, a channel this recording lacks, or a delta without a complete lap. */
+export function emptyRowText(data: TraceData, row: TraceRowSpec, zeroLap: number | null, failed: readonly string[] = []): string {
+  if (row.signals.includes("delta") && zeroLap === null) return "No complete lap";
+  if (row.signals.some((id) => failed.includes(id === "tire-wear" ? "tire-stress" : id))) return "Failed";
+  if (row.signals.some((id) => id !== "delta" && id !== "tire-wear" && data.signals.has(id) && !data.table.channels.has(id))) return "Loading";
+  if (row.signals.includes("tire-wear") && data.signals.has("tire-stress") && !data.table.channels.has("tire-stress")) return "Loading";
+  return "Not recorded";
 }
 
 export function TraceChart(props: TraceChartProps) {
@@ -68,7 +83,7 @@ export function TraceChart(props: TraceChartProps) {
   const ready = width >= 80 && height >= 80 && rows.length > 0 && selected.length > 0;
   const metrics = useMemo(() => chartMetrics(width, height, rows.length, unit), [width, height, rows.length, unit]);
   const lapIndices = useMemo(() => selected.map((lap) => data.lapIndex.get(lap)).filter((value): value is number => value !== undefined), [data, selected]);
-  const reference = useMemo(() => referenceLapFor(data, selected), [data, selected]);
+  const reference = props.zeroLap;
 
   const drawn = useMemo(() => {
     if (!ready) return [];
@@ -82,16 +97,26 @@ export function TraceChart(props: TraceChartProps) {
       });
       return { row, frame, available, groups };
     });
-  }, [ready, rows, metrics, data, lapIndices, reference, selected, spotlight]);
+  }, [ready, rows, metrics, data, lapIndices, reference, selected, spotlight, props.loadTick, data.colors]);
 
   const config: CursorConfig | null = useMemo(
-    () => (ready ? buildCursorConfig({ data, rows, selectedLaps: selected, spotlightLap: spotlight, metrics, trackPoints: props.trackPoints, initialFraction: props.initialFraction, key: `${props.analysisKey}|${selected.join(",")}|${spotlight}|${rows.map((row) => row.row_id + row.signals.join("+")).join(",")}|${Math.round(width)}x${Math.round(height)}@${unit}` }) : null),
+    () => (ready ? buildCursorConfig({ data, rows, selectedLaps: selected, spotlightLap: spotlight, metrics, trackPoints: props.trackPoints, initialFraction: props.initialFraction, zeroLap: reference, key: `${props.analysisKey}|${selected.join(",")}|${spotlight}|${reference}|${props.loadTick ?? 0}|${rows.map((row) => row.row_id + row.signals.join("+")).join(",")}|${Math.round(width)}x${Math.round(height)}@${unit}` }) : null),
     // initialFraction only seeds the first build; later changes belong to the cursor itself.
-    [ready, data, rows, selected, spotlight, metrics, props.trackPoints, props.analysisKey, width, height, unit],
+    [ready, data, rows, selected, spotlight, reference, metrics, props.trackPoints, props.analysisKey, width, height, unit, props.loadTick],
   );
 
   useEffect(() => {
-    if (!config || !surface.current || !canvas.current) return;
+    // Nothing selected (Clear) or no room: the cursor goes, with its markers and the map readouts of the old laps (review finding 4).
+    if (!config) {
+      if (cursor.current) {
+        cursor.current.dispose();
+        cursor.current = null;
+        props.onCursor?.(null);
+      }
+      resetTrackReadouts(props.trackRefs);
+      return;
+    }
+    if (!surface.current || !canvas.current) return;
     if (!cursor.current) {
       const svg = props.trackRefs.svg.current;
       cursor.current = createTelemetryCursor({
@@ -101,8 +126,12 @@ export function TraceChart(props: TraceChartProps) {
         trackMarker: props.trackRefs.marker.current,
         trackPercent: props.trackRefs.percent.current,
         trackSummary: props.trackRefs.summary.current,
+        trackFields: props.trackRefs.fields
+          ? { speed: props.trackRefs.fields.speed.current, throttle: props.trackRefs.fields.throttle.current, brake: props.trackRefs.fields.brake.current, delta: props.trackRefs.fields.delta.current }
+          : undefined,
         config,
       });
+      if (props.trackRefs.marker.current) props.trackRefs.marker.current.style.visibility = "";
       props.onCursor?.(cursor.current);
     } else {
       cursor.current.update(config);
@@ -115,8 +144,10 @@ export function TraceChart(props: TraceChartProps) {
     props.onCursor?.(null);
   }, []);
 
+  // Rows never shrink under their floor: when they do not fit, the chart frame scrolls instead of clipping the lower rows (review finding 3).
+  const contentHeight = chartContentHeight(rows.length, unit);
   return (
-    <div class="ri-chart-frame">
+    <div class="ri-chart-frame" data-chart-scroll style={`--ri-chart-min:${n(contentHeight)}px`}>
       <div class="ri-label-col" aria-label="Trace chart labels">
         {ready && drawn.map(({ row, frame, available }, index) => {
           const name = rowName(data, row);
@@ -139,7 +170,7 @@ export function TraceChart(props: TraceChartProps) {
                 }}
               >
                 {props.editing && <span class="ri-grip" aria-hidden="true">⋮⋮</span>}
-                <span class="ri-row-copy"><strong>{row.signals.map((id) => <span class="ri-row-signal" key={id}>{resolve(data, id)?.name ?? id}</span>)}</strong><span class="ri-row-unit">{rowUnit(data, row)}</span></span>
+                <span class="ri-row-copy"><strong>{row.signals.map((id) => <span class="ri-row-signal" key={id}>{resolve(data, id)?.name ?? id}</span>)}</strong><span class="ri-row-unit" data-row-unit={row.signals.join("+")}>{rowUnit(data, row, reference)}</span></span>
                 {props.editing && (
                   <button type="button" class="ri-row-remove" data-analysis-no-drag disabled={rows.length <= 1} title="Remove chart" aria-label={`Remove ${name} chart`} onClick={(event) => { event.stopPropagation(); props.onRemoveRow(row.row_id); }}>×</button>
                 )}
@@ -149,9 +180,9 @@ export function TraceChart(props: TraceChartProps) {
           );
         })}
       </div>
-      <div class="ri-chart-surface" ref={surface} tabIndex={0} role="application" aria-label="Synchronized telemetry traces. Move the pointer or use arrow keys to inspect." data-analysis-trace-chart>
+      <div class="ri-chart-surface" ref={surface} tabIndex={0} role="application" aria-label="Traces · arrow keys move the cursor" data-analysis-trace-chart>
         {ready && (
-          <svg class="ri-trace-svg" width={n(width)} height={n(height)} viewBox={`0 0 ${n(width)} ${n(height)}`} role="img" aria-label="Configurable synchronized telemetry traces">
+          <svg class="ri-trace-svg" width={n(width)} height={n(height)} viewBox={`0 0 ${n(width)} ${n(height)}`} role="img" aria-label="Traces">
             {drawn.map(({ row, frame, available, groups }, index) => (
               <g key={row.row_id} data-analysis-render-row data-row-id={row.row_id}>
                 <rect data-analysis-chart-row data-analysis-row-target="chart" data-row-id={row.row_id} data-row-index={index} data-row-name={rowName(data, row)}
@@ -162,7 +193,7 @@ export function TraceChart(props: TraceChartProps) {
                     width={n(Math.min(1, Math.max(0, props.region.end - props.region.start)) * frame.plotWidth)} height={n(frame.plotHeight)} class="ri-region" />
                 )}
                 <line x1={n(frame.plotLeft)} y1={n(frame.top + frame.plotHeight / 2)} x2={n(frame.plotLeft + frame.plotWidth)} y2={n(frame.top + frame.plotHeight / 2)} class="ri-grid" />
-                {!available.some(Boolean) && <text x={n(frame.plotLeft + 12)} y={n(frame.top + frame.plotHeight / 2 + 5 * scale)} class="ri-unavailable">Not recorded for this race</text>}
+                {!available.some(Boolean) && <text x={n(frame.plotLeft + 12)} y={n(frame.top + frame.plotHeight / 2 + 5 * scale)} class="ri-unavailable" data-row-empty={row.row_id}>{emptyRowText(data, row, reference, props.failedChannels)}</text>}
                 <g>
                   {groups.map((group) => (
                     <path key={`${group.signalId}|${group.key}`} data-analysis-trace-path data-row={index} data-signal={group.signalId} data-laps={group.laps.join(",")} data-spotlight={group.spotlight}
@@ -183,7 +214,7 @@ export function TraceChart(props: TraceChartProps) {
           </svg>
         )}
         <canvas ref={canvas} class="ri-cursor-canvas" aria-hidden="true" />
-        {selected.length === 0 && <div class="ri-empty ri-over"><strong>No laps selected</strong><span>Select Fastest, Best three, or a lap to display telemetry.</span></div>}
+        {selected.length === 0 && <div class="ri-empty ri-over"><strong>No laps selected</strong></div>}
       </div>
     </div>
   );

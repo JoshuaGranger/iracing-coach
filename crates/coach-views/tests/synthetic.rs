@@ -238,6 +238,127 @@ fn a_trace_without_a_lap_row_is_not_recorded_as_eligible() {
 }
 
 #[test]
+fn sector_times_are_session_time_between_the_sector_boundaries() {
+    let doc = analysis_doc(
+        "sectors",
+        &Options {
+            laps: 3,
+            points: 160,
+            ..Options::default()
+        },
+    );
+    let (out, _) = project_doc(&doc);
+    let catalog = view(&out, "traces-catalog.json");
+    assert_eq!(catalog["sector_start_pcts"], json!([0.0, 0.5]));
+    assert_valid("TraceCatalog", &catalog);
+    for lap in catalog["laps"].as_array().unwrap() {
+        // session time runs 31 s a lap; the bins span 0.003125 to 0.996875 of it, so a boundary
+        // outside them reads the nearest bin: both sectors are 15.403 s, a bin short of the lap
+        assert_eq!(lap["sector_times_s"], json!([15.403, 15.403]), "{lap}");
+        let sum: f64 = lap["sector_times_s"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .sum();
+        assert!((31.0 - sum).abs() < 0.2, "{sum}");
+    }
+
+    // a lap whose bins stop at 62 % has no time at the end of the last sector; the first sector
+    // is still measured
+    let mut doc = doc;
+    doc["lap_traces"]["traces"][1]["points"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(100);
+    let (out, _) = project_doc(&doc);
+    let catalog = view(&out, "traces-catalog.json");
+    assert_eq!(
+        catalog["laps"][0]["sector_times_s"],
+        json!([15.403, 15.403])
+    );
+    assert_eq!(catalog["laps"][1]["sector_times_s"], json!([15.403, null]));
+    assert_valid("TraceCatalog", &catalog);
+
+    // a lap with no session time at all has none, and a session without sectors lists none
+    for point in doc["lap_traces"]["traces"][2]["points"]
+        .as_array_mut()
+        .unwrap()
+    {
+        point["session_time_s"] = Value::Null;
+    }
+    let (out, _) = project_doc(&doc);
+    assert_eq!(
+        view(&out, "traces-catalog.json")["laps"][2]["sector_times_s"],
+        json!([null, null])
+    );
+    doc["lap_traces"]["sector_start_pcts"] = json!([0.0]);
+    let (out, _) = project_doc(&doc);
+    let catalog = view(&out, "traces-catalog.json");
+    assert!(catalog["laps"][0].get("sector_times_s").is_none());
+    assert_valid("TraceCatalog", &catalog);
+}
+
+#[test]
+fn sector_times_survive_the_catalog_shrink_ladder() {
+    let mut doc = analysis_doc(
+        "sectors-shrink",
+        &Options {
+            laps: 12,
+            points: 160,
+            ..Options::default()
+        },
+    );
+    for trace in doc["lap_traces"]["traces"].as_array_mut().unwrap() {
+        trace["junk"] = json!("z".repeat(60_000));
+    }
+    let (out, _) = project_doc(&doc);
+    assert!(size(&out, "traces-catalog.json") <= 512 * 1024);
+    let catalog = view(&out, "traces-catalog.json");
+    assert!(catalog["laps"][0].get("junk").is_none());
+    assert_eq!(
+        catalog["laps"][0]["sector_times_s"],
+        json!([15.403, 15.403])
+    );
+}
+
+#[test]
+fn pit_stops_list_each_service_with_its_lap_tires_and_fuel() {
+    let mut doc = analysis_doc("stops", &Options::default());
+    let runs = doc["runs"].as_array_mut().unwrap();
+    assert!(runs.len() >= 2);
+    runs[0]["end_lap"] = json!(6);
+    runs[0]["pit_service"] = json!({"start_time": 1347.5, "end_time": 1361.4, "fuel_added_l": 45.402,
+        "tires_changed_observed": ["RR", "LF", "LR", "RF"]});
+    runs[1]["end_lap"] = json!(12);
+    runs[1]["ended_with_post_run_service"] = json!(true);
+    runs[1]["pit_service"] = json!({"start_time": 2000.0, "end_time": 2004.0, "fuel_added_l": 0.0,
+        "tires_changed_observed": []});
+    let (out, _) = project_doc(&doc);
+    let race = view(&out, "race.json");
+    assert_valid("RaceView", &race);
+    assert_eq!(
+        race["pit_stops"],
+        json!([
+            {"run_number": 1, "lap": 6, "start_time_s": 1347.5, "end_time_s": 1361.4, "service_s": 13.9,
+             "tires_changed": ["LF", "LR", "RF", "RR"], "fuel_added_l": 45.402, "fuel_added_gal": 11.994,
+             "post_run_service": false},
+            {"run_number": 2, "lap": 12, "start_time_s": 2000.0, "end_time_s": 2004.0, "service_s": 4.0,
+             "tires_changed": [], "fuel_added_l": 0.0, "fuel_added_gal": 0.0, "post_run_service": true}
+        ])
+    );
+
+    // no detected service: an empty list, still a valid view
+    for run in doc["runs"].as_array_mut().unwrap() {
+        run.as_object_mut().unwrap().remove("pit_service");
+    }
+    let (out, _) = project_doc(&doc);
+    let race = view(&out, "race.json");
+    assert_eq!(race["pit_stops"], json!([]));
+    assert_valid("RaceView", &race);
+}
+
+#[test]
 fn race_runs_and_investigation_pass_backend_subtrees_through_with_unknown_fields() {
     let doc = analysis_doc("pass", &Options::default());
     let (out, _) = project_doc(&doc);

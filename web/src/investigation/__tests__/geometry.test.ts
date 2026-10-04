@@ -95,37 +95,30 @@ describe("trace model over the synthetic 82-lap analysis", () => {
     expect(fastestLap(data, context)).toBe(picked[0]);
   });
 
-  it("default selection skips laps the backend marks not comparison-eligible or incomplete", () => {
+  it("default selection follows the clean rule, not the backend screening; a partial lap never wins", () => {
     const context = { incidentPoints: new Map<number, number>() };
     // Work on a copy of the lap records so the shared fixture stays intact.
     const copy = (): TraceData => ({ ...data, lapMeta: new Map([...data.lapMeta].map(([lap, meta]) => [lap, { ...meta }] as const)) });
     const local = copy();
-    const eligible = data.laps.filter((lap) => isComparable(local.lapMeta.get(lap)!) && hasUsableLapTime(local.lapMeta.get(lap)));
-    expect(eligible.length).toBeGreaterThan(5);
-    const [partialLap, pitLap] = [eligible[0]!, eligible[1]!];
-    // Both would win on time alone: a 12.8 s partial final lap and a quick lap with backend exclusion reasons.
+    const clean = data.laps.filter((lap) => isCleanLap(local.lapMeta.get(lap)!, 0) && hasUsableLapTime(local.lapMeta.get(lap)));
+    expect(clean.length).toBeGreaterThan(5);
+    const [partialLap, pitLap, trafficLap] = [clean[0]!, clean[1]!, clean[2]!];
+    // All three would win on time alone: a partial final lap, a pit lap, and a traffic-screened lap that is clean.
     Object.assign(local.lapMeta.get(partialLap)!, { lap_time_s: 12.833, complete: false, comparison_eligible: false, exclusion_reasons: ["partial"] });
-    Object.assign(local.lapMeta.get(pitLap)!, { lap_time_s: 13.5, comparison_eligible: false, exclusion_reasons: ["pit"] });
-    expect(isComparable(local.lapMeta.get(partialLap)!)).toBe(false);
-    expect(isComparable(local.lapMeta.get(pitLap)!)).toBe(false);
+    Object.assign(local.lapMeta.get(pitLap)!, { lap_time_s: 13.5, pit_time_s: 6, comparison_eligible: false, exclusion_reasons: ["pit"] });
+    Object.assign(local.lapMeta.get(trafficLap)!, { lap_time_s: 14.0, comparison_eligible: false, exclusion_reasons: ["close_traffic"] });
     const picked = bestThree(local, context);
     expect(picked.length).toBe(3);
-    for (const lap of picked) expect(isComparable(local.lapMeta.get(lap)!)).toBe(true);
+    expect(picked[0]).toBe(trafficLap);
     expect(picked).not.toContain(partialLap);
     expect(picked).not.toContain(pitLap);
-    expect([partialLap, pitLap]).not.toContain(fastestLap(local, context));
+    expect(fastestLap(local, context)).toBe(trafficLap);
     // Still selectable by hand: the lap stays in the data with its trace row.
     expect(local.lapIndex.has(partialLap)).toBe(true);
-    expect(data.lapMeta.get(partialLap)!.complete).not.toBe(false);
 
-    // An incomplete lap alone is enough to leave the default selection, even if flagged eligible.
-    const incompleteOnly = copy();
-    Object.assign(incompleteOnly.lapMeta.get(partialLap)!, { lap_time_s: 12.833, complete: false });
-    expect(bestThree(incompleteOnly, context)).not.toContain(partialLap);
-
-    // When the backend marks no lap comparable the complete laps stand in (Traces still opens); a partial lap never does.
+    // When no lap is clean the complete timed laps stand in (Traces still opens); a partial lap never does.
     const none = copy();
-    for (const meta of none.lapMeta.values()) Object.assign(meta, { comparison_eligible: false, exclusion_reasons: ["caution_or_mixed"] });
+    for (const meta of none.lapMeta.values()) Object.assign(meta, { flag_state: "caution", caution_fraction: 1 });
     Object.assign(none.lapMeta.get(partialLap)!, { lap_time_s: 12.833, complete: false, exclusion_reasons: ["partial"] });
     const fallback = bestThree(none, context);
     expect(fallback.length).toBe(3);

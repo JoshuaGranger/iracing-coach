@@ -81,9 +81,12 @@ export function nearestPct(points: readonly MapPoint[], x: number, y: number): n
   return best ? best.lap_pct : null;
 }
 
-/** "Turn 4" -> "4", "Load zone 2" -> "Z2", otherwise the first four characters (the C# marker labels). */
-export function shortLabel(label: string): string {
-  if (/^turn /i.test(label)) return label.slice(5);
-  if (/^load zone /i.test(label)) return `Z${label.slice(10)}`;
+/**
+ * Marker text. An official "Turn 4" shows "4". A detected zone is not an official turn, so it shows "Z4" whatever the
+ * label's wording; "Load zone 2" is "Z2"; anything else is its first four characters.
+ */
+export function shortLabel(label: string, official = true): string {
+  const zone = /^(?:turn|load zone|zone) (\S+)$/i.exec(label.trim());
+  if (zone) return official && /^turn /i.test(label.trim()) ? zone[1]! : `Z${zone[1]}`;
   return label.length <= 4 ? label : label.slice(0, 4);
 }
