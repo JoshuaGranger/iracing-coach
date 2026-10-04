@@ -221,3 +221,40 @@ In the running container: at 23:44:24 stopping only the mount unit emptied the N
 - **The old Docker volume `iracing-coach_nas`** is still defined, unmounted, and nothing uses it. Removing it is a separate request.
 - **The g-house change is a branch, not on `main`.** `install-household-host.sh` could only be syntax-checked here (`bash -n`); ShellCheck, which CI runs, was not available locally. The g-house deploy-automation tests pass (101, 4 skipped).
 - The folder must exist on the NAS for the mount to succeed (it does). The server no longer creates `$NAS` itself, only the layout beneath it.
+
+## Release of `932bdc4`: web round 1 and the setup-identity fix (2026-10-04)
+
+Released under D14 from branch `w9/deploy` after a fast-forward merge of local `main` (`15791a9` to `932bdc4`, "Web round 1: the owner's backlog, the semantics audit and the Broadcast look"; `main` already held `w9/deploy` through `06c96eb`, so after the fast-forward the two are equal). Nothing was pushed to GitHub. No commit on top of `main` was needed for the release: the Compose file, `app.env` and the Dockerfile did not change. The server side of the commit: setup identity (`setup-keys.json` version 2 drops the derived `Chassis.FrontArb.Preload` leaves from the fingerprint; `server/src/setup_identity.rs` re-fingerprints and merges at every start; `.htm` exports named from the file name), projection version 2 (`coach-views`: sector times, pit stops), series and fixed/open on sessions, the new prefs fields (`text_size`, `session_filters`, `setup_filters`). The verification as a user is `round1-release.md`.
+
+| Item | Value |
+|---|---|
+| Command | `bash ~/.claude/skills/mini-pc/release.sh iracing-coach .` (Git bash, in `C:\Users\joshu\source\worktrees\iracing-coach-w9`, background), exit 0 |
+| Started, finished | 06:58:25Z, 07:01:18Z (2 min 53 s) |
+| Build on the N100 | 136 s (`g-house-app ... built in 136s`): `cargo build --release` 2 min 11 s (workspace crates recompiled, dependencies cached); `vite build` 626 ms, `index-C5vhDvSw.js` 52.61 kB (19.03 kB gzip), `index-CgGoADq7.css` 51.28 kB (10.40 kB gzip) |
+| Image | `iracing-coach:932bdc4919f4ba351780970b08b341199c24fe3a`, 147,198,326 B (config `sha256:b044aee2cce9...`, the running container's image ID) |
+| Previous image | `iracing-coach:4c3c5f02676203ca9dfe32e8f0648e38bc95822e`, kept on the host |
+| Stack | revision `32c416e42e2d722c` (Compose file unchanged); `deploys.log`: start 07:00:43Z, recovery point 07:00:44Z (`sqlite ok .../db/coach.sqlite3 7294976`, `/srv/g-house/recovery/iracing-coach/iracing-coach-20261004T070043Z.tar`, 120,760,320 B: the database before the setup merge), healthy 07:01:17Z; container started 07:01:15Z, 0 restarts, `OOMKilled false` |
+
+`ssh g-house-pc "sudo -n g-house-stack status iracing-coach"` (from the release):
+
+```
+stack=iracing-coach project=iracing-coach compose=/etc/g-house/stacks/iracing-coach/docker-compose.yml revision=32c416e42e2d722c
+recorded=32c416e42e2d722c
+iracing-coach-app-1   Up 2 seconds (healthy)   iracing-coach:932bdc4919f4ba351780970b08b341199c24fe3a
+```
+
+`curl -s http://192.168.1.81:8210/health`: `{"schema_version":1,"server_version":"0.19.0","status":"ok"}`. `/api/v1/status` at 07:01:30Z: **`nas.state ok`** (`last_ok_at` 07:01:15Z, `pending_archive 0`), `queue {analysis 0, deferred 1, light 0}`, **`projection_version 2`** (1 before), `python_version 3.12.15`, `worker_profile_version post-race-foundations-v23`, the sim collector `fc450983-...` online (`sim not_running`). At 07:14:15Z, after the checks: `nas.state ok`, the same queues, container `Up 13 minutes (healthy)`.
+
+**Setup-identity migration at start-up.** Before `coach-server listening` (07:01:15.538Z) the server log has `WARN coach_server::setup_identity: setup identity reconciled`, and `run/setup-identity.jsonl` in the data volume (new, 703 B) holds the same report as one line:
+
+| Field | Value |
+|---|---|
+| `at`, `setup_keys_version` | 2026-10-04T07:01:15Z, 2 |
+| `setups_checked` | 67 |
+| `fingerprints_rewritten` | 63 |
+| merges | setup **69 into 10** (`claude LV R CAM.sto`), setup **70 into 71** (`NOAPS_MaconiSetupShop AtlantaSS 26S3 Q.sto`), setup **2 into 1** (`NOAPS_MaconiSetupShop NHMS 26S3 R.sto`); 1 observation moved each, 0 notes moved |
+| `removed_without_observations`, `kept_for_notes`, `unreadable` | none, none, none |
+
+The backlog (#16) expected 69 and 70 both into 71; the values put capture 69 (04:13:52Z, 29 s after the last `claude LV R CAM.sto` sighting) with setup 10 and capture 70 (04:16:55Z, 31 s before the AtlantaSS commit) with setup 71. The third merge (2 into 1) is a recording pair of the NHMS race file that differed only in the derived preload. No note moved, so `user_data_generation` did not change.
+
+Projection version 2 re-projects lazily: an analysis's views are rebuilt on the first request for any of them (`409 projection_pending`, retry on `analysis_ready`). The first browser run met that (`round1-release.md`); every analysis was then requested once and 649 of 651 answer 200 (two pit-only recordings, sessions 132 and 249, have no track view, as `migration.md` recorded). Container memory after that burst: cgroup `memory.peak` 2,589,077,504 B against the 3 GiB limit, `oom_kill 0`; 382 MiB in `docker stats` once it settled.

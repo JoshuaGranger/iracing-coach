@@ -2,7 +2,8 @@
 // Complements tools/e2e/spa_check.mjs with what the candidate record needs and that script does not
 // measure: a 10 s pointer sweep on Traces and on Sections with the request log, whether Sections and
 // Traces fit the viewport (the wave-3 fix), the Setups library naming each setup as the API does, and
-// the Live page without a collector. Read-only except the preference writes the SPA itself makes.
+// the Live page without a collector, and (web round 1) the text-size step round-tripping through prefs.
+// Read-only except the preference writes the SPA itself makes and the text-size write, which it puts back.
 //
 //   node tools/rig/v1_candidate_check.mjs --base http://192.168.1.81:8210 --out <scratch>/shots/v1 [--session ID]
 //
@@ -38,7 +39,7 @@ const api = async (p) => (await fetch(base + p)).json();
 const driver = (await api("/api/v1/drivers")).drivers[0];
 const sessions = (await api(`/api/v1/drivers/${driver.customer_id}/sessions`)).sessions;
 const sessionId = Number(arg("session", 0)) || sessions.find((s) => s.analysis_state === "ready" && s.session_type === "Race")?.session_id;
-const setups = (await api(`/api/v1/drivers/${driver.customer_id}/setups`)).setups ?? [];
+const setups = (await api(`/api/v1/drivers/${driver.customer_id}/setups?limit=200`)).setups ?? [];
 
 const results = [];
 let failures = 0;
@@ -107,15 +108,29 @@ for (const [vp, size] of Object.entries(VIEWPORTS)) {
     await shot(`v1-${view}`);
   }
 
-  // Setups: every setup listed, each row naming the setup as the API does.
+  // Setups (web round 1): car cards; a named entry folds its versions, unnamed garage captures fold into
+  // one stack. With every fold open, each API setup has a link, a named setup sits under an entry titled
+  // with one of its entry's names, and an unnamed one only under the capture stack.
   await page.goto(`${base}/#/d/${driver.customer_id}/setups`);
-  await page.waitForSelector(".setup-row, .empty", { timeout: 15_000 }).catch(() => {});
-  const rowTexts = await page.$$eval(".setup-row", (els) => els.map((e) => e.textContent.replace(/\s+/g, " ").trim()));
-  check(vp, "setups: rows equal the API", rowTexts.length === setups.length, `${rowTexts.length} rows, API ${setups.length}`);
-  for (const s of setups.filter((s) => (s.names ?? []).length > 0)) {
-    const name = s.names[0].replace(/\.sto$/i, "");
-    check(vp, `setups: a row names "${s.names[0]}"`, rowTexts.some((t) => t.includes(name)), rowTexts.map((t) => t.slice(0, 80)).join(" | "));
+  await page.waitForSelector("section.s-car, .empty", { timeout: 15_000 }).catch(() => {});
+  for (const toggle of await page.locator("button.versions[aria-expanded=false], button.s-toggle[aria-expanded=false]").all()) await toggle.click();
+  const entries = await page.$$eval("li.s-entry", (els) =>
+    els.map((e) => ({
+      kind: e.getAttribute("data-entry"),
+      title: e.querySelector(".s-row .s-title")?.textContent?.trim() ?? "",
+      ids: [...e.querySelectorAll("a.s-name")].map((a) => Number((a.getAttribute("href") ?? "").split("/setups/")[1])).filter(Number.isFinite),
+    })),
+  );
+  const byId = new Map(setups.map((s) => [s.setup_id, s]));
+  const linked = new Set(entries.flatMap((e) => e.ids));
+  check(vp, "setups: every API setup reachable from a car card", linked.size === setups.length && setups.every((s) => linked.has(s.setup_id)), `${linked.size} linked, API ${setups.length}`);
+  for (const e of entries.filter((e) => e.kind === "setup")) {
+    const names = new Set(e.ids.flatMap((id) => byId.get(id)?.names ?? []));
+    check(vp, `setups: entry "${e.title}" is named as the API names it`, names.has(e.title), `setups ${[...new Set(e.ids)].join(",")}; API names ${[...names].join(" / ")}`);
   }
+  const captured = entries.filter((e) => e.kind === "captures").flatMap((e) => e.ids);
+  const namedInCaptures = captured.filter((id) => (byId.get(id)?.names ?? []).length > 0);
+  check(vp, "setups: only unnamed setups in the capture stack", namedInCaptures.length === 0, `${new Set(captured).size} captures; named among them ${namedInCaptures.join(",")}`);
   const d = await dims();
   check(vp, "setups: no horizontal page scroll", d.w <= d.iw, `${d.w} vs ${d.iw}`);
   await shot("v1-setups");
@@ -133,6 +148,41 @@ for (const [vp, size] of Object.entries(VIEWPORTS)) {
   check(vp, "no console errors", errors.length === 0, errors.slice(0, 3).join(" | ").slice(0, 300));
   check(vp, "no failed responses", failed.length === 0, failed.slice(0, 5).join(" | "));
   await context.close();
+}
+// Text size (backlog #1a): a step picked in one browser is saved as `text_size` in the driver's prefs and
+// applies in a second browser with no local hint; the stored value is then put back as it was found.
+{
+  const prefsPath = `/api/v1/drivers/${driver.customer_id}/prefs`;
+  const before = await api(prefsPath);
+  const original = before.text_size ?? null;
+  const pick = original === "larger" ? "largest" : "larger";
+  const label = { default: "Default", larger: "Larger", largest: "Largest" };
+  const a = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pa = await a.newPage();
+  await pa.goto(`${base}/#/d/${driver.customer_id}/sessions`);
+  await pa.waitForSelector("li.session-row", { timeout: 15_000 }).catch(() => {});
+  const rootPx = () => pa.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+  const pxBefore = await rootPx();
+  const put = pa.waitForResponse((r) => r.url().endsWith(prefsPath) && r.request().method() === "PUT", { timeout: 15_000 }).catch(() => null);
+  await pa.getByRole("button", { name: label[pick], exact: true }).click();
+  const putRes = await put;
+  check("desktop", `text size: picking ${label[pick]} saves prefs`, putRes?.status() === 200, `PUT ${putRes?.status()}`);
+  const pxAfter = await rootPx();
+  await a.close();
+  const saved = await api(prefsPath);
+  check("desktop", `text size: prefs hold text_size ${pick}`, saved.text_size === pick, `text_size ${original} -> ${saved.text_size}, version ${before.version} -> ${saved.version}, root ${pxBefore} -> ${pxAfter} px`);
+  const b = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  const pb = await b.newPage();
+  await pb.goto(`${base}/#/d/${driver.customer_id}/sessions`);
+  await pb.waitForSelector("li.session-row", { timeout: 15_000 }).catch(() => {});
+  await pb.waitForFunction((want) => document.documentElement.dataset.textSize === want, pick, { timeout: 10_000 }).catch(() => {});
+  const fresh = await pb.evaluate(() => ({ step: document.documentElement.dataset.textSize, px: parseFloat(getComputedStyle(document.documentElement).fontSize), hint: localStorage.getItem("coach.text-size") }));
+  check("phone", `text size: a fresh browser opens at ${pick}`, fresh.step === pick && fresh.px === pxAfter, JSON.stringify(fresh));
+  await b.close();
+  const restore = await fetch(base + prefsPath, { method: "PUT", headers: { "Content-Type": "application/json", "If-Match": String(saved.version) }, body: JSON.stringify({ text_size: original }) });
+  const after = await api(prefsPath);
+  check("desktop", "text size: prefs put back as found", restore.status === 200 && (after.text_size ?? null) === original, `PUT ${restore.status}, text_size ${after.text_size ?? null}, version ${after.version}`);
+  results.push({ viewport: "desktop", name: "text size round trip", ok: true, detail: JSON.stringify({ original, pick, pxBefore, pxAfter, fresh, versions: [before.version, saved.version, after.version] }) });
 }
 await browser.close();
 await writeFile(path.join(out, "v1-check.json"), JSON.stringify({ base, sessionId, setups: setups.map((s) => ({ setup_id: s.setup_id, names: s.names })), failures, results }, null, 1));
