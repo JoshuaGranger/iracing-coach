@@ -56,13 +56,23 @@
   "typography": {
     "uiFamilies": ["Segoe UI Variable Text", "Segoe UI", "sans-serif"],
     "metricFamilies": ["Cascadia Mono", "Consolas", "monospace"],
-    "bodyPx": 14,
-    "bodyLinePx": 20,
-    "compactPx": 12,
-    "sectionTitlePx": 16,
-    "pageTitlePx": 26,
-    "metricPx": 22,
-    "weights": [400, 500, 600]
+    "rootPx": 16,
+    "bodyPx": 16,
+    "bodyLinePx": 24,
+    "compactPx": 14,
+    "controlPx": 15,
+    "dataPx": 15,
+    "sectionTitlePx": 18,
+    "pageTitlePx": 28,
+    "metricPx": 24,
+    "controlHeightPx": 36,
+    "touchTargetPx": 44,
+    "weights": [400, 500, 600],
+    "textSizes": [
+      { "id": "default", "label": "Default", "percent": 100 },
+      { "id": "larger", "label": "Larger", "percent": 112.5 },
+      { "id": "largest", "label": "Largest", "percent": 125 }
+    ]
   },
   "spacingPx": [4, 8, 12, 16, 20, 24, 28, 32],
   "radiiPx": {

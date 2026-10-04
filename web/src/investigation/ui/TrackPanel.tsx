@@ -75,7 +75,7 @@ export function TrackPanel({ data, map, mode, onModeChange, selectedLaps, refs, 
   return (
     <section class="ri-panel ri-track-panel" aria-label="Track position">
       <div class="ri-panel-title">
-        <div class="ri-heading"><strong>{map ? "Track position" : "Lap distance"}</strong><span>Average of selected laps</span></div>
+        <strong>{map ? "Track position" : "Lap distance"}</strong>
         <div class="ri-panel-actions">
           {map && (
             <label class="ri-select"><span>Type</span>
@@ -84,7 +84,7 @@ export function TrackPanel({ data, map, mode, onModeChange, selectedLaps, refs, 
               </select>
             </label>
           )}
-          {map && <button type="button" class="ri-button" title="Fit track" onClick={() => controller.current?.fit()}>Fit track</button>}
+          {map && <button type="button" class="ri-button" title="Fit track" aria-label="Fit track" onClick={() => controller.current?.fit()}>Fit</button>}
         </div>
       </div>
       <div class="ri-track-stage">
@@ -124,7 +124,7 @@ export function TrackPanel({ data, map, mode, onModeChange, selectedLaps, refs, 
       <div ref={refs.marker} class="ri-map-marker" aria-hidden="true"><i /></div>
       </div>
       {legend && <div class="ri-map-legend" data-mode={mode}><b>{legend.low}</b><i class={`ri-scale ${mode}`} /><b>{legend.high}</b></div>}
-      <div class="ri-cursor-readout"><strong ref={refs.percent as RefObject<HTMLElement>}>25.0%</strong><span ref={refs.summary as RefObject<HTMLElement>}>No sample</span></div>
+      <div class="ri-cursor-readout" title="Average of the selected laps"><strong ref={refs.percent as RefObject<HTMLElement>}>25.0%</strong><span ref={refs.summary as RefObject<HTMLElement>}>No sample</span></div>
     </section>
   );
 }

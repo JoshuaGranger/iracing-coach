@@ -30,6 +30,7 @@ describe("generated setup keys and theme", () => {
   it("emits the canonical tokens", () => {
     expect(theme.name).toBe("mineral-glass-dark");
     expect(cssVariables["--color-accent"]).toBe(theme.colors.accent);
-    expect(cssVariables["--space-1"]).toBe("4px");
+    // Spacing is rem so it scales with the root font size (the browser default and the driver's text-size step).
+    expect(cssVariables["--space-1"]).toBe("0.25rem");
   });
 });

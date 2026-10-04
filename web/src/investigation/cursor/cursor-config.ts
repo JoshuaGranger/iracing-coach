@@ -1,3 +1,4 @@
+import { theme } from "../../gen/theme";
 import { boundedCursorLaps } from "../geometry/budget";
 import type { MapPoint } from "../geometry/map-model";
 import {
@@ -22,10 +23,32 @@ import { tooltipCapacityFor } from "./cursor-core";
  * paths were built from.
  */
 
-export const TOOLTIP_ROW_HEIGHT = 20;
-export const TOOLTIP_CHARACTER_WIDTH = 7.1;
+/** The root font size the geometry below was written for; `unit` arguments are pixels per rem (16 by default, more at the Larger and Largest text sizes). */
+const DEFAULT_UNIT = 16;
+
+/**
+ * Geometry of the value cards the cursor draws on the canvas, in CSS pixels. The card text is the `--text-data` size of the theme
+ * (config/theme.dark.json) at the current root font size, so it reads like the rest of the app and follows the text-size step.
+ */
+export interface CardMetrics {
+  fontPx: number;
+  /** Height of one lap line in a card. */
+  slotHeight: number;
+  padX: number;
+  padY: number;
+  gap: number;
+  swatch: number;
+}
+
+export function cardMetrics(unit: number = DEFAULT_UNIT): CardMetrics {
+  const scale = unit / DEFAULT_UNIT;
+  const fontPx = theme.typography.dataPx * scale;
+  return { fontPx, slotHeight: Math.ceil(fontPx * 1.45), padX: Math.round(6 * scale), padY: Math.round(3 * scale), gap: Math.round(4 * scale), swatch: Math.round(10 * scale) };
+}
 
 export interface ChartMetrics {
+  /** Root font size the metrics were built for, in px per rem. */
+  unit: number;
   width: number;
   height: number;
   plotLeft: number;
@@ -37,16 +60,18 @@ export interface ChartMetrics {
   rowCount: number;
 }
 
-/** Row frames for `rowCount` charts in a `width x height` pixel area, with a band below for the x ticks. */
-export function chartMetrics(width: number, height: number, rowCount: number): ChartMetrics {
+/** Row frames for `rowCount` charts in a `width x height` pixel area, with a band below for the x ticks. A row holds a two-line label and a value card, so its floor follows the root font size. */
+export function chartMetrics(width: number, height: number, rowCount: number, unit: number = DEFAULT_UNIT): ChartMetrics {
+  const scale = unit / DEFAULT_UNIT;
   const plotLeft = 6;
   const plotRight = 10;
   const chartTop = 6;
-  const axisBand = 20;
+  const axisBand = Math.round(20 * scale);
   const rows = Math.max(1, rowCount);
-  const rowHeight = Math.max(40, (height - chartTop - axisBand) / rows);
-  const plotHeight = Math.max(36, rowHeight - 8);
+  const rowHeight = Math.max(Math.round(44 * scale), (height - chartTop - axisBand) / rows);
+  const plotHeight = Math.max(Math.round(36 * scale), rowHeight - 8);
   return {
+    unit,
     width,
     height,
     plotLeft,
@@ -89,6 +114,7 @@ export interface CursorConfig {
   bins: number;
   x: Float64Array;
   metrics: ChartMetrics;
+  card: CardMetrics;
   rows: CursorRow[];
   traces: CursorTrace[];
   logicalTraceCount: number;
@@ -118,6 +144,7 @@ export interface CursorInputs {
 
 export function buildCursorConfig(input: CursorInputs): CursorConfig {
   const { data, metrics } = input;
+  const card = cardMetrics(metrics.unit);
   const bins = data.bins;
   const ordered = input.selectedLaps
     .slice()
@@ -160,10 +187,11 @@ export function buildCursorConfig(input: CursorInputs): CursorConfig {
     bins,
     x: data.x,
     metrics,
+    card,
     rows,
     traces,
     logicalTraceCount: ordered.length,
-    tooltipCapacity: tooltipCapacityFor(metrics.rowHeight, TOOLTIP_ROW_HEIGHT),
+    tooltipCapacity: tooltipCapacityFor(metrics.rowHeight, card.slotHeight),
     aggregate: aggregateSeries(data, lapIndices, reference),
     trackPoints: input.trackPoints,
     distanceStrip: input.trackPoints.length === 0,

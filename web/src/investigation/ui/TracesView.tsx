@@ -185,7 +185,7 @@ export function TracesView(props: TracesViewProps) {
       <div class={`ri-studio${editing ? " editing" : ""}`} ref={studio}>
         <div class="ri-panel ri-studio-panel">
           <div class="ri-panel-title ri-trace-title">
-            <div class="ri-heading"><strong>Aligned traces</strong><span>{selected.length} selected · hover to compare · scroll to see more laps</span></div>
+            <div class="ri-heading" title="Hover the chart to compare the selected laps; scroll over it to see more laps in the value cards"><strong>Aligned traces</strong><span>{selected.length} selected · scroll for more laps</span></div>
             <div class="ri-panel-actions">
               {props.focus && (
                 <>

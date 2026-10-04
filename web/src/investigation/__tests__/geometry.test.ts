@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeCcol } from "../ccol";
-import { buildCursorConfig, chartMetrics } from "../cursor/cursor-config";
+import { buildCursorConfig, cardMetrics, chartMetrics } from "../cursor/cursor-config";
 import {
   buildMapGeometry,
   isCanonicalMainLoop,
@@ -167,10 +167,23 @@ describe("trace model over the synthetic 82-lap analysis", () => {
     expect(config.rows[3]!.signals.length).toBe(0);
     expect(config.rows[2]!.signals.map((signal) => signal.id)).toEqual(["slip", "yaw"]);
     expect(config.aggregate.speed.length).toBe(160);
-    expect(config.tooltipCapacity).toBe(Math.floor((metrics.rowHeight - 18) / 20));
+    expect(config.tooltipCapacity).toBe(Math.floor((metrics.rowHeight - 18) / config.card.slotHeight));
     expect(config.distanceStrip).toBe(true);
     expect(hasSignalData(data, "speed", [0], null)).toBe(true);
     expect(hasSignalData(data, "tire-wear", [0], null)).toBe(false);
+  });
+
+  it("sizes the value cards and the rows from the root font size", () => {
+    // The card text is the theme's data size (15 px at the default 16 px root), so a lap line needs room for it.
+    expect(cardMetrics(16).fontPx).toBe(15);
+    expect(cardMetrics(16).slotHeight).toBeGreaterThanOrEqual(21);
+    expect(cardMetrics(20).fontPx).toBeCloseTo(18.75, 6);
+    expect(cardMetrics(20).slotHeight).toBeGreaterThan(cardMetrics(16).slotHeight);
+    // A row holds a two-line label, so a short chart area floors the row height by the root size.
+    expect(chartMetrics(900, 600, 6).unit).toBe(16);
+    expect(chartMetrics(900, 200, 6, 20).rowHeight).toBeGreaterThan(chartMetrics(900, 200, 6, 16).rowHeight);
+    // The band under the rows holds the tick labels, which grow with the root size.
+    expect(chartMetrics(900, 600, 6, 20).chartBottom).toBeLessThan(chartMetrics(900, 600, 6, 16).chartBottom);
   });
 
   it("aggregates every selected lap at each bin", () => {

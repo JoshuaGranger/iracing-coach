@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect } from "preact/hooks";
 import { type Schemas, api, paths, reachable } from "./core/api";
 import { outbox } from "./core/outbox";
@@ -7,12 +8,14 @@ import { cachedValue, invalidate, invalidateKey, useResource } from "./core/reso
 import { type ParsedRoute, href, navigate, useRoute } from "./core/router";
 import { events } from "./core/sse";
 import { readJson, useStore, writeJson } from "./core/store";
+import { useSavedTextSize } from "./core/text-size";
 import { DriversPage } from "./pages/drivers";
 import { SessionsPage } from "./pages/sessions";
 import { InvestigationSlot } from "./ui/investigation-slot";
 import { Notice } from "./ui/kit";
 import { Lazy } from "./ui/lazy";
 import { OutboxBar } from "./ui/outbox-bar";
+import { TextSizeControl } from "./ui/text-size-control";
 
 const loadSetups = () => import("./pages/setups");
 const loadSetupDetail = () => import("./pages/setup-detail");
@@ -87,7 +90,10 @@ function driverIdFor(route: ParsedRoute): number | null {
   return "customerId" in route ? route.customerId : null;
 }
 
-function TopBar({ route }: { route: ParsedRoute }) {
+type CurrentDriver = ReturnType<typeof useCurrentDriver>;
+
+/** The driver the app is showing: the route's, else the only one, else the last one used. One reader of the drivers list for the whole shell. */
+function useCurrentDriver(route: ParsedRoute) {
   const drivers = useResource(paths.drivers, () => api.drivers());
   const list = drivers.data?.drivers ?? [];
   const fromRoute = driverIdFor(route);
@@ -96,7 +102,11 @@ function TopBar({ route }: { route: ParsedRoute }) {
   useEffect(() => {
     if (fromRoute !== null) writeJson(LAST_DRIVER, fromRoute);
   }, [fromRoute]);
-  const driver = list.find((d) => d.customer_id === current);
+  return { list, current, driver: list.find((d) => d.customer_id === current) };
+}
+
+function TopBar({ route, who }: { route: ParsedRoute; who: CurrentDriver }) {
+  const { list, current, driver } = who;
   const page = route.page === "investigation" ? "sessions" : route.page === "setup" || route.page === "baseline" || route.page === "tuning" ? "setups" : route.page;
   const link = (name: "sessions" | "setups" | "live", label: string) =>
     current === null ? null : (
@@ -133,6 +143,7 @@ function TopBar({ route }: { route: ParsedRoute }) {
       ) : driver ? (
         <span class="driver-name">{driver.name}</span>
       ) : null}
+      <TextSizeControl customerId={current} />
     </header>
   );
 }
@@ -149,13 +160,15 @@ function Banner() {
   );
 }
 
-function ThemeBinding({ route }: { route: ParsedRoute }) {
+function ThemeBinding({ route, current }: { route: ParsedRoute; current: number | null }) {
   const id = driverIdFor(route);
   const { prefs } = usePrefs(id);
   const reduced = useReducedMotion(id ? prefs : null);
   useEffect(() => {
     document.documentElement.dataset.motion = reduced ? "reduced" : "full";
   }, [reduced]);
+  // The saved text size follows the driver the app is showing, also on the pages that have no driver in the route.
+  useSavedTextSize(current);
   return null;
 }
 
@@ -182,21 +195,36 @@ function renderPage(route: ParsedRoute) {
     }
 }
 
+/**
+ * The top bar and the bindings that follow the current driver. They hold the one reader of the drivers list, so a presence change
+ * re-renders them and not the page, which arrives as `children` made by `App`.
+ */
+function Chrome({ route, children }: { route: ParsedRoute; children: ComponentChildren }) {
+  const who = useCurrentDriver(route);
+  return (
+    <>
+      <ThemeBinding route={route} current={who.current} />
+      <TopBar route={route} who={who} />
+      {children}
+    </>
+  );
+}
+
 export function App() {
   useShellEvents();
   const route = useRoute();
   const page = renderPage(route);
   return (
     <div class="shell">
-      <ThemeBinding route={route} />
-      <TopBar route={route} />
-      <Banner />
-      <OutboxBar />
-      <main id="main" class={route.page === "investigation" ? "main main-wide" : "main"}>
-        <div key={route.page} class="page">
-          {page}
-        </div>
-      </main>
+      <Chrome route={route}>
+        <Banner />
+        <OutboxBar />
+        <main id="main" class={route.page === "investigation" ? "main main-wide" : "main"}>
+          <div key={route.page} class="page">
+            {page}
+          </div>
+        </main>
+      </Chrome>
     </div>
   );
 }

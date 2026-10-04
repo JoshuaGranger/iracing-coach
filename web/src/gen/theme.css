@@ -47,23 +47,27 @@
   --telemetry-target: #E2BC70;
   --font-ui: "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --font-metric: "Cascadia Mono", Consolas, monospace;
-  --text-body: 14px;
-  --leading-body: 20px;
-  --text-compact: 12px;
-  --text-section-title: 16px;
-  --text-page-title: 26px;
-  --text-metric: 22px;
+  --text-body: 1rem;
+  --leading-body: 1.5rem;
+  --text-compact: 0.875rem;
+  --text-control: 0.9375rem;
+  --text-data: 0.9375rem;
+  --text-section-title: 1.125rem;
+  --text-page-title: 1.75rem;
+  --text-metric: 1.5rem;
+  --control-height: max(36px, 2.25rem);
+  --touch-target: max(44px, 2.75rem);
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 28px;
-  --space-8: 32px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-7: 1.75rem;
+  --space-8: 2rem;
   --radius-control: 5px;
   --radius-card: 6px;
   --radius-panel: 8px;
@@ -74,6 +78,17 @@
   --motion-easing: cubic-bezier(.2, 0, 0, 1);
   --nav-expanded: 216px;
   --nav-collapsed: 64px;
+}
+
+/* Text size: the root font size of the driver's step (data-text-size on <html>; Default when absent). */
+:root, :root[data-text-size="default"] {
+  font-size: 100%;
+}
+:root[data-text-size="larger"] {
+  font-size: 112.5%;
+}
+:root[data-text-size="largest"] {
+  font-size: 125%;
 }
 
 @media (prefers-reduced-motion: reduce) {

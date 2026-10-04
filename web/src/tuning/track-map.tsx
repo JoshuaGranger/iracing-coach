@@ -1,5 +1,8 @@
 import { useMemo, useRef } from "preact/hooks";
 import type { Schemas } from "../core/api";
+import { useElementSize } from "../core/element-size";
+import { scaleFor, useRemPx } from "../core/unit";
+import { theme } from "../gen/theme";
 import type { FeedbackItem, MapTurn, RunPhase } from "./model";
 import { type MapPoint, nearestPct, pathData, pointAt, segment, shortLabel, viewBox } from "./map";
 
@@ -46,7 +49,11 @@ export function TrackMap(p: TrackMapProps) {
   const points = p.map.path as MapPoint[];
   const vb = useMemo(() => viewBox(points), [points]);
   const svg = useRef<SVGSVGElement>(null);
-  const r = Math.max(vb.w, vb.h) * 0.032;
+  const size = useElementSize(svg);
+  const k = scaleFor(useRemPx());
+  // Turn numbers are at least the theme's data size on screen whatever the map's scale (a phone shows the map small); the circle grows with them.
+  const pxPerUnit = size.width > 0 && size.height > 0 ? Math.min(size.width / vb.w, size.height / vb.h) : 0;
+  const r = Math.max(Math.max(vb.w, vb.h) * 0.032, pxPerUnit > 0 ? (theme.typography.dataPx * k) / (1.05 * pxPerUnit) : 0);
   const main = useMemo(() => pathData(points, true), [points]);
   if (points.length < 2) {
     return (

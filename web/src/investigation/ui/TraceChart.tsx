@@ -14,6 +14,7 @@ import { n } from "../format";
 import type { TraceRowSpec } from "../types";
 import { useElementSize } from "./hooks";
 import type { TrackRefs } from "./TrackPanel";
+import { scaleFor, useRemPx } from "./unit";
 
 export interface TraceChartProps {
   data: TraceData;
@@ -62,8 +63,10 @@ export function TraceChart(props: TraceChartProps) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const cursor = useRef<TelemetryCursor | null>(null);
   const { width, height } = useElementSize(surface);
+  const unit = useRemPx();
+  const scale = scaleFor(unit);
   const ready = width >= 80 && height >= 80 && rows.length > 0 && selected.length > 0;
-  const metrics = useMemo(() => chartMetrics(width, height, rows.length), [width, height, rows.length]);
+  const metrics = useMemo(() => chartMetrics(width, height, rows.length, unit), [width, height, rows.length, unit]);
   const lapIndices = useMemo(() => selected.map((lap) => data.lapIndex.get(lap)).filter((value): value is number => value !== undefined), [data, selected]);
   const reference = useMemo(() => referenceLapFor(data, selected), [data, selected]);
 
@@ -82,9 +85,9 @@ export function TraceChart(props: TraceChartProps) {
   }, [ready, rows, metrics, data, lapIndices, reference, selected, spotlight]);
 
   const config: CursorConfig | null = useMemo(
-    () => (ready ? buildCursorConfig({ data, rows, selectedLaps: selected, spotlightLap: spotlight, metrics, trackPoints: props.trackPoints, initialFraction: props.initialFraction, key: `${props.analysisKey}|${selected.join(",")}|${spotlight}|${rows.map((row) => row.row_id + row.signals.join("+")).join(",")}|${Math.round(width)}x${Math.round(height)}` }) : null),
+    () => (ready ? buildCursorConfig({ data, rows, selectedLaps: selected, spotlightLap: spotlight, metrics, trackPoints: props.trackPoints, initialFraction: props.initialFraction, key: `${props.analysisKey}|${selected.join(",")}|${spotlight}|${rows.map((row) => row.row_id + row.signals.join("+")).join(",")}|${Math.round(width)}x${Math.round(height)}@${unit}` }) : null),
     // initialFraction only seeds the first build; later changes belong to the cursor itself.
-    [ready, data, rows, selected, spotlight, metrics, props.trackPoints, props.analysisKey, width, height],
+    [ready, data, rows, selected, spotlight, metrics, props.trackPoints, props.analysisKey, width, height, unit],
   );
 
   useEffect(() => {
@@ -159,7 +162,7 @@ export function TraceChart(props: TraceChartProps) {
                     width={n(Math.min(1, Math.max(0, props.region.end - props.region.start)) * frame.plotWidth)} height={n(frame.plotHeight)} class="ri-region" />
                 )}
                 <line x1={n(frame.plotLeft)} y1={n(frame.top + frame.plotHeight / 2)} x2={n(frame.plotLeft + frame.plotWidth)} y2={n(frame.top + frame.plotHeight / 2)} class="ri-grid" />
-                {!available.some(Boolean) && <text x={n(frame.plotLeft + 12)} y={n(frame.top + frame.plotHeight / 2 + 4)} class="ri-unavailable">Not recorded for this race</text>}
+                {!available.some(Boolean) && <text x={n(frame.plotLeft + 12)} y={n(frame.top + frame.plotHeight / 2 + 5 * scale)} class="ri-unavailable">Not recorded for this race</text>}
                 <g>
                   {groups.map((group) => (
                     <path key={`${group.signalId}|${group.key}`} data-analysis-trace-path data-row={index} data-signal={group.signalId} data-laps={group.laps.join(",")} data-spotlight={group.spotlight}
@@ -173,7 +176,7 @@ export function TraceChart(props: TraceChartProps) {
               return (
                 <g key={tick}>
                   <line x1={n(x)} y1={n(metrics.chartTop)} x2={n(x)} y2={n(metrics.chartBottom)} class="ri-grid-vertical" />
-                  <text x={n(x)} y={n(metrics.height - 6)} text-anchor={tick === 0 ? "start" : tick === 4 ? "end" : "middle"} class="ri-axis">{tick * 25}%</text>
+                  <text x={n(x)} y={n(metrics.height - 6 * scale)} text-anchor={tick === 0 ? "start" : tick === 4 ? "end" : "middle"} class="ri-axis">{tick * 25}%</text>
                 </g>
               );
             })}

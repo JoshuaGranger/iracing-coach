@@ -4,6 +4,7 @@ import { n, numberText, PlotScale, runColor, runDash, signedText, ticks } from "
 import { hasPaceResult, paceTone, type Comparison, type Investigation, type InvestigationLap } from "../investigation-model";
 import { ComparisonChips, lapLabel, trendPath } from "./RaceView";
 import { useElementSize } from "./hooks";
+import { scaleFor, useRemPx } from "./unit";
 
 export interface RunsViewProps {
   inv: Investigation;
@@ -13,6 +14,7 @@ export interface RunsViewProps {
 export function RunsView({ inv, selected }: RunsViewProps) {
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
+  const k = scaleFor(useRemPx());
   const [showFit, setShowFit] = useState(false);
   const [hover, setHover] = useState<InvestigationLap | null>(null);
   const points = useMemo(() => inv.laps.filter((lap) => lap.plotPace && lap.greenExposure !== null && lap.lapTimeS !== null && lap.lapTimeS > 0), [inv]);
@@ -25,8 +27,12 @@ export function RunsView({ inv, selected }: RunsViewProps) {
     const max = Math.max(...times);
     const pad = Math.max(0.08, (max - min) * 0.06);
     const exposure = Math.max(...points.map((point) => point.greenExposure as number));
-    return new PlotScale(44, 18, Math.max(60, width - 56), Math.max(60, height - 18 - 40), 0, Math.max(1, exposure * 1.02), min - pad, max + pad);
-  }, [points, width, height]);
+    // Margins are the default-size geometry times the root font size's factor; the axis text is --text-compact.
+    const top = Math.round(22 * k);
+    const left = Math.round(52 * k);
+    return new PlotScale(left, top, Math.max(60, width - left - Math.round(12 * k)), Math.max(60, height - top - Math.round(50 * k)), 0, Math.max(1, exposure * 1.02), min - pad, max + pad);
+  }, [points, width, height, k]);
+  const drop = Math.round(5 * k); // baseline drop that centres a tick label on its line
   const readout = hover ? lapLabel(hover) : "Point to a lap for its time and exposure";
   return (
     <div class="ri-panel ri-fill ri-runs" data-ri-view="runs" data-ri-runs>
@@ -54,14 +60,14 @@ export function RunsView({ inv, selected }: RunsViewProps) {
                 {ticks(plot.yMin, plot.yMax, 4).map((tick) => (
                   <g key={`y${tick}`}>
                     <line x1={n(plot.left)} x2={n(plot.right)} y1={n(plot.y(tick))} y2={n(plot.y(tick))} class="ri-grid" />
-                    <text x={n(plot.left - 6)} y={n(plot.y(tick) + 4)} text-anchor="end" class="ri-axis">{tick.toFixed(1)}</text>
+                    <text x={n(plot.left - 6)} y={n(plot.y(tick) + drop)} text-anchor="end" class="ri-axis">{tick.toFixed(1)}</text>
                   </g>
                 ))}
                 {ticks(0, plot.xMax, 6).map((tick) => (
-                  <text key={`x${tick}`} x={n(plot.x(tick))} y={n(plot.bottom + 16)} text-anchor="middle" class="ri-axis">{tick.toFixed(0)}</text>
+                  <text key={`x${tick}`} x={n(plot.x(tick))} y={n(plot.bottom + 22 * k)} text-anchor="middle" class="ri-axis">{tick.toFixed(0)}</text>
                 ))}
-                <text x={n(plot.left)} y="12" class="ri-axis-title">Lap time · s</text>
-                <text x={n(plot.right)} y={n(plot.bottom + 32)} text-anchor="end" class="ri-axis-title">Green laps into run</text>
+                <text x={n(plot.left)} y={n(Math.round(15 * k))} class="ri-axis-title">Lap time · s</text>
+                <text x={n(plot.right)} y={n(plot.bottom + 42 * k)} text-anchor="end" class="ri-axis-title">Green laps into run</text>
                 {selected && cohortRibbon(selected).map((ribbon) => (
                   <path key={ribbon.key} d={`M${n(plot.x(ribbon.start))},${n(plot.bottom + 3)}V${n(plot.bottom + 7)}H${n(plot.x(ribbon.end))}V${n(plot.bottom + 3)}`} class="ri-bracket" stroke={runColor(ribbon.run)} />
                 ))}

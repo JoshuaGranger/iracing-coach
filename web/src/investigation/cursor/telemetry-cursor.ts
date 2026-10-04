@@ -1,6 +1,6 @@
 import { clamp, finite, formatSignalValue, nearestIndex, projectedTrackFraction, signed, tooltipX } from "./cursor-core";
 import { mapPointAt } from "../geometry/map-model";
-import { TOOLTIP_ROW_HEIGHT, type CursorConfig } from "./cursor-config";
+import type { CursorConfig } from "./cursor-config";
 
 /**
  * Synchronized chart/map cursor (port of analysis-telemetry-cursor.js, reworked for the G2 gate).
@@ -64,11 +64,6 @@ interface Rect {
 
 const MARKER_RADIUS = 3.4;
 const READOUT_INTERVAL_MS = 100;
-const CARD_PAD_X = 6;
-const CARD_PAD_Y = 3;
-const LAP_COLUMN = 22;
-const SWATCH_WIDTH = 10;
-const GAP = 4;
 const FIRST_DRAW_MARK = "ri-cursor-first-draw";
 
 export function createTelemetryCursor(options: TelemetryCursorOptions): TelemetryCursor {
@@ -99,6 +94,8 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
   let pendingBin = 0;
   let firstDrawMarked = false;
   let characterWidth = 6.6;
+  /** Width of the lap-number column of a card: three digits of the card font. */
+  let lapColumn = 22;
   let metrics = { renderedFrames: 0, framesOver25ms: 0, maximumFrameGap: 0, resizeCallbacks: 0, markersDrawn: 0, cardsDrawn: 0, lastCardText: "" };
   let lastFrameTime: number | null = null;
   const context = canvas.getContext("2d");
@@ -111,7 +108,6 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
   const textColor = token("--color-text-primary", "#F6F8FA");
   const mutedColor = token("--color-text-muted", "#96A6AE");
   const fontFamily = token("--font-metric", "Consolas, monospace");
-  const font = `11px ${fontFamily}`;
 
   function readViewBox(svg: SVGSVGElement | null | undefined): { x: number; y: number; w: number; h: number } | null {
     if (!svg) return null;
@@ -132,9 +128,11 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     canvas.style.height = `${height}px`;
     context?.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (context) {
-      context.font = font;
+      // The card text is the theme's data size at the current root font size (cursor-config.ts cardMetrics), set again whenever the config is rebuilt.
+      context.font = `${config.card.fontPx}px ${fontFamily}`;
       context.textBaseline = "middle";
-      characterWidth = context.measureText("0").width || 6.6;
+      characterWidth = context.measureText("0").width || config.card.fontPx * 0.6;
+      lapColumn = Math.ceil(3 * characterWidth);
     }
     dirty = [];
   }
@@ -169,7 +167,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     if (finite(throttle)) parts.push(`${(throttle * 100).toFixed(0)}% throttle`);
     if (finite(brake)) parts.push(`${(brake * 100).toFixed(0)}% brake`);
     if (finite(delta)) parts.push(`${signed(delta, 3)} s`);
-    return parts.length ? parts.join(" · ") : "No sample";
+    return parts.length ? `avg ${parts.join(" · ")}` : "No sample";
   }
 
   function writeReadouts(): void {
@@ -296,7 +294,8 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     context.stroke();
     context.globalAlpha = 1;
 
-    visibleCapacity = clamp(Math.min(config.tooltipCapacity, Math.max(1, Math.floor((m.rowHeight - 18) / TOOLTIP_ROW_HEIGHT))), 1, config.tooltipCapacity);
+    const card = config.card;
+    visibleCapacity = clamp(Math.min(config.tooltipCapacity, Math.max(1, Math.floor((m.rowHeight - 18) / card.slotHeight))), 1, config.tooltipCapacity);
     const maximumOffset = Math.max(0, config.traces.length - visibleCapacity);
     lapOffset = clamp(lapOffset, 0, maximumOffset);
     const visibleCount = Math.min(visibleCapacity, config.traces.length - lapOffset);
@@ -333,8 +332,8 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
       }
       if (visibleCount === 0) continue;
       const textWidth = Math.ceil(row.widestText * characterWidth);
-      const width = CARD_PAD_X * 2 + LAP_COLUMN + SWATCH_WIDTH + GAP * 2 + textWidth;
-      const height = CARD_PAD_Y * 2 + visibleCount * TOOLTIP_ROW_HEIGHT;
+      const width = card.padX * 2 + lapColumn + card.swatch + card.gap * 2 + textWidth;
+      const height = card.padY * 2 + visibleCount * card.slotHeight;
       const x = tooltipX({ cursorX, plotLeft: m.plotLeft, plotWidth: m.plotWidth, tooltipWidth: width });
       const y = row.top + 4;
       context.globalAlpha = 0.93;
@@ -349,15 +348,15 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
       context.lineWidth = 1.2;
       for (let slotIndex = 0; slotIndex < visibleCount; slotIndex++) {
         const trace = config.traces[lapOffset + slotIndex]!;
-        const cy = y + CARD_PAD_Y + slotIndex * TOOLTIP_ROW_HEIGHT + TOOLTIP_ROW_HEIGHT / 2;
+        const cy = y + card.padY + slotIndex * card.slotHeight + card.slotHeight / 2;
         context.textAlign = "right";
         context.fillStyle = mutedColor;
-        context.fillText(String(trace.lap), x + CARD_PAD_X + LAP_COLUMN, cy);
+        context.fillText(String(trace.lap), x + card.padX + lapColumn, cy);
         context.fillStyle = trace.color;
-        context.fillRect(x + CARD_PAD_X + LAP_COLUMN + GAP, cy - 1.5, SWATCH_WIDTH, 3);
+        context.fillRect(x + card.padX + lapColumn + card.gap, cy - 1.5, card.swatch, 3);
         context.textAlign = "left";
         context.fillStyle = textColor;
-        context.fillText(slotTexts[slotIndex]!, x + CARD_PAD_X + LAP_COLUMN + GAP * 2 + SWATCH_WIDTH, cy);
+        context.fillText(slotTexts[slotIndex]!, x + card.padX + lapColumn + card.gap * 2 + card.swatch, cy);
       }
       lastText = slotTexts.join(" | ");
       drawn.push({ x, y, w: width, h: height });

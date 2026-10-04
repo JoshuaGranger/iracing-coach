@@ -22,6 +22,9 @@ export const VIEWPORTS = {
   phone: { width: 390, height: 844 },
   tablet: { width: 1024, height: 768 },
   desktop: { width: 1280, height: 720 },
+  // A 1920x1080 laptop at 150 % and at 125 %, and the full-size desktop.
+  laptop: { width: 1536, height: 864 },
+  large: { width: 1920, height: 1080 },
 };
 
 /** Reads `test-data/g2/` and checks every file against the sha256 in its `fixture.json`. */

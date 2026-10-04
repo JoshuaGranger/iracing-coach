@@ -22,14 +22,22 @@ const t = theme.typography;
 const family = (names) => names.map((n) => (/[\s]/.test(n) ? `"${n}"` : n)).join(", ");
 add("--font-ui", family(t.uiFamilies));
 add("--font-metric", family(t.metricFamilies));
-add("--text-body", `${t.bodyPx}px`);
-add("--leading-body", `${t.bodyLinePx}px`);
-add("--text-compact", `${t.compactPx}px`);
-add("--text-section-title", `${t.sectionTitlePx}px`);
-add("--text-page-title", `${t.pageTitlePx}px`);
-add("--text-metric", `${t.metricPx}px`);
+// Sizes are authored in px against rootPx (the browser default, 16) and emitted in rem, so the root font size (the
+// browser or OS default, then the driver's text-size step below) scales every type size, control height and space.
+// Control heights keep a pixel floor so a small browser default cannot shrink a target under 36 px (desktop) or 44 px (touch).
+const rem = (px) => `${Number((px / t.rootPx).toFixed(4))}rem`;
+add("--text-body", rem(t.bodyPx));
+add("--leading-body", rem(t.bodyLinePx));
+add("--text-compact", rem(t.compactPx));
+add("--text-control", rem(t.controlPx));
+add("--text-data", rem(t.dataPx));
+add("--text-section-title", rem(t.sectionTitlePx));
+add("--text-page-title", rem(t.pageTitlePx));
+add("--text-metric", rem(t.metricPx));
+add("--control-height", `max(${t.controlHeightPx}px, ${rem(t.controlHeightPx)})`);
+add("--touch-target", `max(${t.touchTargetPx}px, ${rem(t.touchTargetPx)})`);
 t.weights.forEach((w, i) => add(`--weight-${["regular", "medium", "semibold"][i] ?? w}`, w));
-theme.spacingPx.forEach((s, i) => add(`--space-${i + 1}`, `${s}px`));
+theme.spacingPx.forEach((s, i) => add(`--space-${i + 1}`, rem(s)));
 for (const [k, v] of Object.entries(theme.radiiPx)) add(`--radius-${kebab(k)}`, `${v}px`);
 
 const m = theme.motionMs;
@@ -46,6 +54,13 @@ const css = [
   `  color-scheme: ${theme.mode};`,
   ...vars.map(([n, v]) => `  ${n}: ${v};`),
   "}",
+  "",
+  "/* Text size: the root font size of the driver's step (data-text-size on <html>; Default when absent). */",
+  ...t.textSizes.flatMap((step) => [
+    `${step.id === "default" ? ":root, " : ""}:root[data-text-size="${step.id}"] {`,
+    `  font-size: ${step.percent}%;`,
+    "}",
+  ]),
   "",
   ...(m.honorReducedMotion
     ? [

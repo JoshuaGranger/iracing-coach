@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef } from "preact/hooks";
+import { theme } from "../../gen/theme";
 import { createRaceInspection, type InspectionMapPoint } from "../cursor/race-inspection";
 import { n, numberText, passRole, percentText, PlotScale, reasonsText, seconds, signedText } from "../format";
 import type { MapGeometry, MapPoint } from "../geometry/map-model";
 import type { Comparison, Investigation, PairSteering, PassPair, Pass, PassRow, Section } from "../investigation-model";
 import { ROAD_WHEEL_LABEL, STEERING_WHEEL_LABEL } from "../signals";
+import { useElementSize } from "./hooks";
+import { scaleFor, useRemPx } from "./unit";
 
 const VIEW_WIDTH = 1000;
 const VIEW_HEIGHT = 100;
@@ -106,11 +109,18 @@ export interface SectionsViewProps {
 
 export function SectionsView({ inv, comparison, section, map, onSelectSection, onOpenTraces }: SectionsViewProps) {
   const root = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<SVGSVGElement>(null);
+  const mapSize = useElementSize(mapRef);
+  const k = scaleFor(useRemPx());
   const pair = section && comparison?.inspection ? comparison.inspection.pairs.get(section.id) ?? null : null;
   const sections = inv.sections.sections;
   const mapPoints: readonly MapPoint[] = map?.points ?? [];
   const inspectionPoints = useMemo<InspectionMapPoint[]>(() => mapPoints.map((point) => [point.x, point.y, point.percent] as const), [mapPoints]);
   const span = map ? Math.max(map.bounds[2], map.bounds[3]) : 1;
+  // Section labels are at least the theme's data size (15 px at the default root) on screen whatever the map's scale, in a circle that holds them.
+  const pxPerUnit = map && mapSize.width > 0 && mapSize.height > 0 ? Math.min(mapSize.width / map.bounds[2], mapSize.height / map.bounds[3]) : 0;
+  const labelFont = pxPerUnit > 0 ? Math.max(span * 0.05, (theme.typography.dataPx * k) / pxPerUnit) : span * 0.05;
+  const labelRadius = labelFont * 0.9;
   const range = (start: number, end: number): MapPoint[] => mapPoints.filter((point) => point.percent >= start - 1e-9 && point.percent <= end + 1e-9);
   const meterScale = Math.max(0, ...sections.map((s) => Math.abs(comparison?.corners.find((c) => c.id === s.id)?.deltaS ?? 0)));
   const labels = useMemo(() => {
@@ -121,11 +131,11 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
       const middle = (s.startPct + s.endPct) / 2;
       const anchor = mapPoints.reduce((best, point) => (Math.abs(point.percent - middle) < Math.abs(best.percent - middle) ? point : best), mapPoints[0]!);
       const candidates = offsets.map(([dx, dy]) => ({ x: anchor.x + dx * span, y: anchor.y + dy * span }));
-      const chosen = candidates.find((c) => placed.every((o) => Math.hypot(o.x - c.x, o.y - c.y) >= span * 0.095)) ?? { x: anchor.x, y: anchor.y };
+      const chosen = candidates.find((c) => placed.every((o) => Math.hypot(o.x - c.x, o.y - c.y) >= labelRadius * 2.1)) ?? { x: anchor.x, y: anchor.y };
       placed.push({ id: s.id, text: s.label, x: chosen.x, y: chosen.y, ax: anchor.x, ay: anchor.y, leader: Math.abs(chosen.x - anchor.x) + Math.abs(chosen.y - anchor.y) > 1e-9 });
     }
     return placed;
-  }, [map, mapPoints, sections, span]);
+  }, [map, mapPoints, sections, span, labelRadius]);
 
   useEffect(() => {
     if (!root.current || !pair) return undefined;
@@ -151,7 +161,7 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
         <div class="ri-map-panel">
           <div class="ri-panel-label"><strong>Track</strong>{!map && <span>not recorded</span>}</div>
           {map && mapPoints.length > 2 ? (
-            <svg class="ri-map" data-ri-map tabIndex={0} role="group" viewBox={map.viewBox} aria-label="Track map with the selected section and its approach. Move over the highlighted part to inspect telemetry.">
+            <svg ref={mapRef} class="ri-map" data-ri-map tabIndex={0} role="group" viewBox={map.viewBox} aria-label="Track map with the selected section and its approach. Move over the highlighted part to inspect telemetry.">
               <path d={mapPath(mapPoints)} class="ri-map-track" />
               {pair ? (
                 <>
@@ -168,8 +178,8 @@ export function SectionsView({ inv, comparison, section, map, onSelectSection, o
                   <g key={label.id} class={`ri-map-label${selected ? " selected" : ""}`} role="button" tabIndex={0} aria-label={`Section ${label.text}`} aria-pressed={selected}
                     onClick={() => onSelectSection(label.id)} onKeyDown={(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") onSelectSection(label.id); }}>
                     {label.leader && <line x1={n(label.ax)} y1={n(label.ay)} x2={n(label.x)} y2={n(label.y)} class="ri-map-leader" />}
-                    <circle cx={n(label.x)} cy={n(label.y)} r={n(span * 0.045)} />
-                    <text x={n(label.x)} y={n(label.y + span * 0.016)} text-anchor="middle" font-size={n(span * 0.05)}>{label.text}</text>
+                    <circle cx={n(label.x)} cy={n(label.y)} r={n(labelRadius)} />
+                    <text x={n(label.x)} y={n(label.y + labelFont * 0.33)} text-anchor="middle" font-size={n(labelFont)}>{label.text}</text>
                   </g>
                 );
               })}

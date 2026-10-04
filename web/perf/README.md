@@ -15,7 +15,9 @@ Pass: Traces first interactive <= 3 s, cursor >= 55 fps under continuous pointer
 
 Throttling is emulation on desktop Chromium, not a phone.
 
-`node perf/views.mjs` renders Race, Runs, Sections and Traces at desktop, tablet and phone sizes, checks structure, console errors, horizontal scroll and 44 px phone targets, and writes screenshots to `target/W8/shots`. It then builds the real app and drives it at 1280x720 and 1024x768 with the shell around the workspace (`shell-api.mjs` answers the shell's own reads from the fixture): no page scroll, the track map, the six trace rows and the six section channels inside the window, a 600 px window re-fits. It is not part of the gate.
+`node perf/views.mjs` renders Race, Runs, Sections and Traces at phone, tablet and desktop sizes (1280x720, 1536x864, 1920x1080), checks structure, console errors, horizontal scroll and 44 px phone targets, and writes screenshots to `target/W8/shots`. It then builds the real app and drives it at 1280x720, 1536x864, 1920x1080 and 1024x768 with the shell around the workspace (`shell-api.mjs` answers the shell's own reads from the fixture), at each text size step (`--steps default,larger,largest`): no page scroll, the track map, the six trace rows and the six section channels inside the window, a 600 px window re-fits. It is not part of the gate.
+
+`node perf/type-scale.mjs [--check]` audits the computed type of the real app, page by page, at 1920x1080 and 1536x864 (`--viewports`, `--pages`, `--text-size`): the smallest and median size of body text, secondary text, numbers and tab and button labels, the shortest control, any canvas font, and screenshots (`--shots`). Sessions, Setups and Live come from `web/mock`; the investigation views from the g2 fixture served through the real app. `--check` exits 1 under the owner's minimums (body 16 px, secondary 14, numbers 15, tab and button labels 15, controls 36 px tall, 44 px on a phone).
 
 ## Cursor loop
 

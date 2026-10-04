@@ -4,6 +4,7 @@ import { hasPaceResult, paceTone, type Comparison, type Investigation, type Inve
 import { hypothesisStatus } from "../format";
 import { steeringDeclaration } from "../signals";
 import { useElementSize } from "./hooks";
+import { scaleFor, useRemPx } from "./unit";
 
 function paceResultText(c: Comparison): string {
   return hasPaceResult(c) ? `${signedText(c.deltaS)} s median lap` : "No pace result";
@@ -52,6 +53,7 @@ export function ComparisonChips({ cohorts, word }: { cohorts: { cohort: Comparis
 function ProgressChart({ inv, selected }: { inv: Investigation; selected: Comparison | null }) {
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
+  const k = scaleFor(useRemPx());
   const [hover, setHover] = useState<InvestigationLap | null>(null);
   const plotted = useMemo(() => inv.laps.filter((lap) => lap.plotPace && lap.lapTimeS !== null && lap.lapTimeS > 0), [inv]);
   const events = useMemo(() => inv.timeline.filter((item) => item.kind === "pit_service" || item.kind === "incident"), [inv]);
@@ -66,11 +68,20 @@ function ProgressChart({ inv, selected }: { inv: Investigation; selected: Compar
     const min = times.length ? Math.min(...times) : 0;
     const max = times.length ? Math.max(...times) : 1;
     const pad = Math.max(0.08, (max - min) * 0.06);
-    const bandHeight = hasPositions ? Math.min(70, Math.max(34, height * 0.18)) : 0;
-    const bottomSpace = 32 + (hasPositions ? bandHeight + 18 : 0) + 18;
-    const pace = new PlotScale(44, 18, Math.max(60, width - 56), Math.max(60, height - 18 - bottomSpace), minLap, Math.max(minLap + 1, maxLap), min - pad, max + pad);
+    // Margins and label offsets are the default-size geometry times the root font size's factor; the axis text is --text-compact.
+    const top = Math.round(22 * k);
+    const left = Math.round(52 * k);
+    const right = Math.round(12 * k);
+    const below = Math.round(40 * k); // under the pace plot: caution marks, event lines, run brackets and their labels
+    const axisBand = Math.round(26 * k); // the lap ticks
+    const drop = Math.round(5 * k); // baseline drop that centres a tick label on its line
+    const bandHeight = hasPositions ? Math.min(70 * k, Math.max(34 * k, height * 0.18)) : 0;
+    const positionGap = hasPositions ? Math.round(16 * k) : 0; // the "Position" title above its band
+    const bottomSpace = below + (hasPositions ? positionGap + bandHeight : 0) + axisBand;
+    const pace = new PlotScale(left, top, Math.max(60, width - left - right), Math.max(60, height - top - bottomSpace), minLap, Math.max(minLap + 1, maxLap), min - pad, max + pad);
     const positions = inv.laps.filter((lap) => lap.position !== null && lap.position > 0).map((lap) => lap.position as number);
-    const posScale = hasPositions ? new PlotScale(pace.left, pace.bottom + 44, pace.width, bandHeight, pace.xMin, pace.xMax, 1, Math.max(2, ...positions)) : null;
+    const posScale = hasPositions ? new PlotScale(pace.left, pace.bottom + below + positionGap, pace.width, bandHeight, pace.xMin, pace.xMax, 1, Math.max(2, ...positions)) : null;
+    const baseline = height - Math.round(5 * k);
     const lapWidth = pace.width / Math.max(1, pace.xMax - pace.xMin);
     const positionPath = posScale
       ? inv.laps
@@ -87,12 +98,12 @@ function ProgressChart({ inv, selected }: { inv: Investigation; selected: Compar
         {ticks(pace.yMin, pace.yMax, 4).map((tick) => (
           <g key={tick}>
             <line x1={n(pace.left)} x2={n(pace.right)} y1={n(pace.y(tick))} y2={n(pace.y(tick))} class="ri-grid" />
-            <text x={n(pace.left - 6)} y={n(pace.y(tick) + 4)} text-anchor="end" class="ri-axis">{tick.toFixed(1)}</text>
+            <text x={n(pace.left - 6)} y={n(pace.y(tick) + drop)} text-anchor="end" class="ri-axis">{tick.toFixed(1)}</text>
           </g>
         ))}
-        <text x={n(pace.left)} y="12" class="ri-axis-title">Lap time · s</text>
+        <text x={n(pace.left)} y={n(Math.round(15 * k))} class="ri-axis-title">Lap time · s</text>
         {inv.laps.filter((lap) => lap.flagState === "caution").map((lap) => (
-          <rect key={`c${lap.lap}`} x={n(pace.x(lap.lap) - lapWidth / 2)} y={n(pace.bottom + 2)} width={n(Math.max(1.5, lapWidth))} height="5" class="ri-caution"><title>{`Lap ${lap.lap} · caution`}</title></rect>
+          <rect key={`c${lap.lap}`} x={n(pace.x(lap.lap) - lapWidth / 2)} y={n(pace.bottom + 2)} width={n(Math.max(1.5, lapWidth))} height={n(5 * k)} class="ri-caution"><title>{`Lap ${lap.lap} · caution`}</title></rect>
         ))}
         {events.map((item) => {
           const x = pace.x(item.lap);
@@ -100,7 +111,7 @@ function ProgressChart({ inv, selected }: { inv: Investigation; selected: Compar
           return (
             <g key={`${item.kind}${item.lap}`}>
               <line x1={n(x)} x2={n(x)} y1={n(pace.top)} y2={n(pace.bottom)} class={`ri-event ${cls}`} />
-              <text x={n(x + 3)} y={n(pace.top + 10)} class={`ri-event-label ${cls}`}>{item.kind === "incident" ? (item.value !== null ? `+${item.value.toFixed(0)}x` : "Inc") : "Pit"}<title>{`Lap ${item.lap} · ${item.label} · ${item.detail}`}</title></text>
+              <text x={n(x + 3)} y={n(pace.top + Math.round(13 * k))} class={`ri-event-label ${cls}`}>{item.kind === "incident" ? (item.value !== null ? `+${item.value.toFixed(0)}x` : "Inc") : "Pit"}<title>{`Lap ${item.lap} · ${item.label} · ${item.detail}`}</title></text>
             </g>
           );
         })}
@@ -110,8 +121,8 @@ function ProgressChart({ inv, selected }: { inv: Investigation; selected: Compar
           const end = pace.x(Math.max(...cohort.lapNumbers)) + 4;
           return (
             <g key={cohort.label + cohort.lapNumbers[0]}>
-              <path d={`M${n(start)},${n(pace.bottom + 12)}V${n(pace.bottom + 16)}H${n(end)}V${n(pace.bottom + 12)}`} class="ri-bracket" stroke={runColor(cohort.runNumber)} />
-              <text x={n((start + end) / 2)} y={n(pace.bottom + 28)} text-anchor="middle" class="ri-bracket-label">{lapsText(cohort.lapNumbers)}</text>
+              <path d={`M${n(start)},${n(pace.bottom + 12 * k)}V${n(pace.bottom + 16 * k)}H${n(end)}V${n(pace.bottom + 12 * k)}`} class="ri-bracket" stroke={runColor(cohort.runNumber)} />
+              <text x={n((start + end) / 2)} y={n(pace.bottom + 34 * k)} text-anchor="middle" class="ri-bracket-label">{lapsText(cohort.lapNumbers)}</text>
             </g>
           );
         })}
@@ -137,18 +148,18 @@ function ProgressChart({ inv, selected }: { inv: Investigation; selected: Compar
         })}
         {posScale && (
           <g>
-            <text x={n(posScale.left)} y={n(posScale.top - 5)} class="ri-axis-title">Position</text>
+            <text x={n(posScale.left)} y={n(posScale.top - Math.round(6 * k))} class="ri-axis-title">Position</text>
             <line x1={n(posScale.left)} x2={n(posScale.right)} y1={n(posScale.top)} y2={n(posScale.top)} class="ri-grid" />
             <line x1={n(posScale.left)} x2={n(posScale.right)} y1={n(posScale.bottom)} y2={n(posScale.bottom)} class="ri-grid" />
-            <text x={n(posScale.left - 6)} y={n(posScale.top + 4)} text-anchor="end" class="ri-axis">P1</text>
-            <text x={n(posScale.left - 6)} y={n(posScale.bottom + 4)} text-anchor="end" class="ri-axis">{`P${posScale.yMax.toFixed(0)}`}</text>
+            <text x={n(posScale.left - 6)} y={n(posScale.top + drop)} text-anchor="end" class="ri-axis">P1</text>
+            <text x={n(posScale.left - 6)} y={n(posScale.bottom + drop)} text-anchor="end" class="ri-axis">{`P${posScale.yMax.toFixed(0)}`}</text>
             <path d={positionPath} class="ri-position" />
           </g>
         )}
         {ticks(minLap, maxLap, 8).map((tick) => (
-          <text key={`x${tick}`} x={n(pace.x(Math.round(tick)))} y={n(height - 4)} text-anchor="middle" class="ri-axis">{Math.round(tick)}</text>
+          <text key={`x${tick}`} x={n(pace.x(Math.round(tick)))} y={n(baseline)} text-anchor="middle" class="ri-axis">{Math.round(tick)}</text>
         ))}
-        <text x="4" y={n(height - 4)} class="ri-axis-title">Lap</text>
+        <text x="4" y={n(baseline)} class="ri-axis-title">Lap</text>
       </svg>
     );
   })();
