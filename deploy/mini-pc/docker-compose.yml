@@ -20,11 +20,20 @@ services:
       - /tmp:size=256m
     volumes:
       - ${APP_DATA}:/data
-      - type: volume
-        source: nas
+      # The NAS folder is a host automount (g-house ops/host/systemd/mnt-nas-iracing-coach-iracing-coach.*:
+      # apps/iracing-coach only, NFSv4.1, soft, idle after 120 s), not a Compose NFS volume. Docker mounts a
+      # volume when the container starts, so the stack could not start while the NAS was unreachable.
+      # The container holds the automount from the start; the server's first look inside mounts the NFS.
+      # Bind the plain PARENT, with rslave. Measured on the host: binding the automount point itself mounts
+      # the NFS at container start; Docker's default rprivate never shows the container the mount that
+      # follows (the first look inside fails with ELOOP). create_host_path false: a missing parent fails the
+      # start instead of becoming an empty local directory the archiver would fill.
+      - type: bind
+        source: /mnt/nas-iracing-coach
         target: /nas/apps
-        volume:
-          nocopy: true
+        bind:
+          propagation: rslave
+          create_host_path: false
       - /etc/localtime:/etc/localtime:ro
     # /health: database open and migrations applied; independent of the NAS.
     # `healthcheck` exits 0 only on a 200 from the COACH_BIND port (contracts/server-config.md).
@@ -38,13 +47,3 @@ services:
     logging:
       driver: json-file
       options: { max-size: 20m, max-file: "3" }
-
-volumes:
-  # NAS `apps` export (admits 192.168.1.81 only, no credentials); nas-layout.md section 1.
-  # Changing these options needs the volume recreated: settle them before editing.
-  nas:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: addr=192.168.1.82,nfsvers=4.1,soft,timeo=150,retrans=3,noatime
-      device: ":/volume1/apps"

@@ -2,12 +2,17 @@
 
     docker exec <container> python3.12 /app/deploy/nas_probe.py [--nas /nas/apps/iracing-coach]
 
-Proves, from inside the container and as its user, that the NFS volume is mounted
+Proves, from inside the container and as its user, that the NAS folder is mounted
 with the contract's options, readable, and writable with the archiver's protocol:
 temp name under `.probe/` with O_CREAT|O_EXCL, write, fsync, drop the client cache,
-read back, SHA-256 equal. Creates `$NAS` and `$NAS/.probe/` when absent (the server
-does the same at first start) and deletes only the probe file it wrote. Prints one
-JSON object; the exit status is 0 only for `state: ok`.
+read back, SHA-256 equal. Creates `$NAS/.probe/` when absent (the server does the
+same at start) and deletes only the probe file it wrote. Prints one JSON object; the
+exit status is 0 only for `state: ok`.
+
+`$NAS` is the host's automount of `apps/iracing-coach` (NFSv4.1, soft), reached through
+the plain directory the stack binds at /nas/apps with propagation rslave. The host
+mounts it when something first looks inside, so the probe looks before it reads the
+mount table, and takes the last table entry: the NFS mount sits over its autofs trigger.
 
 States follow `NasState`: ok, readonly (mounted and readable, writes refused),
 unreachable (not mounted, or a call failed), stalled (a call made no progress
@@ -27,20 +32,22 @@ import time
 from pathlib import Path
 from typing import Any
 
-MOUNT_POINT = "/nas/apps"
-DEFAULT_NAS = "/nas/apps/iracing-coach"
+MOUNT_POINT = "/nas/apps/iracing-coach"
+DEFAULT_NAS = MOUNT_POINT
 REQUIRED_OPTIONS = ("vers=4.1", "soft", "timeo=150", "retrans=3", "noatime")
 PROBE_BYTES = 4 * 1024 * 1024
 STALL_SECONDS = 120.0
 
 
 def mount_entry(mount_point: str) -> dict[str, Any] | None:
+    found = None
     with open("/proc/self/mounts", encoding="utf-8") as mounts:
         for line in mounts:
             fields = line.split()
             if len(fields) >= 4 and fields[1] == mount_point:
-                return {"source": fields[0], "type": fields[2], "options": fields[3].split(",")}
-    return None
+                # A later line is mounted over an earlier one: the NFS over its autofs trigger.
+                found = {"source": fields[0], "type": fields[2], "options": fields[3].split(",")}
+    return found
 
 
 def stat_record(path: Path) -> dict[str, Any]:
@@ -84,6 +91,15 @@ def write_probe(probe_dir: Path) -> dict[str, Any]:
 
 def probe(nas: Path) -> dict[str, Any]:
     report: dict[str, Any] = {"nas": str(nas), "uid": os.getuid(), "gid": os.getgid()}
+    try:
+        # The first look inside is what makes the host mount the NFS: look before reading the table.
+        report["folder_entries"] = len(os.listdir(MOUNT_POINT))
+        report["folder_root"] = stat_record(Path(MOUNT_POINT))
+    except OSError as error:
+        report["mount"] = mount_entry(MOUNT_POINT)
+        report["state"] = "unreachable"
+        report["reason"] = f"listing {MOUNT_POINT}: {error}"
+        return report
     entry = mount_entry(MOUNT_POINT)
     report["mount"] = entry
     if entry is None or not entry["type"].startswith("nfs"):
@@ -91,13 +107,6 @@ def probe(nas: Path) -> dict[str, Any]:
         report["reason"] = f"{MOUNT_POINT} is not an NFS mount"
         return report
     report["missing_options"] = [item for item in REQUIRED_OPTIONS if item not in entry["options"]]
-    try:
-        report["share_entries"] = len(os.listdir(MOUNT_POINT))
-        report["share_root"] = stat_record(Path(MOUNT_POINT))
-    except OSError as error:
-        report["state"] = "unreachable"
-        report["reason"] = f"listing {MOUNT_POINT}: {error}"
-        return report
     report["nas_existed"] = nas.is_dir()
     try:
         (nas / ".probe").mkdir(parents=True, exist_ok=True)
