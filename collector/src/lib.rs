@@ -9,6 +9,7 @@ pub mod app;
 pub mod backfill;
 pub mod cli;
 pub mod config;
+pub mod cpu;
 pub mod dry;
 pub mod fixture;
 pub mod garage;

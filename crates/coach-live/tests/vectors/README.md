@@ -44,6 +44,8 @@ A tile entry is `{ id, unit (wire id or null), primary, secondary, state, value,
 
 - **Pace range, 1 ms.** C# derives the pace band in double precision; the wire channels 33 and 34 are f32, and lap times are truncated to milliseconds, so a bound that sits on a whole millisecond can read 1 ms low (about 0.2 % of tile readings). The test allows exactly that and nothing more.
 
+- **One lap to green outside a Race (W2, 2026-10-04).** The C# monitor reads `SessionFlags` `0x200` as a caution in every session. iRacing holds that bit through the whole of an Offline Testing session and a Lone Qualify out-lap with no caution, so the G4 bot run showed "Caution" for 50 laps and, with every lap a caution lap, never produced a fuel-use sample for "Laps to pit". The engine follows the backend (`analysis_engine._caution_flag_series`): `0x200` alone is a caution only in a Race or when the session type is unknown; yellow, yellow waving, caution and caution waving count in every session. One step of this file is affected, `critical_cues_and_repair` step 11 (`0x200` in Practice); the test rewrites its expectation (flag state racing, the cue of the next step) and asserts it did so once. The new vectors are `solo-test-session.json` (44 flag cases from the real Test Drive capture's words across session types, and the first lap with a fuel estimate), driven by `tests/solo_test_session.rs`.
+
 `serde_json` runs with `float_roundtrip` in this crate's dev-dependencies: its default float parser is not correctly rounded and the vectors compare `f64` values exactly.
 
 Frame vectors are in `docs/08-rewrite/contracts/vectors/live-frame/` (`tools/gen_frame_vectors.py`).

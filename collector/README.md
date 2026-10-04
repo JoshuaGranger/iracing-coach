@@ -4,7 +4,8 @@ The sim-PC half of iRacing Coach: a native Rust program with no WebView and no .
 
 ```
 coach-collector [run] [--server URL] [--replay FILE [--speed N]] [--dry-run] [--no-ui]
-                      [--exit-at-end [--drain-secs N]] [--iracing-root DIR] [--state-dir DIR]
+                      [--exit-at-end [--drain-secs N]] [--cpu-report] [--iracing-root DIR]
+                      [--state-dir DIR]
 coach-collector install [--server URL]     config + HKCU Run value + start; no admin, no firewall rule
 coach-collector uninstall                  stop, remove the Run value and its own files only
 coach-collector record-sdk <seconds> <out.sdkfix>
@@ -23,11 +24,18 @@ coach-collector backfill [--dry-run] [--archive DIR | --no-archive] [--server UR
 | `backfill` | `coach-collector backfill`, D12 step 3: the uploader pointed at the telemetry folder, the legacy raw archive and any FOLDER given, at any depth; its own journal, its own shared-memory evidence of the car being off track; `--dry-run` lists and writes nothing (see Backfill) |
 | `journal` | `journal.jsonl`: pending recordings, garage snapshots and commits, hash memo, `seen` memo (restart does not hash or post a held file again), and the terminal state of recordings given up on (see Refused recordings). A torn tail is cut off at start; a failed append is not applied and the caller retries it; a journal that cannot be opened holds entries in memory, sends no garage event, and opens the file again |
 | `link`, `ws`, `stream` | One WebSocket (own RFC 6455 client), presence, stream latch, layout sync, garage resend after every welcome |
-| `win::ui`, `win::render`, `layout`, `hotkey` | Layered click-through overlay, tray, hotkey, server prompt; GDI renderer usable on a memory bitmap |
+| `win::ui`, `win::render`, `layout`, `hotkey` | Layered click-through overlay, tray, hotkey, server prompt; GDI renderer usable on a memory bitmap. The overlay looks for new figures 10 times a second and redraws only the tiles whose text, accent or bar position changed, into a back buffer it keeps (`Renderer::dirty`, `paint_tiles`); a trend tile with a value scrolls, so it redraws in every step |
+| `cpu` | `run --cpu-report`: the collector's own CPU accounting, process and per thread (see CPU budget) |
 | `fixture`, `record` | SDK byte fixtures (`.sdkfix`): format, replay map, synthetic map builder, recorder |
 | `app`, `cli`, `logging`, `config` | Wiring, command line, rotating log, `collector.json` |
 
-Threads: reader (engine, frames), net (link), uploader and garage-io (background I/O priority), watcher (directory events), UI (main). Channels are bounded or short-lived locks; the reader never waits on another thread.
+Threads: reader (engine, frames), net (link), uploader and garage-io (background I/O priority), watcher (directory events), UI (main). Channels are bounded or short-lived locks; the reader never waits on another thread. While frames stream, the link sleeps on the frame queue until the next frame is queued (it does not time out on the socket every few milliseconds), reads the socket every 50 ms and runs its status, garage and stats housekeeping at the same rate.
+
+## CPU budget
+
+Gate G4-3: at most 1.5 % of one core while the car moves, streaming at 60 Hz with the overlay drawn. `run --cpu-report` prints `cpu-report label=window ...` every 10 s and a `label=total` line at exit: `process_pct` is `GetProcessTimes` (what the rig recorder reads; scheduler-tick sampled, so coarse over one window), `process_cycles_pct` and the per-thread figures (`main` is the overlay, `reader`, `link`, `uploader`, `garage-io`) come from the CPU cycle counters, all as percent of one core.
+
+`tests/perf_cpu.rs` (ignored; release binary, about a minute, shows the overlay) replays `fixture::synthetic_laps` (a lapping car, every value moving, 60 Hz) in real time against the mock server, which announces two viewers, and asserts the mean `process_pct` of the steady windows is at most `COACH_PERF_LIMIT` (1.5) and that about 60 frames/s arrived. `tests/perf_reader.rs` (ignored; release) times the reader's tick (SDK read, engine, frame encode) on the same run without sleeping.
 
 ## State (`%LOCALAPPDATA%\iRacingCoach`)
 
@@ -55,6 +63,8 @@ Fixture format (little-endian): magic `IRCSDKF1`, then records `u8 kind, u32 len
 cargo test -p coach-collector                    # unit, replay pipeline, uploader, backfill, link, garage, end to end
 cargo test -p coach-collector --test win_ui_smoke -- --ignored   # shows the overlay for a few seconds
 cargo test -p coach-collector --test win_install  -- --ignored   # install/uninstall against a throwaway key
+cargo build --release -p coach-collector && cargo test -p coach-collector --test perf_cpu -- --ignored --nocapture   # G4-3 budget on a moving car (COACH_PERF_LAYOUT=busy: every tile changes)
+cargo test --release -p coach-collector --test perf_reader -- --ignored --nocapture   # reader cost per tick
 COACH_RENDER_OUT=<dir> cargo test -p coach-collector --test win_render   # keep the rendered BMPs
 ```
 
@@ -62,4 +72,4 @@ The in-test server mock (`tests/support`) implements `POST` and `PUT /api/v1/upl
 
 ## Size
 
-`cargo build --release -p coach-collector --target x86_64-pc-windows-msvc` is held to 3 MB (1,679,872 bytes with `backfill`; 1,578,496 before the G3 fixes, after `coach-ibt` dropped `regex`). The crate carries its own small HTTP client, WebSocket client and logger instead of `ureq`, `tungstenite` and `tracing` to stay there.
+`cargo build --release -p coach-collector --target x86_64-pc-windows-msvc` is held to 3 MB (1,715,200 bytes with `backfill` and the CPU accounting; 1,578,496 before the G3 fixes, after `coach-ibt` dropped `regex`). The crate carries its own small HTTP client, WebSocket client and logger instead of `ureq`, `tungstenite` and `tracing` to stay there.

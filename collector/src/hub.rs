@@ -188,6 +188,8 @@ pub struct Hub {
     pub frames: FrameQueue,
     pub uploads: UploadStats,
     status: Mutex<StatusModel>,
+    /// `status.streaming`, readable without cloning the status (the link asks every pass).
+    streaming: AtomicBool,
     status_gen: AtomicU64,
     /// The generation of the status the link last sent (for a clean drain at exit).
     status_sent_gen: AtomicU64,
@@ -215,6 +217,7 @@ impl Hub {
             frames: FrameQueue::new(FRAME_QUEUE_CAPACITY),
             uploads: UploadStats::default(),
             status: Mutex::new(StatusModel::default()),
+            streaming: AtomicBool::new(false),
             status_gen: AtomicU64::new(0),
             status_sent_gen: AtomicU64::new(0),
             layout: Mutex::new(None),
@@ -258,9 +261,15 @@ impl Hub {
     pub fn set_status(&self, next: StatusModel) {
         let mut guard = lock(&self.status);
         if *guard != next {
+            self.streaming.store(next.streaming, Ordering::SeqCst);
             *guard = next;
             self.status_gen.fetch_add(1, Ordering::SeqCst);
         }
+    }
+
+    /// Whether the status says the collector is streaming (no clone of the status).
+    pub fn is_streaming(&self) -> bool {
+        self.streaming.load(Ordering::SeqCst)
     }
 
     pub fn status_gen(&self) -> u64 {
@@ -360,6 +369,33 @@ mod tests {
     }
 
     #[test]
+    fn a_waiting_consumer_wakes_when_a_frame_is_queued_and_not_before() {
+        let q = Arc::new(FrameQueue::new(4));
+        let waiter = {
+            let q = q.clone();
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                q.wait(Duration::from_secs(5));
+                (started.elapsed(), q.len())
+            })
+        };
+        std::thread::sleep(Duration::from_millis(50));
+        q.push(vec![1]);
+        let (waited, len) = waiter.join().unwrap();
+        assert!(waited >= Duration::from_millis(40), "slept until the push");
+        assert!(waited < Duration::from_secs(2), "woken by the push");
+        assert_eq!(len, 1);
+        // With a frame already queued, or with nothing and a short limit, it returns promptly.
+        let started = std::time::Instant::now();
+        q.wait(Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_millis(500));
+        q.clear();
+        let started = std::time::Instant::now();
+        q.wait(Duration::from_millis(30));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
     fn status_generation_moves_only_on_change() {
         let hub = Hub::new(
             Arc::new(crate::util::SystemClock::new()),
@@ -374,6 +410,24 @@ mod tests {
             ..StatusModel::default()
         });
         assert_eq!(hub.status_gen(), g0 + 1);
+    }
+
+    #[test]
+    fn the_streaming_flag_follows_the_status() {
+        let hub = Hub::new(
+            Arc::new(crate::util::SystemClock::new()),
+            Journal::in_memory(),
+            true,
+        );
+        assert!(!hub.is_streaming());
+        hub.set_status(StatusModel {
+            connected: true,
+            streaming: true,
+            ..StatusModel::default()
+        });
+        assert!(hub.is_streaming());
+        hub.set_status(StatusModel::default());
+        assert!(!hub.is_streaming());
     }
 
     #[test]

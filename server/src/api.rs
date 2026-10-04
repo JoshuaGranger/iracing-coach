@@ -143,6 +143,11 @@ pub fn router(app: AppState) -> Router {
         .route("/admin/reanalyze", post(admin_reanalyze))
         .route("/admin/snapshot", post(admin_snapshot))
         .route("/admin/remove", post(admin_remove))
+        .route(
+            "/admin/library/windows",
+            get(admin_library_windows).post(admin_library_window),
+        )
+        .route("/admin/library/classify", post(admin_library_classify))
         .fallback(api_not_found)
         .layer(middleware::from_fn_with_state(app.clone(), idempotency));
 
@@ -453,23 +458,34 @@ async fn live_channels() -> Resp {
 
 // ----------------------------------------------------------------- library
 
-async fn drivers(State(app): State<AppState>) -> Resp {
+/// The `library` query parameter (`main` unless `lab` is asked for).
+fn library_of(q: &HashMap<String, String>) -> Result<crate::library::Library> {
+    crate::library::Library::from_query(q.get("library").map(String::as_str))
+}
+
+async fn drivers(State(app): State<AppState>, Query(q): Query<HashMap<String, String>>) -> Resp {
+    let library = library_of(&q)?.as_str();
     let rows = app
         .store
-        .read(|conn| {
-            let mut stmt = conn.prepare(
+        .read(move |conn| {
+            // the counts are of the asked library's sessions (main unless `library=lab`)
+            let mut stmt = conn.prepare(concat!(
                 "SELECT d.customer_id, d.display_name, d.latest_irating,
-                        (SELECT COUNT(*) FROM sessions s WHERE s.customer_id = d.customer_id),
-                        (SELECT MAX(s.start_time_utc) FROM sessions s WHERE s.customer_id = d.customer_id)
+                        (SELECT COUNT(*) FROM sessions s WHERE s.customer_id = d.customer_id AND ",
+                crate::session_library_sql!(),
+                " = ?1),
+                        (SELECT MAX(s.start_time_utc) FROM sessions s WHERE s.customer_id = d.customer_id AND ",
+                crate::session_library_sql!(),
+                " = ?1)
                  FROM drivers d
                  WHERE EXISTS (SELECT 1 FROM sessions s WHERE s.customer_id = d.customer_id)
                     OR EXISTS (SELECT 1 FROM recordings r WHERE r.customer_id = d.customer_id)
                     OR EXISTS (SELECT 1 FROM setups s WHERE s.customer_id = d.customer_id)
                     OR EXISTS (SELECT 1 FROM setup_files f WHERE f.customer_id = d.customer_id)
-                 ORDER BY d.display_name COLLATE NOCASE, d.customer_id LIMIT 64",
-            )?;
+                 ORDER BY d.display_name COLLATE NOCASE, d.customer_id LIMIT 64"
+            ))?;
             Ok(stmt
-                .query_map([], |r| {
+                .query_map([library], |r| {
                     Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, i64>(3)?, r.get::<_, Option<String>>(4)?))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?)
@@ -485,17 +501,28 @@ async fn drivers(State(app): State<AppState>) -> Resp {
     ok(json!({"drivers": drivers}))
 }
 
-async fn driver(State(app): State<AppState>, Path(customer): Path<i64>) -> Resp {
+async fn driver(
+    State(app): State<AppState>,
+    Path(customer): Path<i64>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Resp {
+    let library = library_of(&q)?.as_str();
     let row = app
         .store
         .read(move |conn| {
             Ok(conn
                 .query_row(
-                    "SELECT d.display_name, d.latest_irating,
-                            (SELECT COUNT(*) FROM sessions s WHERE s.customer_id = d.customer_id),
-                            (SELECT MAX(s.start_time_utc) FROM sessions s WHERE s.customer_id = d.customer_id)
-                     FROM drivers d WHERE d.customer_id = ?1",
-                    [customer],
+                    concat!(
+                        "SELECT d.display_name, d.latest_irating,
+                            (SELECT COUNT(*) FROM sessions s WHERE s.customer_id = d.customer_id AND ",
+                        crate::session_library_sql!(),
+                        " = ?2),
+                            (SELECT MAX(s.start_time_utc) FROM sessions s WHERE s.customer_id = d.customer_id AND ",
+                        crate::session_library_sql!(),
+                        " = ?2)
+                     FROM drivers d WHERE d.customer_id = ?1"
+                    ),
+                    params![customer, library],
                     |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, i64>(2)?, r.get::<_, Option<String>>(3)?)),
                 )
                 .optional()?)
@@ -558,6 +585,9 @@ const SESSION_SELECT: &str = concat!(
     (SELECT MIN(sr.recording_sha256) FROM session_recordings sr WHERE sr.session_id = s.session_id),
     ",
     fixed_setup_of!(),
+    ",
+    ",
+    crate::session_library_sql!(),
     "
   FROM sessions s"
 );
@@ -574,6 +604,12 @@ fn session_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     let mut overview: Value = serde_json::from_str(&overview).unwrap_or(json!({}));
     if !overview.is_object() {
         overview = json!({});
+    }
+    // always sent: null until an analysis measures them (`overview.rs`)
+    for key in crate::overview::ROUND2_KEYS {
+        if overview.get(key).is_none() {
+            overview[key] = Value::Null;
+        }
     }
     Ok(json!({
         "session_id": r.get::<_, i64>(0)?,
@@ -596,6 +632,7 @@ fn session_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
         "analysis_reason": r.get::<_, Option<String>>(10)?,
         "analysis_id": r.get::<_, Option<String>>(11)?,
         "overview": overview,
+        "library": r.get::<_, String>(20)?,
     }))
 }
 
@@ -673,11 +710,17 @@ async fn sessions(
         .filter(|v| !v.is_empty())
         .map(|v| util::like_pattern(&v));
     let cursor = one("cursor");
+    let library = crate::library::Library::from_query(one("library").as_deref())?;
     let page = app
         .store
         .read(move |conn| {
-            let mut sql = format!("{SESSION_SELECT} WHERE s.customer_id = ?1");
-            let mut args: Vec<rusqlite::types::Value> = vec![customer.into()];
+            // one library at a time: main unless `library=lab` (`library.rs`)
+            let mut sql = format!(
+                "{SESSION_SELECT} WHERE s.customer_id = ?1 AND {} = ?2",
+                crate::session_library_sql!()
+            );
+            let mut args: Vec<rusqlite::types::Value> =
+                vec![customer.into(), library.as_str().to_string().into()];
             if !kinds.is_empty() {
                 let clauses: Vec<&str> = kinds
                     .iter()
@@ -760,10 +803,15 @@ async fn sessions(
     ok(page)
 }
 
-async fn cars_and_tracks(State(app): State<AppState>, Path(customer): Path<i64>) -> Resp {
+async fn cars_and_tracks(
+    State(app): State<AppState>,
+    Path(customer): Path<i64>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Resp {
+    let library = library_of(&q)?;
     ok(app
         .store
-        .read(move |conn| Ok(crate::setups::cars_and_tracks(conn, customer)?))
+        .read(move |conn| Ok(crate::setups::cars_and_tracks(conn, customer, library)?))
         .await?)
 }
 
@@ -1120,6 +1168,7 @@ async fn setup_library(
         q.get("q").cloned(),
         q.get("cursor").cloned(),
     );
+    let library = library_of(&q)?;
     let page = app
         .store
         .read(move |conn| {
@@ -1133,6 +1182,7 @@ async fn setup_library(
                     raced: raced_filter,
                     cursor: cursor.as_deref(),
                     limit,
+                    library,
                 },
             )
         })
@@ -1140,10 +1190,16 @@ async fn setup_library(
     ok(page)
 }
 
-async fn setup_detail(State(app): State<AppState>, Path(setup_id): Path<i64>) -> Resp {
+async fn setup_detail(
+    State(app): State<AppState>,
+    Path(setup_id): Path<i64>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Resp {
+    let library = library_of(&q)?;
+    let worker = app.worker_identity.bundle_digest.clone();
     match app
         .store
-        .read(move |conn| crate::setups::detail(conn, setup_id))
+        .read(move |conn| crate::setups::detail(conn, setup_id, library, &worker))
         .await?
     {
         Some(detail) => ok(detail),
@@ -1192,6 +1248,13 @@ async fn setup_compare(State(app): State<AppState>, body: Bytes) -> Resp {
         ));
     }
     let scheme = if left_export { "export" } else { "recording" };
+    // the same values compared by the same worker answer from the finished job
+    let key = crate::setups::compare_key(
+        &app.worker_identity.bundle_digest,
+        &left_values,
+        &right_values,
+        scheme,
+    );
     let customer: Option<i64> = app
         .store
         .read(move |conn| {
@@ -1208,12 +1271,15 @@ async fn setup_compare(State(app): State<AppState>, body: Bytes) -> Resp {
         "needs_setups": false,
         "arguments": {"left": left_values, "right": right_values, "scheme": scheme},
     });
-    let job = NewJob::new("setup_compare", "light", customer, subject).interactive();
+    let job = NewJob::new("setup_compare", "light", customer, subject)
+        .interactive()
+        .keyed(key);
     let id = app
         .store
         .write(move |conn| {
             let tx = conn.transaction()?;
-            let (id, _) = jobs::enqueue_tx(&tx, &job, false)?;
+            // a failed or cancelled comparison runs again
+            let (id, _) = jobs::enqueue_tx(&tx, &job, true)?;
             tx.commit()?;
             Ok(id)
         })
@@ -1616,4 +1682,22 @@ async fn admin_snapshot(State(app): State<AppState>) -> Resp {
 
 async fn admin_remove(State(app): State<AppState>, body: Bytes) -> Resp {
     ok(crate::admin::remove(&app, &body).await?)
+}
+
+async fn admin_library_windows(State(app): State<AppState>) -> Resp {
+    ok(crate::admin::library_windows(&app).await?)
+}
+
+async fn admin_library_window(State(app): State<AppState>, body: Bytes) -> Resp {
+    let (created, window) = crate::admin::library_window(&app, &body).await?;
+    let status = if created {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    };
+    Ok(json_response(status, window))
+}
+
+async fn admin_library_classify(State(app): State<AppState>, body: Bytes) -> Resp {
+    ok(crate::admin::library_classify(&app, &body).await?)
 }

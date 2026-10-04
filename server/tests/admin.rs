@@ -411,7 +411,7 @@ async fn a_setup_file_goes_with_its_garage_visits_and_orphaned_setups_and_a_shar
     let baseline_sha = sha256_hex(baseline);
     assert_eq!(count(&env, "SELECT COUNT(*) FROM setup_files"), 4);
 
-    // two visits of the test run (one nameless snapshot of its own) and one real visit
+    // two visits of the test run (one snapshot, y, equals no setup and makes none) and one real visit
     let x = json!({"Chassis.Front.ArbSetting": "11", "UpdateCount": "3"});
     let y = json!({"Chassis.Front.ArbSetting": "12", "UpdateCount": "4"});
     garage_visit(
@@ -429,7 +429,11 @@ async fn a_setup_file_goes_with_its_garage_visits_and_orphaned_setups_and_a_shar
     );
     assert_eq!(count(&env, "SELECT COUNT(*) FROM garage_visits"), 2);
     let setups_before = count(&env, "SELECT COUNT(*) FROM setups");
-    assert_eq!(setups_before, 4, "recording, x, y, z");
+    assert_eq!(
+        setups_before, 3,
+        "recording, x, z: a snapshot never creates a setup"
+    );
+    assert_eq!(count(&env, "SELECT COUNT(*) FROM garage_snapshots"), 3);
     let nas_before = tree(&env.nas());
 
     let names = json!([
@@ -446,8 +450,8 @@ async fn a_setup_file_goes_with_its_garage_visits_and_orphaned_setups_and_a_shar
         cap["garage_visits"],
         json!(["aaaaaaaa-0000-4000-8000-000000000001"])
     );
-    assert_eq!(cap["setup_observations"], 3, "two snapshots and the commit");
-    assert_eq!(cap["setups"].as_array().unwrap().len(), 2, "x and y");
+    assert_eq!(cap["setup_observations"], 2, "snapshot x and the commit");
+    assert_eq!(cap["setups"].as_array().unwrap().len(), 1, "x");
     assert_eq!(cap["blobs_removed"], json!([]));
     assert_eq!(
         cap["blobs_kept"],
@@ -493,6 +497,11 @@ async fn a_setup_file_goes_with_its_garage_visits_and_orphaned_setups_and_a_shar
             "SELECT COUNT(*) FROM garage_visits WHERE committed_name = 'real.sto'"
         ),
         1
+    );
+    assert_eq!(
+        count(&env, "SELECT COUNT(*) FROM garage_snapshots"),
+        1,
+        "the removed visit's snapshots go with it"
     );
     assert_eq!(
         count(&env, "SELECT COUNT(*) FROM setups"),

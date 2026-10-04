@@ -344,6 +344,20 @@
             "null"
           ]
         },
+        "pace_slope_supported": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether the backend's screened fit had enough eligible laps by its own rule (`race_investigation.runs[].fit`, null with `fit_unavailable_reason` under three screened laps with known exposure): true when at least one run of the phase has a fit, false when none has. Read from the analysis, never recomputed. Null when there is no `pace_slope_s_per_lap` or the analysis reports no runs. Always sent."
+        },
+        "green_pace_median_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Median green-lap time of the phase, seconds: the median of the backend's `lap_time_s` over the green laps its own screen kept (`race_investigation.laps[].eligible`); no lap is screened again. Null without an analysis or when the screen kept no lap. Always sent."
+        },
         "pace_consistency_percent": {
           "type": [
             "number",
@@ -478,8 +492,20 @@
         },
         "overview": {
           "$ref": "#/$defs/SessionOverview"
+        },
+        "library": {
+          "$ref": "#/$defs/Library",
+          "description": "`lab` when any of the session's recordings is lab, else `main` (this server always sends it)."
         }
       }
+    },
+    "Library": {
+      "type": "string",
+      "enum": [
+        "main",
+        "lab"
+      ],
+      "description": "Whose driving a recording is: `main` (Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). The driver stays who drove it."
     },
     "SessionPage": {
       "type": "object",
@@ -2052,6 +2078,14 @@
           "type": "boolean",
           "description": "Seen in a Race session recording."
         },
+        "raced_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Race sessions with a recording of these values (distinct sessions, of the asked library as `raced`). Null when the count is unknown: a recording of the setup is in no session yet or in one whose type is unknown. Never 0 for an unknown count. Always sent."
+        },
         "first_seen_at": {
           "type": "string",
           "format": "date-time"
@@ -2183,6 +2217,52 @@
           "items": {
             "$ref": "#/$defs/SetupObservation"
           }
+        },
+        "versions": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/SetupVersion"
+          },
+          "description": "This setup and the other setups of its car that carry one of its names and have use in the asked library, oldest first (`first_seen_at`, then `setup_id`). Always sent; one entry when there is no other version."
+        }
+      }
+    },
+    "SetupVersion": {
+      "type": "object",
+      "required": [
+        "setup_id",
+        "first_seen_at",
+        "last_seen_at",
+        "previous_setup_id",
+        "changed_count"
+      ],
+      "properties": {
+        "setup_id": {
+          "type": "integer"
+        },
+        "first_seen_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_seen_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "previous_setup_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The version before this one; null for the oldest."
+        },
+        "changed_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Settings changed from the previous version: the backend's `counts.changed` of `POST /setups/compare` with the previous version left and this one right (readouts and readings are not changes). Null for the oldest, for a pair that does not compare (a side without values, or one known only from an export), and until the backend has compared the pair under the running worker; the server never counts changes itself."
         }
       }
     },
@@ -2240,6 +2320,13 @@
         "readout": {
           "type": "boolean",
           "description": "Derived readout, not a setting."
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The displayed unit `left` and `right` end in (`-3.2 deg` is `deg`), split as the backend reads a displayed value; the present side's when one is missing. Null for text, bare numbers, ratios and lists, and when the two sides show different units. `left` and `right` keep the full displayed text."
         }
       }
     },
@@ -3597,6 +3684,18 @@
           ],
           "maxLength": 160
         },
+        "car_paths": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "description": "Selected cars (`car_path` values) when the page filters by several; absent, null or empty is no car filter. `car_path` stays for one car."
+        },
         "raced": {
           "type": [
             "boolean",
@@ -4232,6 +4331,285 @@
             "null"
           ],
           "description": "Path of the removal log written by a real call; null for a dry run."
+        }
+      }
+    },
+    "LabWindowWrite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "until",
+        "car",
+        "track"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Start, ISO 8601 with `Z` or an offset (`2026-10-04T08:00:00-05:00`); kept to the second."
+        },
+        "until": {
+          "type": "string",
+          "format": "date-time",
+          "description": "End, not before `from`, at most 72 hours after it. The utility gives the planned end and posts the window again with the time it stopped."
+        },
+        "car": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "`CarPath` (`stockcars2 supra2019`) or the car's screen name."
+        },
+        "track": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "`TrackName` (`irp`, `vegas oval`), `TrackDisplayName` or `TrackID`."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Who states it: `testdriver`, `garage_harvest`, `historical`, ... Default `api`."
+        }
+      }
+    },
+    "LabWindow": {
+      "type": "object",
+      "required": [
+        "window_id",
+        "from",
+        "until",
+        "car",
+        "track",
+        "note",
+        "source",
+        "created_at",
+        "updated_at",
+        "recording_count"
+      ],
+      "properties": {
+        "window_id": {
+          "type": "integer"
+        },
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "car": {
+          "type": "string"
+        },
+        "track": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "recording_count": {
+          "type": "integer",
+          "description": "Recordings this window filed lab."
+        }
+      }
+    },
+    "LabWindowList": {
+      "type": "object",
+      "required": [
+        "windows"
+      ],
+      "properties": {
+        "windows": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/LabWindow"
+          }
+        }
+      }
+    },
+    "LibraryClassifyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "One driver's recordings; all drivers when absent."
+        },
+        "dry_run": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "LibraryChange": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string"
+        },
+        "customer_id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "start_time_utc": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "car_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "track": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from": {
+          "$ref": "#/$defs/Library"
+        },
+        "to": {
+          "$ref": "#/$defs/Library"
+        },
+        "window_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The window that files it lab; null when it goes to main."
+        }
+      }
+    },
+    "LibraryOverlap": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "window_id",
+        "reasons"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string"
+        },
+        "customer_id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "start_time_utc": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "car_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "track": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "window_id": {
+          "type": "integer"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "car",
+              "track",
+              "not_solo_offline_test"
+            ]
+          }
+        }
+      }
+    },
+    "LibraryClassifyReport": {
+      "type": "object",
+      "required": [
+        "dry_run",
+        "windows",
+        "recordings_checked",
+        "lab_recordings",
+        "changes",
+        "overlaps_kept_main",
+        "log"
+      ],
+      "properties": {
+        "dry_run": {
+          "type": "boolean"
+        },
+        "windows": {
+          "type": "integer"
+        },
+        "recordings_checked": {
+          "type": "integer",
+          "description": "Parsed recordings looked at."
+        },
+        "lab_recordings": {
+          "type": "integer",
+          "description": "Lab recordings after the call (after a real one)."
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LibraryChange"
+          }
+        },
+        "overlaps_kept_main": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LibraryOverlap"
+          },
+          "description": "Recordings whose start falls in a window without its car, track or session kind; they stay main."
+        },
+        "log": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path of the library log written by a real call; null for a dry run."
         }
       }
     },

@@ -1,0 +1,318 @@
+{
+ "format": 1,
+ "origin": "SessionFlags words recorded in the real solo Test Drive capture test-data/sdk/g3-garage-pit-2026-10-03.sdkfix (EventType Test, SessionType Offline Testing: 0x10000200, 0x10040200, 0x10000000 only before the session started); the rule is the backend's analysis_engine._caution_flag_series. W2 2026-10-04: the G4 bot run showed Caution for 50 laps and no Laps to pit estimate.",
+ "fuel_estimate": {
+  "description": "Offline Testing, flags 0x10000200, 0.45 L per lap from a 70 L tank, eight ticks per lap, 3 s apart. The lap counter changes: the first leaves a part-observed lap, the second and third each complete a clean lap with a fuel sample, so fuel_laps_remaining and fuel_hard_limit_laps first appear on the third change (SDK Lap 3).",
+  "first_raw_lap_with_estimate": 3
+ },
+ "flag_cases": [
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268435968,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word: startHidden | oneLapToGreen"
+  },
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268698112,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word with servicible"
+  },
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268435976,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow) counts in every session"
+  },
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268436224,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow_waving) counts in every session"
+  },
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268452352,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution) counts in every session"
+  },
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268468736,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution_waving) counts in every session"
+  },
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268435984,
+   "flag_state": "red",
+   "caution_cue": false,
+   "note": "red outranks caution"
+  },
+  {
+   "session_type": "Offline Testing",
+   "session_flags": 268435972,
+   "flag_state": "green",
+   "caution_cue": false,
+   "note": "green flag with one lap to green"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268435968,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word: startHidden | oneLapToGreen"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268698112,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word with servicible"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268435976,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow) counts in every session"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268436224,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow_waving) counts in every session"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268452352,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution) counts in every session"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268468736,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution_waving) counts in every session"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268435984,
+   "flag_state": "red",
+   "caution_cue": false,
+   "note": "red outranks caution"
+  },
+  {
+   "session_type": "Practice",
+   "session_flags": 268435972,
+   "flag_state": "green",
+   "caution_cue": false,
+   "note": "green flag with one lap to green"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268435968,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word: startHidden | oneLapToGreen"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268698112,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word with servicible"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268435976,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow) counts in every session"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268436224,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow_waving) counts in every session"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268452352,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution) counts in every session"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268468736,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution_waving) counts in every session"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268435984,
+   "flag_state": "red",
+   "caution_cue": false,
+   "note": "red outranks caution"
+  },
+  {
+   "session_type": "Lone Qualify",
+   "session_flags": 268435972,
+   "flag_state": "green",
+   "caution_cue": false,
+   "note": "green flag with one lap to green"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268435968,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word: startHidden | oneLapToGreen"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268698112,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word with servicible"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268435976,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow) counts in every session"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268436224,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow_waving) counts in every session"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268452352,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution) counts in every session"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268468736,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution_waving) counts in every session"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268435984,
+   "flag_state": "red",
+   "caution_cue": false,
+   "note": "red outranks caution"
+  },
+  {
+   "session_type": "Open Qualify",
+   "session_flags": 268435972,
+   "flag_state": "green",
+   "caution_cue": false,
+   "note": "green flag with one lap to green"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268435968,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word: startHidden | oneLapToGreen"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268698112,
+   "flag_state": "racing",
+   "caution_cue": false,
+   "note": "recorded Test Drive word with servicible"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268435976,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow) counts in every session"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268436224,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (yellow_waving) counts in every session"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268452352,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution) counts in every session"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268468736,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "a real caution bit (caution_waving) counts in every session"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268435984,
+   "flag_state": "red",
+   "caution_cue": false,
+   "note": "red outranks caution"
+  },
+  {
+   "session_type": "Warmup",
+   "session_flags": 268435972,
+   "flag_state": "green",
+   "caution_cue": false,
+   "note": "green flag with one lap to green"
+  },
+  {
+   "session_type": "Race",
+   "session_flags": 268435968,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "oneLapToGreen is the caution and restart sequence in a Race, and when the session type is unknown"
+  },
+  {
+   "session_type": "Race",
+   "session_flags": 268698112,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "same, with servicible"
+  },
+  {
+   "session_type": null,
+   "session_flags": 268435968,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "oneLapToGreen is the caution and restart sequence in a Race, and when the session type is unknown"
+  },
+  {
+   "session_type": null,
+   "session_flags": 268698112,
+   "flag_state": "caution",
+   "caution_cue": true,
+   "note": "same, with servicible"
+  }
+ ]
+}

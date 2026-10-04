@@ -90,24 +90,30 @@ paths:
     get:
       tags: [library]
       summary: Drivers that have data (D7 landing). One driver -> the SPA opens that driver directly.
+      parameters:
+        - { $ref: "#/components/parameters/Library" }
       responses:
         "200":
-          description: Drivers
+          description: Drivers (`session_count` and `last_session_at` count the asked library's sessions)
           x-max-bytes: 65536
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DriverList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/drivers/{customer_id}:
     parameters: [{ $ref: "#/components/parameters/CustomerId" }]
     get:
       tags: [library]
+      parameters:
+        - { $ref: "#/components/parameters/Library" }
       responses:
         "200":
-          description: Driver
+          description: Driver (`session_count` and `last_session_at` count the asked library's sessions)
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Driver" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/drivers/{customer_id}/sessions:
@@ -149,28 +155,33 @@ paths:
           schema: { type: string, enum: [fixed, open] }
           description: "Fixed-setup or open-setup sessions (`SessionSummary.is_fixed_setup`); sessions whose recording does not say are in neither."
         - { name: q, in: query, schema: { type: string, maxLength: 120 }, description: "Text over track, layout, car, series." }
+        - { $ref: "#/components/parameters/Library" }
         - { $ref: "#/components/parameters/Cursor" }
         - { $ref: "#/components/parameters/Limit" }
       responses:
         "200":
-          description: Page of sessions
+          description: Page of sessions (of one library, `main` unless `library=lab`)
           x-max-bytes: 524288
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/drivers/{customer_id}/cars-and-tracks:
     parameters: [{ $ref: "#/components/parameters/CustomerId" }]
     get:
       tags: [setups]
       summary: Cars and tracks seen in this driver's recordings (Find a baseline choices).
+      parameters:
+        - { $ref: "#/components/parameters/Library" }
       responses:
         "200":
-          description: Options
+          description: Options from the asked library's recordings
           x-max-bytes: 262144
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CarTrackOptions" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/sessions/{session_id}:
     parameters: [{ $ref: "#/components/parameters/SessionId" }]
@@ -336,6 +347,11 @@ paths:
         - { name: q, in: query, schema: { type: string, maxLength: 120 } }
         - { name: raced_only, in: query, schema: { type: boolean, default: false } }
         - { name: raced, in: query, schema: { type: boolean }, description: "true: only setups seen in a race recording (as `raced_only`, and `unlinked_files` is empty); false: only setups never raced; absent: both. Overrides `raced_only`." }
+        - $ref: "#/components/parameters/Library"
+          description: >-
+            Setup usage of one library: `observation_count`, `sources` and `raced` count that library's recordings
+            (garage visits and exports count in `main`), and a setup with no use there is left out. Names and `.sto`
+            links come from every observation. With `lab`, `unlinked_files` is empty.
         - { $ref: "#/components/parameters/Cursor" }
         - { $ref: "#/components/parameters/Limit" }
       responses:
@@ -345,12 +361,19 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SetupPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /api/v1/setups/{setup_id}:
     parameters:
       - { name: setup_id, in: path, required: true, schema: { type: integer } }
     get:
       tags: [setups]
+      parameters:
+        - $ref: "#/components/parameters/Library"
+          description: >-
+            Setup usage of one library, as the list: `setup.observation_count`, `sources`, `raced` and `raced_count` count that
+            library's recordings (garage visits and exports count in `main`), and `versions` lists the versions with use there.
+            Names, values and `observations` come from every observation.
       responses:
         "200":
           description: Setup detail
@@ -358,12 +381,16 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SetupDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/setups/compare:
     post:
       tags: [setups]
       summary: Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within the server's inline wait (default 10 s), else 202.
+      description: >-
+        One job per worker bundle, value sets and scheme: the same pair asked again (in the same order) answers from that
+        finished job, a failed one runs again. `SetupVersion.changed_count` reads these finished comparisons.
       requestBody:
         required: true
         content:
@@ -899,6 +926,76 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/v1/admin/library/windows:
+    get:
+      tags: [admin]
+      summary: The lab windows, newest start first, each with the number of recordings it filed lab.
+      responses:
+        "200":
+          description: Windows
+          x-max-bytes: 1048576
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabWindowList" }
+    post:
+      tags: [admin]
+      summary: State a lab window (the iRacing-utility before it drives), or close one (the same start, car and track again with the end).
+      description: >-
+        A window says that the utility drives `car` at `track` from `from` until `until`. At ingest a recording is
+        filed `lab` when its start (`start_time_utc`, both ends included) falls in a window, its `CarPath` or car
+        screen name equals `car`, its `TrackName`, `TrackDisplayName` or `TrackID` equals `track` (case ignored), and it
+        is a solo offline test (no `SubSessionID`, `EventType` Test): a hosted session or a race against AI is never
+        lab. Anything else stays `main`. A window with the same `from`, `car` and `track` as a stored one is that
+        window: its `until`, `note` and `source` are replaced (the utility opens a window with the planned end and
+        posts it again with the time it stopped). Recordings already stored are not refiled by this call; that is
+        `POST /api/v1/admin/library/classify`. Each call is logged (`$COACH_DATA_DIR/run/library.jsonl`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LabWindowWrite" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabWindow" }
+        "200":
+          description: The window with this start, car and track, updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabWindow" }
+        "400":
+          description: "`invalid_request`: a malformed field, `until` before `from`, longer than 72 hours, or a blank car or track"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/admin/library/classify:
+    post:
+      tags: [admin]
+      summary: Apply the lab windows to the stored recordings (the historical repair). Lists what would change unless `dry_run` is false.
+      description: >-
+        Every parsed recording (one driver with `customer_id`) is filed by the rule of
+        `POST /api/v1/admin/library/windows`: `lab` inside a matching window, else `main` (a recording whose start
+        falls in a window without the matching car, track or session kind stays main and is listed in
+        `overlaps_kept_main`). Synchronous, one transaction; `dry_run` defaults to true and then nothing changes.
+        Idempotent: a second real call reports no change. A real call is logged (server log and one line holding the
+        report in `$COACH_DATA_DIR/run/library.jsonl`) and announces `library_changed` for the drivers it changed.
+        Raw files, the NAS and analyses are never touched; a session follows its recordings (`SessionSummary.library`).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LibraryClassifyRequest" }
+      responses:
+        "200":
+          description: The report (a plan when `dry_run` is true)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LibraryClassifyReport" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
 components:
   parameters:
     CustomerId: { name: customer_id, in: path, required: true, schema: { type: integer } }
@@ -910,10 +1007,23 @@ components:
     Cursor: { name: cursor, in: query, schema: { type: string, maxLength: 256 } }
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
     IfMatch: { name: If-Match, in: header, required: false, schema: { type: string }, description: "Current `version`; required to update or delete an existing resource." }
+    Library:
+      name: library
+      in: query
+      schema: { $ref: "#/components/schemas/Library" }
+      description: >-
+        Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup
+        harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session
+        is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`.
 
   responses:
     NotFound:
       description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: "`invalid_request`: a parameter or the body is malformed"
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1044,6 +1154,19 @@ components:
         runs_detected: { type: [integer, "null"] }
         longest_green_run: { type: [integer, "null"] }
         pace_slope_s_per_lap: { type: [number, "null"] }
+        pace_slope_supported:
+          type: [boolean, "null"]
+          description: >-
+            Whether the backend's screened fit had enough eligible laps by its own rule (`race_investigation.runs[].fit`, null
+            with `fit_unavailable_reason` under three screened laps with known exposure): true when at least one run of the
+            phase has a fit, false when none has. Read from the analysis, never recomputed. Null when there is no
+            `pace_slope_s_per_lap` or the analysis reports no runs. Always sent.
+        green_pace_median_s:
+          type: [number, "null"]
+          description: >-
+            Median green-lap time of the phase, seconds: the median of the backend's `lap_time_s` over the green laps its own
+            screen kept (`race_investigation.laps[].eligible`); no lap is screened again. Null without an analysis or when the
+            screen kept no lap. Always sent.
         pace_consistency_percent: { type: [number, "null"] }
         best_clean_lap_s: { type: [number, "null"] }
         fuel_used_gal: { type: [number, "null"] }
@@ -1072,6 +1195,12 @@ components:
         analysis_reason: { type: [string, "null"] }
         analysis_id: { type: [string, "null"] }
         overview: { $ref: "#/components/schemas/SessionOverview" }
+        library: { $ref: "#/components/schemas/Library", description: "`lab` when any of the session's recordings is lab, else `main` (this server always sends it)." }
+
+    Library:
+      type: string
+      enum: [main, lab]
+      description: "Whose driving a recording is: `main` (Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). The driver stays who drove it."
 
     SessionPage:
       type: object
@@ -1761,6 +1890,13 @@ components:
         sources: { type: array, items: { $ref: "#/components/schemas/SetupSource" } }
         observation_count: { type: integer }
         raced: { type: boolean, description: "Seen in a Race session recording." }
+        raced_count:
+          type: [integer, "null"]
+          minimum: 0
+          description: >-
+            Race sessions with a recording of these values (distinct sessions, of the asked library as `raced`). Null when the
+            count is unknown: a recording of the setup is in no session yet or in one whose type is unknown. Never 0 for an
+            unknown count. Always sent.
         first_seen_at: { type: string, format: date-time }
         last_seen_at: { type: string, format: date-time }
 
@@ -1798,6 +1934,30 @@ components:
           additionalProperties: { type: string }
         identity_excluded_keys: { type: array, items: { type: string }, description: "Keys excluded from identity (setup-keys.json)." }
         observations: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/SetupObservation" } }
+        versions:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/SetupVersion" }
+          description: >-
+            This setup and the other setups of its car that carry one of its names and have use in the asked library, oldest
+            first (`first_seen_at`, then `setup_id`). Always sent; one entry when there is no other version.
+
+    SetupVersion:
+      type: object
+      required: [setup_id, first_seen_at, last_seen_at, previous_setup_id, changed_count]
+      properties:
+        setup_id: { type: integer }
+        first_seen_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        previous_setup_id: { type: [integer, "null"], description: "The version before this one; null for the oldest." }
+        changed_count:
+          type: [integer, "null"]
+          minimum: 0
+          description: >-
+            Settings changed from the previous version: the backend's `counts.changed` of `POST /setups/compare` with the
+            previous version left and this one right (readouts and readings are not changes). Null for the oldest, for a
+            pair that does not compare (a side without values, or one known only from an export), and until the backend
+            has compared the pair under the running worker; the server never counts changes itself.
 
     SetupCompareRequest:
       type: object
@@ -1816,6 +1976,12 @@ components:
         right: { type: [string, "null"] }
         status: { type: string, enum: [changed, unknown, identical] }
         readout: { type: boolean, description: "Derived readout, not a setting." }
+        unit:
+          type: [string, "null"]
+          description: >-
+            The displayed unit `left` and `right` end in (`-3.2 deg` is `deg`), split as the backend reads a displayed value;
+            the present side's when one is missing. Null for text, bare numbers, ratios and lists, and when the two sides show
+            different units. `left` and `right` keep the full displayed text.
 
     SetupCompareResult:
       type: object
@@ -2255,6 +2421,11 @@ components:
       additionalProperties: true
       properties:
         car_path: { type: [string, "null"], maxLength: 160 }
+        car_paths:
+          type: [array, "null"]
+          maxItems: 64
+          items: { type: string, maxLength: 160 }
+          description: "Selected cars (`car_path` values) when the page filters by several; absent, null or empty is no car filter. `car_path` stays for one car."
         raced: { type: [boolean, "null"], description: "true raced setups only, false never-raced only, null both." }
         text: { type: [string, "null"], maxLength: 120 }
 
@@ -2425,6 +2596,83 @@ components:
         recordings: { type: array, items: { $ref: "#/components/schemas/AdminRemoveRecording" } }
         kept: { type: array, items: { type: string }, description: What a removal never touches. }
         log: { type: [string, "null"], description: "Path of the removal log written by a real call; null for a dry run." }
+
+    LabWindowWrite:
+      type: object
+      additionalProperties: false
+      required: [from, until, car, track]
+      properties:
+        from: { type: string, format: date-time, description: "Start, ISO 8601 with `Z` or an offset (`2026-10-04T08:00:00-05:00`); kept to the second." }
+        until: { type: string, format: date-time, description: "End, not before `from`, at most 72 hours after it. The utility gives the planned end and posts the window again with the time it stopped." }
+        car: { type: string, minLength: 1, maxLength: 160, description: "`CarPath` (`stockcars2 supra2019`) or the car's screen name." }
+        track: { type: string, minLength: 1, maxLength: 200, description: "`TrackName` (`irp`, `vegas oval`), `TrackDisplayName` or `TrackID`." }
+        note: { type: string, maxLength: 500 }
+        source: { type: string, minLength: 1, maxLength: 64, description: "Who states it: `testdriver`, `garage_harvest`, `historical`, ... Default `api`." }
+
+    LabWindow:
+      type: object
+      required: [window_id, from, until, car, track, note, source, created_at, updated_at, recording_count]
+      properties:
+        window_id: { type: integer }
+        from: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+        car: { type: string }
+        track: { type: string }
+        note: { type: string }
+        source: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        recording_count: { type: integer, description: "Recordings this window filed lab." }
+
+    LabWindowList:
+      type: object
+      required: [windows]
+      properties:
+        windows: { type: array, maxItems: 1000, items: { $ref: "#/components/schemas/LabWindow" } }
+
+    LibraryClassifyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        customer_id: { type: [integer, "null"], description: "One driver's recordings; all drivers when absent." }
+        dry_run: { type: boolean, default: true }
+
+    LibraryChange:
+      type: object
+      required: [sha256, from, to]
+      properties:
+        sha256: { type: string }
+        customer_id: { type: [integer, "null"] }
+        start_time_utc: { type: [string, "null"], format: date-time }
+        car_path: { type: [string, "null"] }
+        track: { type: [string, "null"] }
+        from: { $ref: "#/components/schemas/Library" }
+        to: { $ref: "#/components/schemas/Library" }
+        window_id: { type: [integer, "null"], description: "The window that files it lab; null when it goes to main." }
+
+    LibraryOverlap:
+      type: object
+      required: [sha256, window_id, reasons]
+      properties:
+        sha256: { type: string }
+        customer_id: { type: [integer, "null"] }
+        start_time_utc: { type: [string, "null"], format: date-time }
+        car_path: { type: [string, "null"] }
+        track: { type: [string, "null"] }
+        window_id: { type: integer }
+        reasons: { type: array, items: { type: string, enum: [car, track, not_solo_offline_test] } }
+
+    LibraryClassifyReport:
+      type: object
+      required: [dry_run, windows, recordings_checked, lab_recordings, changes, overlaps_kept_main, log]
+      properties:
+        dry_run: { type: boolean }
+        windows: { type: integer }
+        recordings_checked: { type: integer, description: "Parsed recordings looked at." }
+        lab_recordings: { type: integer, description: "Lab recordings after the call (after a real one)." }
+        changes: { type: array, items: { $ref: "#/components/schemas/LibraryChange" } }
+        overlaps_kept_main: { type: array, items: { $ref: "#/components/schemas/LibraryOverlap" }, description: "Recordings whose start falls in a window without its car, track or session kind; they stay main." }
+        log: { type: [string, "null"], description: "Path of the library log written by a real call; null for a dry run." }
 
     ImportBundle:
       type: object

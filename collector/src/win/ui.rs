@@ -1,7 +1,9 @@
 //! The overlay window, the tray icon and menu, the global hotkey and the server-address prompt,
 //! all on the main thread's message loop. The overlay is a layered, topmost, click-through,
-//! no-activate tool window (proved in P3); it repaints at most 20 times a second and only when
-//! something changed.
+//! no-activate tool window (proved in P3). It checks for new figures 10 times a second and redraws
+//! only the tiles whose text, accent or bar position changed, into a back buffer it keeps, then
+//! copies just the changed area to the window (a moving car therefore costs a few small redraws
+//! a second per changing tile, not a full 540 x 360 repaint with a new bitmap each time).
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -41,7 +43,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::PCWSTR;
 
-use super::render::{Frame, Renderer, window_size};
+use super::render::{Dirty, Frame, Renderer, window_size};
 use super::{QuitEvent, wide};
 use crate::config::{Config, normalize_server};
 use crate::hotkey::parse_hotkey;
@@ -51,9 +53,13 @@ use crate::layout::Layout;
 const TRAY_MSG: u32 = WM_APP + 1;
 const MOVE_ENDED_MSG: u32 = WM_APP + 2;
 const TIMER_ID: usize = 1;
-const TIMER_MS: u32 = 50;
-const MIN_PAINT_GAP_MS: u128 = 50;
-const IDLE_PAINT_MS: u128 = 1_000;
+/// The controller's timer: the overlay checks the live state this often, so it repaints at most
+/// 10 times a second.
+const TIMER_MS: u32 = 100;
+/// With no new live state, the tiles are still compared this often (text that depends on time).
+const IDLE_CHECK_MS: u128 = 1_000;
+/// The tray tooltip and icon are refreshed this often.
+const TRAY_REFRESH_MS: u128 = 500;
 const HOTKEY_ID: i32 = 0x4937;
 
 const ID_STATUS: usize = 100;
@@ -93,8 +99,13 @@ struct App {
     layout: Layout,
     layout_gen: u64,
     last_live_gen: u64,
-    last_paint: Instant,
+    last_check: Instant,
+    last_tray: Instant,
     last_topmost: Instant,
+    /// What the next paint has to redraw: everything, or these tiles.
+    repaint: Repaint,
+    /// The surface the tiles are drawn on between paints.
+    back: Option<BackBuffer>,
     visible: bool,
     move_mode: bool,
     hook: Option<windows::Win32::UI::WindowsAndMessaging::HHOOK>,
@@ -103,6 +114,54 @@ struct App {
     tray_live: Option<bool>,
     tray_tip: String,
     restart: bool,
+}
+
+/// What the next `WM_PAINT` has to draw into the back buffer.
+enum Repaint {
+    All,
+    Tiles(Vec<usize>),
+}
+
+/// A memory device context and bitmap the size of the overlay, kept between paints.
+struct BackBuffer {
+    dc: windows::Win32::Graphics::Gdi::HDC,
+    bitmap: windows::Win32::Graphics::Gdi::HBITMAP,
+    old: HGDIOBJ,
+    width: i32,
+    height: i32,
+}
+
+impl BackBuffer {
+    /// # Safety
+    /// `window_dc` must be a valid device context.
+    unsafe fn create(
+        window_dc: windows::Win32::Graphics::Gdi::HDC,
+        width: i32,
+        height: i32,
+    ) -> BackBuffer {
+        // SAFETY: a memory DC and a compatible bitmap, freed in `destroy`.
+        unsafe {
+            let dc = CreateCompatibleDC(Some(window_dc));
+            let bitmap = CreateCompatibleBitmap(window_dc, width, height);
+            let old = SelectObject(dc, HGDIOBJ(bitmap.0));
+            BackBuffer {
+                dc,
+                bitmap,
+                old,
+                width,
+                height,
+            }
+        }
+    }
+
+    fn destroy(self) {
+        // SAFETY: the objects were created in `create` and are released once.
+        unsafe {
+            SelectObject(self.dc, self.old);
+            let _ = DeleteObject(HGDIOBJ(self.bitmap.0));
+            let _ = DeleteDC(self.dc);
+        }
+    }
 }
 
 /// Window handles the low-level mouse hook needs (it has no user data).
@@ -171,8 +230,11 @@ pub fn run(params: UiParams) -> UiExit {
             layout,
             layout_gen: 0,
             last_live_gen: u64::MAX,
-            last_paint: Instant::now(),
+            last_check: Instant::now(),
+            last_tray: Instant::now(),
             last_topmost: Instant::now(),
+            repaint: Repaint::All,
+            back: None,
             visible: false,
             move_mode: false,
             hook: None,
@@ -372,6 +434,9 @@ impl App {
             let _ = DestroyIcon(self.icon_idle);
             let _ = DestroyWindow(self.overlay);
         }
+        if let Some(back) = self.back.take() {
+            back.destroy();
+        }
         self.hub.request_shutdown();
     }
 
@@ -545,7 +610,8 @@ impl App {
             ID_SHOW => {
                 self.config.monitor_visible = !self.config.monitor_visible;
                 self.save_config();
-                self.apply_visibility();
+                let connected = self.hub.live().is_some_and(|s| s.connected);
+                self.apply_visibility(connected);
             }
             ID_MOVE => {
                 if self.move_mode {
@@ -642,16 +708,45 @@ impl App {
         self.invalidate();
     }
 
+    /// Repaints the whole overlay at the next paint.
     fn invalidate(&mut self) {
+        self.repaint = Repaint::All;
         // SAFETY: invalidates our own window.
         unsafe {
             let _ = InvalidateRect(Some(self.overlay), None, false);
         }
-        self.last_paint = Instant::now();
+        self.last_check = Instant::now();
     }
 
-    fn apply_visibility(&mut self) {
-        let want = self.config.monitor_visible && self.hub.live().is_some_and(|s| s.connected);
+    /// Repaints only `tiles` at the next paint (unless a full repaint is already due).
+    fn invalidate_tiles(&mut self, tiles: &[usize], width: i32, height: i32) {
+        let rects =
+            super::render::tile_rects(&self.layout, width, height, self.config.placement.scale);
+        if let Repaint::Tiles(pending) = &mut self.repaint {
+            for &i in tiles {
+                if !pending.contains(&i) {
+                    pending.push(i);
+                }
+            }
+        }
+        for &i in tiles {
+            if let Some(r) = rects.get(i) {
+                let area = RECT {
+                    left: r.x,
+                    top: r.y,
+                    right: r.x + r.w,
+                    bottom: r.y + r.h,
+                };
+                // SAFETY: invalidates a rectangle of our own window.
+                unsafe {
+                    let _ = InvalidateRect(Some(self.overlay), Some(&area), false);
+                }
+            }
+        }
+    }
+
+    fn apply_visibility(&mut self, connected: bool) {
+        let want = self.config.monitor_visible && connected;
         if want != self.visible {
             self.visible = want;
             // SAFETY: shows or hides our own window without activating it.
@@ -717,7 +812,8 @@ impl App {
         }
         self.save_placement();
         self.visible = false;
-        self.apply_visibility();
+        let connected = self.hub.live().is_some_and(|s| s.connected);
+        self.apply_visibility(connected);
     }
 
     fn save_placement(&mut self) {
@@ -756,10 +852,14 @@ impl App {
             }
             self.invalidate();
         }
+        let live = self.hub.live();
         if !self.move_mode {
-            self.apply_visibility();
+            self.apply_visibility(live.is_some_and(|s| s.connected));
         }
-        self.update_tray(false);
+        if self.last_tray.elapsed().as_millis() >= TRAY_REFRESH_MS {
+            self.last_tray = Instant::now();
+            self.update_tray(false);
+        }
         if !self.visible {
             return;
         }
@@ -779,41 +879,79 @@ impl App {
             }
         }
         let live_gen = self.hub.live_gen();
-        let elapsed = self.last_paint.elapsed().as_millis();
-        if (live_gen != self.last_live_gen && elapsed >= MIN_PAINT_GAP_MS)
-            || elapsed >= IDLE_PAINT_MS
-        {
-            self.last_live_gen = live_gen;
-            self.invalidate();
+        if live_gen == self.last_live_gen && self.last_check.elapsed().as_millis() < IDLE_CHECK_MS {
+            return;
+        }
+        self.last_live_gen = live_gen;
+        self.last_check = Instant::now();
+        let (w, h) = window_size(self.config.placement.scale);
+        let frame = Frame {
+            width: w,
+            height: h,
+            scale: self.config.placement.scale,
+            layout: &self.layout,
+            state: live.as_ref(),
+            now_ms: self.hub.clock.mono_ms(),
+        };
+        match self.renderer.dirty(&frame) {
+            Dirty::Nothing => {}
+            Dirty::All => self.invalidate(),
+            Dirty::Tiles(tiles) => self.invalidate_tiles(&tiles, w, h),
         }
     }
 
     fn paint(&mut self) {
-        // SAFETY: standard paint cycle on our own window with a memory DC freed before returning.
+        // SAFETY: standard paint cycle on our own window; the back buffer is owned by `self`.
         unsafe {
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(self.overlay, &mut ps);
             let (w, h) = window_size(self.config.placement.scale);
-            let mem = CreateCompatibleDC(Some(hdc));
-            let bitmap = CreateCompatibleBitmap(hdc, w, h);
-            let old = SelectObject(mem, HGDIOBJ(bitmap.0));
-            let state = self.hub.live();
-            let now_ms = self.hub.clock.mono_ms();
-            self.renderer.paint(
-                mem,
-                &Frame {
+            if self
+                .back
+                .as_ref()
+                .is_some_and(|b| b.width != w || b.height != h)
+                && let Some(old) = self.back.take()
+            {
+                old.destroy();
+            }
+            if self.back.is_none() {
+                self.back = Some(BackBuffer::create(hdc, w, h));
+                self.repaint = Repaint::All;
+            }
+            if let Some(back) = &self.back {
+                let state = self.hub.live();
+                let frame = Frame {
                     width: w,
                     height: h,
                     scale: self.config.placement.scale,
                     layout: &self.layout,
                     state: state.as_ref(),
-                    now_ms,
-                },
-            );
-            let _ = BitBlt(hdc, 0, 0, w, h, Some(mem), 0, 0, SRCCOPY);
-            SelectObject(mem, old);
-            let _ = DeleteObject(HGDIOBJ(bitmap.0));
-            let _ = DeleteDC(mem);
+                    now_ms: self.hub.clock.mono_ms(),
+                };
+                match std::mem::replace(&mut self.repaint, Repaint::Tiles(Vec::new())) {
+                    Repaint::All => self.renderer.paint(back.dc, &frame),
+                    Repaint::Tiles(tiles) if !tiles.is_empty() => {
+                        self.renderer.paint_tiles(back.dc, &frame, &tiles)
+                    }
+                    Repaint::Tiles(_) => {}
+                }
+                // Only the invalidated area is copied: that is what changed on screen.
+                let area = ps.rcPaint;
+                let (cw, ch) = (area.right - area.left, area.bottom - area.top);
+                if cw > 0 && ch > 0 {
+                    let _ = BitBlt(
+                        hdc,
+                        area.left,
+                        area.top,
+                        cw,
+                        ch,
+                        Some(back.dc),
+                        area.left,
+                        area.top,
+                        SRCCOPY,
+                    );
+                }
+            }
             let _ = EndPaint(self.overlay, &ps);
         }
     }

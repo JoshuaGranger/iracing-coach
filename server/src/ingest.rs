@@ -1175,6 +1175,8 @@ pub async fn ingest_recording(app: &AppState, sha: &str) -> Result<()> {
                     now
                 ],
             )?;
+            // main, or lab inside a matching lab window (`library.rs`)
+            crate::library::file_recording(&tx, &sha_owned)?;
             if let (Some(setup), Some(car_path)) = (&parsed.setup, &parsed.car_path) {
                 let observed = parsed.start_time_utc.clone().unwrap_or_else(|| now.clone());
                 let setup_id = crate::setups::upsert_setup(

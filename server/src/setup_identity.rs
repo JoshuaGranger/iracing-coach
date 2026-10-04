@@ -10,6 +10,11 @@
 //! changes nothing, so it runs at every start and acts once per rule change (and again if an older
 //! server, run after a rollback, stored old-rule fingerprints meanwhile).
 //!
+//! Since schema version 2 a garage snapshot never creates a setup: only a visit's commit does, and
+//! the visit's snapshots become observations of the setup each equals, up to the sim's own
+//! rounding (`collector-protocol.md` section 8). The same pass folds the setups a version-1 server
+//! made from snapshots alone into those setups (`fold_snapshot_only`).
+//!
 //! Observations keep no values of their own; a setup holds the latest values of its observations.
 //! That is exact for a rule that excludes more keys than before (two value maps equal outside the
 //! old exclusions are equal outside the new ones), which every `setup-keys.json` change so far
@@ -45,6 +50,24 @@ pub struct Merge {
     pub names: Vec<String>,
 }
 
+/// A setup known only from garage snapshots, folded into the setups its snapshots observed
+/// (`collector-protocol.md` section 8: only a visit's commit creates a setup).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Fold {
+    pub customer_id: i64,
+    pub car_path: String,
+    pub setup: i64,
+    /// The setups that took its observations (the visit's commit, or the setup the snapshot equals).
+    pub into: Vec<i64>,
+    pub observations_moved: usize,
+    /// Snapshots that equal no setup: values seen, name unknown; their observations went.
+    pub observations_without_setup: usize,
+    /// Snapshots whose visit has no commit yet: they wait for it in `garage_snapshots`.
+    pub observations_pending: usize,
+    /// False when a note kept the setup.
+    pub removed: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Report {
     pub setups_checked: usize,
@@ -58,6 +81,8 @@ pub struct Report {
     pub kept_for_notes: Vec<i64>,
     /// Setups whose stored values do not parse: left as they are.
     pub unreadable: Vec<i64>,
+    /// Snapshot-only setups folded into the setups their visits committed (schema version 2).
+    pub folds: Vec<Fold>,
 }
 
 impl Report {
@@ -66,6 +91,7 @@ impl Report {
         self.fingerprints_rewritten > 0
             || !self.merges.is_empty()
             || !self.removed_without_observations.is_empty()
+            || !self.folds.is_empty()
     }
 }
 
@@ -183,6 +209,126 @@ fn merge(conn: &Connection, members: Vec<Stored>) -> rusqlite::Result<(Merge, St
     Ok((out, survivor))
 }
 
+/// Folds every setup known only from garage snapshots (a schema-version-1 server made one for each
+/// snapshot whose values differed from all others) into the setups its visits' commits decide, by
+/// the rule a snapshot follows now (`crate::setups::resolve_snapshot`): the 2026-10-04 harvest's
+/// setup 72 (two snapshots reading the left-front camber +5.9 deg) joins setup 73 (the commit,
+/// +5.8 deg). A snapshot that equals no setup loses its observation (its values stay in
+/// `garage_snapshots`); one whose visit has no commit yet waits there for it. The setup goes once
+/// it has no observation; its notes move to the setup its first snapshot joined (as in a merge), and a
+/// note keeps it only when no snapshot joined a setup. Returns true when a note moved.
+fn fold_snapshot_only(
+    conn: &Connection,
+    fingerprint: &dyn Fn(&BTreeMap<String, String>) -> String,
+    report: &mut Report,
+) -> rusqlite::Result<bool> {
+    let lonely: Vec<(i64, i64, String, String)> = conn
+        .prepare(
+            "SELECT s.setup_id, s.customer_id, s.car_path, s.values_json FROM setups s
+             WHERE EXISTS (SELECT 1 FROM setup_observations o WHERE o.setup_id = s.setup_id)
+               AND NOT EXISTS (SELECT 1 FROM setup_observations o WHERE o.setup_id = s.setup_id
+                                 AND o.source <> 'garage_snapshot')
+             ORDER BY s.setup_id",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut notes_moved = false;
+    for (id, customer, car, json) in lonely {
+        let Ok(values) = serde_json::from_str::<BTreeMap<String, String>>(&json) else {
+            if !report.unreadable.contains(&id) {
+                report.unreadable.push(id);
+            }
+            continue;
+        };
+        let observations: Vec<(i64, Option<String>, Option<i64>, String)> = conn
+            .prepare(
+                "SELECT observation_id, visit_id, update_count, observed_at FROM setup_observations
+                 WHERE setup_id = ?1 ORDER BY observed_at, observation_id",
+            )?
+            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut fold = Fold {
+            customer_id: customer,
+            car_path: car.clone(),
+            setup: id,
+            into: Vec::new(),
+            observations_moved: 0,
+            observations_without_setup: 0,
+            observations_pending: 0,
+            removed: false,
+        };
+        let now = iso_now();
+        for (observation, visit, count, observed) in observations {
+            let Some(visit) = visit else {
+                continue; // a snapshot always has its visit; nothing to decide without one
+            };
+            let count = count.unwrap_or(-1);
+            let Some(commit) = crate::setups::commit_setup_of(conn, &visit)? else {
+                // Its commit is still on its way (or never came): left as it is until a start
+                // after the commit arrives.
+                fold.observations_pending += 1;
+                continue;
+            };
+            // The snapshot's values as this setup holds them, kept as the visit's snapshot.
+            conn.execute(
+                "INSERT OR IGNORE INTO garage_snapshots(visit_id, update_count, customer_id, car_path,
+                   values_json, values_fingerprint, observed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![visit, count, customer, car, json, fingerprint(&values), observed],
+            )?;
+            conn.execute(
+                "DELETE FROM setup_observations WHERE observation_id = ?1",
+                [observation],
+            )?;
+            let target = crate::setups::resolve_snapshot(
+                conn,
+                customer,
+                &car,
+                &values,
+                Some(commit),
+                Some(id),
+                fingerprint,
+            )?;
+            match target {
+                Some(target) => {
+                    crate::setups::attach_snapshot(
+                        conn, target, customer, &visit, count, &observed, &values,
+                    )?;
+                    if !fold.into.contains(&target.setup_id) {
+                        fold.into.push(target.setup_id);
+                    }
+                    fold.observations_moved += 1;
+                }
+                None => fold.observations_without_setup += 1,
+            }
+            conn.execute(
+                "UPDATE garage_snapshots SET resolved_at = ?3 WHERE visit_id = ?1 AND update_count = ?2",
+                params![visit, count, now],
+            )?;
+        }
+        if fold.observations_moved + fold.observations_without_setup == 0 {
+            continue; // every snapshot waits for its visit's commit: nothing changed
+        }
+        if fold.observations_pending == 0 {
+            if let Some(first) = fold.into.first() {
+                let moved = conn.execute(
+                    "UPDATE notes SET subject_id = ?1 WHERE subject_kind = 'setup' AND subject_id = ?2",
+                    params![first.to_string(), id.to_string()],
+                )?;
+                notes_moved |= moved > 0;
+            }
+            if has_note(conn, id)? {
+                report.kept_for_notes.push(id);
+            } else {
+                conn.execute("DELETE FROM setups WHERE setup_id = ?1", [id])?;
+                fold.removed = true;
+            }
+        }
+        report.folds.push(fold);
+    }
+    Ok(notes_moved)
+}
+
 /// One transaction over every driver's setups (see the module documentation). `fingerprint` is
 /// the rule new observations use (`RecordingParser::fingerprint`).
 pub fn reconcile(
@@ -248,7 +394,9 @@ pub fn reconcile(
         )?;
     }
     report.fingerprints_rewritten = rewrite.len();
-    if report.merges.iter().any(|m| m.notes_moved > 0) {
+    let mut notes_moved = report.merges.iter().any(|m| m.notes_moved > 0);
+    notes_moved |= fold_snapshot_only(&tx, fingerprint, &mut report)?;
+    if notes_moved {
         // a note's subject moved: user-authored data changed (`db-schema.sql`, server_counters)
         tx.execute(
             "UPDATE server_counters SET value = value + 1 WHERE name = 'user_data_generation'",

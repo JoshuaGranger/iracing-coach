@@ -19,6 +19,11 @@ use crate::journal::GarageOut;
 use crate::util::{iso_utc, jitter};
 use crate::ws::{Incoming, ReadError, WebSocket};
 
+/// While frames flow, status, garage and stats housekeeping runs this often.
+const CHORES_EVERY: Duration = Duration::from_millis(50);
+/// Longest the link sleeps for the next frame before looking at the rest of its work.
+const FRAME_WAIT: Duration = Duration::from_millis(20);
+
 pub const SUBPROTOCOL: &str = "coach-collector.1";
 pub const PROTOCOL: i64 = 1;
 
@@ -46,6 +51,9 @@ pub struct LinkSettings {
     /// Socket read timeout while idle, and while frames are flowing.
     pub idle_read_ms: u64,
     pub streaming_read_ms: u64,
+    /// While frames flow the link sleeps until the next frame is queued and reads the socket only
+    /// this often (the server's messages are few and need no faster answer).
+    pub stream_poll_ms: u64,
 }
 
 impl LinkSettings {
@@ -67,7 +75,8 @@ impl LinkSettings {
             incompatible_retry_ms: 10 * 60_000,
             duplicate_pause_ms: 60_000,
             idle_read_ms: 50,
-            streaming_read_ms: 5,
+            streaming_read_ms: 2,
+            stream_poll_ms: 50,
         }
     }
 }
@@ -192,24 +201,44 @@ impl Link {
         self.send_garage(&mut ws, conn)?;
         ws.flush().map_err(|e| e.to_string())?;
 
+        let mut read_timeout_ms = 0u64;
+        let mut last_poll = Instant::now();
+        let mut last_chores = Instant::now();
         loop {
             if self.hub.is_shutdown() {
                 ws.queue_close(1000);
                 let _ = ws.flush();
                 return Ok(SessionEnd::Shutdown);
             }
-            self.send_garage(&mut ws, conn)?;
-            self.maybe_send_status(&mut ws, &mut state)?;
-            self.maybe_send_stats(&mut ws, &mut state)?;
             let streaming = self.send_frames(&mut ws)?;
-            let read_ms = if streaming {
+            // While frames flow, the housekeeping runs 20 times a second, not once per frame.
+            if !streaming || last_chores.elapsed() >= CHORES_EVERY {
+                last_chores = Instant::now();
+                self.send_garage(&mut ws, conn)?;
+                self.maybe_send_status(&mut ws, &mut state)?;
+                self.maybe_send_stats(&mut ws, &mut state)?;
+            }
+            let poll_every = Duration::from_millis(self.settings.stream_poll_ms.max(1));
+            if streaming && last_poll.elapsed() < poll_every {
+                // Nothing to read yet: sleep until the next frame is queued (the queue wakes us)
+                // or until the socket is due, instead of timing out on the socket every few ms.
+                let until_due = poll_every.saturating_sub(last_poll.elapsed());
+                self.hub.frames.wait(until_due.min(FRAME_WAIT));
+                continue;
+            }
+            last_poll = Instant::now();
+            let want_ms = if streaming {
                 self.settings.streaming_read_ms
             } else {
                 self.settings.idle_read_ms
-            };
-            ws.stream()
-                .set_read_timeout(Some(Duration::from_millis(read_ms.max(1))))
-                .ok();
+            }
+            .max(1);
+            if want_ms != read_timeout_ms {
+                ws.stream()
+                    .set_read_timeout(Some(Duration::from_millis(want_ms)))
+                    .ok();
+                read_timeout_ms = want_ms;
+            }
             match ws.read() {
                 Ok(message) => {
                     state.last_heard = Instant::now();
@@ -430,7 +459,7 @@ impl Link {
     }
 
     fn maybe_send_stats(&self, ws: &mut WebSocket, state: &mut ConnState) -> Result<(), String> {
-        let streaming = self.hub.status().streaming;
+        let streaming = self.hub.is_streaming();
         if !streaming {
             state.stats_base = None;
             return Ok(());
@@ -474,7 +503,7 @@ impl Link {
 
     /// Sends queued frames; returns whether the collector is streaming.
     fn send_frames(&self, ws: &mut WebSocket) -> Result<bool, String> {
-        let streaming = self.hub.status().streaming;
+        let streaming = self.hub.is_streaming();
         let mut sent_any = false;
         while let Some(frame) = self.hub.frames.pop() {
             ws.queue_binary(&frame);

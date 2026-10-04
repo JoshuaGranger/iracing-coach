@@ -354,3 +354,46 @@ CREATE TABLE snapshots (
 
 INSERT INTO schema_migrations(version, applied_at, description, app_version)
 VALUES (1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'initial rewrite schema', '0.19.0');
+
+-- Migration 2 (2026-10-04): garage snapshots wait for their visit's commit (collector-protocol.md
+-- section 8, "Setup identity of a visit"). A snapshot never creates a setup: its values are kept
+-- here, and the visit's garage.commit (the only event that creates a setup) makes each snapshot an
+-- observation of the setup it equals, or of none. Additive: a server of version 1 ignores the table.
+CREATE TABLE garage_snapshots (
+  visit_id            TEXT NOT NULL REFERENCES garage_visits(visit_id),
+  update_count        INTEGER NOT NULL,
+  customer_id         INTEGER NOT NULL REFERENCES drivers(customer_id),
+  car_path            TEXT NOT NULL,
+  values_json         TEXT NOT NULL,                 -- CarSetup leaf map as published
+  values_fingerprint  TEXT NOT NULL,                 -- setup-keys.json rule at arrival
+  observed_at         TEXT NOT NULL,
+  resolved_at         TEXT,                          -- NULL until the visit's commit is stored
+  PRIMARY KEY (visit_id, update_count)
+);
+CREATE INDEX idx_garage_snapshots_pending ON garage_snapshots(visit_id) WHERE resolved_at IS NULL;
+
+-- Migration 3 (2026-10-04): the Lab library (web-round-2-plan.md, "Lab library"; backlog #18). A
+-- recording belongs to the main library (Joshua's own driving) or to the lab (the utility's bot,
+-- its setup harvest and the other agent-driven rig runs); the driver stays who drove it and raw
+-- files are never moved. A lab window is the utility's statement that it drives `car` at `track`
+-- from `from_utc` until `until_utc`; a recording whose start falls in a window, whose car and track
+-- match and which is a solo offline test is filed lab (server/src/library.rs). Additive: a server
+-- of version 2 ignores the column and the table.
+CREATE TABLE lab_windows (
+  window_id    INTEGER PRIMARY KEY,
+  from_utc     TEXT NOT NULL,                     -- ISO 8601 UTC, whole seconds
+  until_utc    TEXT NOT NULL,
+  car          TEXT NOT NULL,                     -- CarPath (e.g. 'stockcars2 supra2019') or the car's screen name
+  track        TEXT NOT NULL,                     -- TrackName (e.g. 'irp'), TrackDisplayName or TrackID
+  note         TEXT NOT NULL DEFAULT '',
+  source       TEXT NOT NULL,                     -- who stated it: 'testdriver', 'garage_harvest', 'historical', ...
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  CHECK (until_utc >= from_utc)
+);
+-- One window per start, car and track: posting the same three again updates it (closing a window).
+CREATE UNIQUE INDEX idx_lab_windows_key ON lab_windows(from_utc, lower(car), lower(track));
+
+ALTER TABLE recordings ADD COLUMN library TEXT NOT NULL DEFAULT 'main' CHECK (library IN ('main', 'lab'));
+ALTER TABLE recordings ADD COLUMN library_window_id INTEGER REFERENCES lab_windows(window_id);  -- the window that filed it lab
+CREATE INDEX idx_recordings_library ON recordings(library);

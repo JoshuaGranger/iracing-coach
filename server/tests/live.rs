@@ -213,11 +213,14 @@ async fn garage_events_are_acknowledged_once_and_replays_insert_nothing() {
         }
         assert_eq!(count(&app, "SELECT COUNT(*) FROM garage_visits WHERE committed_name = 'garage.sto' AND committed_sto_sha256 IS NOT NULL"), 1);
 
-        // A second snapshot in the same visit is another observation; earlier ones stay nameless.
+        // A later snapshot of the visit whose values equal no setup is stored and acknowledged but
+        // makes no setup and no observation (only a commit creates a setup); snapshots stay nameless.
         let (second, _) = garage("11111111-aaaa-4bbb-8ccc-000000000001", 6, json!({"Chassis.Front.ArbSetting": "8", "UpdateCount": "6"}));
         c.send(second);
         c.until(Duration::from_secs(5), |v| v["type"] == "garage.ack" && v["update_count"] == 6).expect("second ack");
-        assert_eq!(count(&app, "SELECT COUNT(*) FROM setup_observations WHERE source = 'garage_snapshot' AND setup_name IS NULL"), 2);
+        assert_eq!(count(&app, "SELECT COUNT(*) FROM setup_observations WHERE source = 'garage_snapshot' AND setup_name IS NULL"), 1);
+        assert_eq!(count(&app, "SELECT COUNT(*) FROM garage_snapshots WHERE resolved_at IS NOT NULL"), 2);
+        assert_eq!(count(&app, "SELECT COUNT(*) FROM setups"), 1);
     })
     .await
     .unwrap();
@@ -573,11 +576,12 @@ async fn garage_events_are_acknowledged_only_once_they_are_attributed_and_stored
         assert_eq!(
             count(
                 &app,
-                &format!("SELECT COUNT(*) FROM setup_observations WHERE customer_id = {CUSTOMER} AND source = 'garage_snapshot'")
+                &format!("SELECT COUNT(*) FROM garage_snapshots WHERE customer_id = {CUSTOMER} AND resolved_at IS NULL")
             ),
             1,
-            "attributed to the collector's last reported driver"
+            "attributed to the collector's last reported driver; waits for the visit's commit"
         );
+        assert_eq!(count(&app, "SELECT COUNT(*) FROM setups"), 0, "a snapshot makes no setup");
 
         // A commit that names no car uses the car its visit already carries.
         commit["car_path"] = Value::Null;
@@ -587,6 +591,12 @@ async fn garage_events_are_acknowledged_only_once_they_are_attributed_and_stored
             count(&app, "SELECT COUNT(*) FROM setup_observations WHERE source = 'garage_commit' AND setup_id IN (SELECT setup_id FROM setups WHERE car_path = 'stockcars chevyss2020')"),
             1
         );
+        // the commit resolved the waiting snapshot: an observation of the setup it created
+        assert_eq!(
+            count(&app, "SELECT COUNT(DISTINCT setup_id) FROM setup_observations WHERE visit_id = '44444444-aaaa-4bbb-8ccc-000000000001'"),
+            1
+        );
+        assert_eq!(count(&app, "SELECT COUNT(*) FROM garage_snapshots WHERE resolved_at IS NULL"), 0);
 
         // No driver and no car anywhere: a commit for a visit nothing is known about waits too.
         let (_, mut orphan) = garage("44444444-aaaa-4bbb-8ccc-000000000002", 9, values.clone());

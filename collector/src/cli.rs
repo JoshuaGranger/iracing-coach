@@ -26,6 +26,8 @@ RUN OPTIONS
   --no-ui              no overlay and no tray (headless)
   --exit-at-end        with --replay: exit once the replay ended and the work it queued drained
   --drain-secs N       longest wait for that drain (default 30)
+  --cpu-report         print the collector's own CPU use (process and per thread, percent of one
+                       core) every 10 s and a total at exit, to stdout
   --iracing-root DIR   iRacing's Documents folder (default: Documents\\iRacing)
   --state-dir DIR      collector state folder (default: %LOCALAPPDATA%\\iRacingCoach)
 
@@ -50,6 +52,8 @@ pub struct RunOptions {
     pub no_ui: bool,
     pub exit_at_end: bool,
     pub drain_secs: u64,
+    /// Print CPU accounting (process and per thread) to stdout every 10 s and at the end.
+    pub cpu_report: bool,
     pub iracing_root: Option<PathBuf>,
     pub state_dir: Option<PathBuf>,
 }
@@ -64,6 +68,7 @@ impl Default for RunOptions {
             no_ui: false,
             exit_at_end: false,
             drain_secs: 30,
+            cpu_report: false,
             iracing_root: None,
             state_dir: None,
         }
@@ -199,6 +204,7 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
                     "--dry-run" => o.dry_run = true,
                     "--no-ui" => o.no_ui = true,
                     "--exit-at-end" => o.exit_at_end = true,
+                    "--cpu-report" => o.cpu_report = true,
                     other => return Err(format!("unknown option {other}")),
                 }
             }

@@ -957,6 +957,23 @@ async fn every_endpoint_answers_as_the_contract_says() {
     let r = env.post("/api/v1/admin/remove", json!({})).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     check(c, "POST", "/api/v1/admin/remove", &r);
+    // lab library (tests/lab_library.rs covers the rule)
+    let r = env
+        .post(
+            "/api/v1/admin/library/windows",
+            json!({"from": "2026-10-04T13:00:00Z", "until": "2026-10-04T13:52:00Z",
+                   "car": "stockcars2 supra2019", "track": "irp", "source": "testdriver"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    check(c, "POST", "/api/v1/admin/library/windows", &r);
+    let r = env.get("/api/v1/admin/library/windows").await;
+    assert_eq!(r.status, StatusCode::OK);
+    check(c, "GET", "/api/v1/admin/library/windows", &r);
+    let r = env.post("/api/v1/admin/library/classify", json!({})).await;
+    assert_eq!(r.status, StatusCode::OK);
+    check(c, "POST", "/api/v1/admin/library/classify", &r);
+    assert_eq!(r.json()["dry_run"], true, "a dry run unless told otherwise");
     let bundle = json!({"bundle_version": 1, "customer_id": 1001, "source": {"machine": "DESKTOP-SIM", "root": "C:/legacy"},
         "notes": [{"legacy_id": "n1", "subject_kind": "session", "subject_id": "ignored", "body": "legacy note",
                    "subject_ref": {"subsession_id": 9500, "sim_session_num": 0, "car_path": "stockcars chevyss2020"}},

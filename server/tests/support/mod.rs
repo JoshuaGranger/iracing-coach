@@ -48,6 +48,38 @@ pub fn race_meta(subsession: i64, num: i64, name: &str) -> Value {
 
 pub struct FakeParser;
 
+/// The `header_json` the real parser stores, as far as a fake recording says: `fixed_setup` stands
+/// for IsFixedSetup; an offline recording (`session_start_date` in its header) also carries the
+/// disk header's times and the summary fields of its session (`offline_sessions::stint_of`).
+fn fake_header(meta: &Value) -> Value {
+    // `lap_last`: the last `Lap` sample (null when the fake recording names none)
+    let mut header = json!({"buffer_length": 512, "variable_count": 12, "lap_last": meta["lap_last"],
+                            "summary": {"is_fixed_setup": meta["fixed_setup"].as_bool()}});
+    if let Some(date) = meta["session_start_date"].as_i64() {
+        let (clock, end) = (
+            meta["session_start_time"].as_f64().unwrap_or(0.0),
+            meta["session_end_time"].as_f64().unwrap_or(0.0),
+        );
+        header["session_start_date"] = json!(date);
+        header["session_start_time"] = json!(clock);
+        header["session_end_time"] = json!(end);
+        let summary = &mut header["summary"];
+        summary["subsession_id"] = meta["subsession_id"].clone();
+        summary["session_id"] = json!(meta["session_id"].as_i64().unwrap_or(0));
+        summary["session_unique_id"] = json!(meta["session_unique_id"].as_i64().unwrap_or(1));
+        summary["track_id"] = meta["track_id"].clone();
+        summary["track_name"] = meta["track"].clone();
+        summary["track_config_name"] = meta["track_config"].clone();
+        summary["car_path"] = meta["car_path"].clone();
+        summary["sim_session_num"] = meta["sim_session_num"].clone();
+        summary["sim_session_type"] = meta["session_type"].clone();
+        summary["start_time_unix"] = json!(date as f64);
+        summary["end_time_unix"] = json!(date as f64 + (end - clock).max(0.0));
+        summary["time_source"] = json!("disk_header");
+    }
+    header
+}
+
 pub fn fake_fingerprint(values: &BTreeMap<String, String>) -> String {
     let mut text = String::new();
     for (k, v) in values {
@@ -108,13 +140,7 @@ impl RecordingParser for FakeParser {
             season_name: None,
             start_time_utc: meta["start"].as_str().map(str::to_string),
             // the real parser stores the header summary; `fixed_setup` stands for IsFixedSetup
-            header_json: match meta["fixed_setup"].as_bool() {
-                Some(fixed) => json!({"buffer_length": 512, "variable_count": 12,
-                                      "summary": {"is_fixed_setup": fixed}}),
-                None => {
-                    json!({"buffer_length": 512, "variable_count": 12, "summary": {"is_fixed_setup": null}})
-                }
-            },
+            header_json: fake_header(&meta),
             setup,
         })
     }

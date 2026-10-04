@@ -21,21 +21,39 @@ fn count(env: &Env, sql: &str) -> i64 {
 // ---------------------------------------------------------------- migrations
 
 #[test]
-fn migration_one_is_the_contract_schema_and_runs_once() {
+fn the_migrations_are_the_contract_schema_and_run_once() {
     let contract = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../docs/08-rewrite/contracts/db-schema.sql"),
     )
     .unwrap();
-    let shipped = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/0001_initial.sql"),
-    )
-    .unwrap();
+    // The contract is the migrations in order, one blank line apart, and each file is what the
+    // server runs.
+    let shipped: Vec<String> = [
+        "0001_initial.sql",
+        "0002_garage_snapshots.sql",
+        "0003_lab_library.sql",
+    ]
+    .iter()
+    .map(|name| {
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("migrations")
+                .join(name),
+        )
+        .unwrap()
+        .replace("\r\n", "\n")
+    })
+    .collect();
     assert_eq!(
         contract.replace("\r\n", "\n"),
-        shipped.replace("\r\n", "\n"),
-        "migrations/0001_initial.sql must equal contracts/db-schema.sql"
+        shipped.join("\n"),
+        "migrations 0001 to 0003, in order, must equal contracts/db-schema.sql"
     );
+    assert_eq!(coach_server::db::MIGRATIONS.len(), shipped.len());
+    for ((version, _, sql), file) in coach_server::db::MIGRATIONS.iter().zip(&shipped) {
+        assert_eq!(&sql.replace("\r\n", "\n"), file, "migration {version}");
+    }
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("coach.sqlite3");
@@ -50,7 +68,7 @@ fn migration_one_is_the_contract_schema_and_runs_once() {
                 .collect::<rusqlite::Result<_>>()?)
         })
         .unwrap();
-    assert_eq!(versions, vec![1]);
+    assert_eq!(versions, vec![1, 2, 3]);
     let (journal, fk): (String, i64) = store
         .read_blocking(|c| {
             Ok((
@@ -74,7 +92,7 @@ fn a_pending_migration_writes_a_pre_migrate_copy_first() {
     drop(coach_server::db::Store::open(&path, "0.19.0").unwrap());
     let mut conn = Connection::open(&path).unwrap();
     let extra = [(
-        2,
+        4,
         "add a nullable column",
         "ALTER TABLE drivers ADD COLUMN nickname TEXT;",
     )];
@@ -84,15 +102,15 @@ fn a_pending_migration_writes_a_pre_migrate_copy_first() {
         .chain(extra)
         .collect();
     coach_server::db::migrate_with(&mut conn, &path, "0.20.0", &all).unwrap();
-    assert!(dir.path().join("pre-migrate-v1.sqlite3").exists());
+    assert!(dir.path().join("pre-migrate-v3.sqlite3").exists());
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 4);
     // the copy still holds the old schema
-    let old = Connection::open(dir.path().join("pre-migrate-v1.sqlite3")).unwrap();
+    let old = Connection::open(dir.path().join("pre-migrate-v3.sqlite3")).unwrap();
     let cols: i64 = old
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('drivers') WHERE name = 'nickname'",
@@ -512,7 +530,7 @@ fn dev_mode_serves_healthcheck_succeeds_and_idle_memory_is_small() {
         std::thread::sleep(Duration::from_millis(100));
     };
     assert!(health.contains("\"status\":\"ok\""), "{health}");
-    assert!(health.contains("\"schema_version\":1"));
+    assert!(health.contains("\"schema_version\":3"), "{health}");
 
     // `coach-server healthcheck` is the Compose healthcheck
     let status = Command::new(env!("CARGO_BIN_EXE_coach-server"))

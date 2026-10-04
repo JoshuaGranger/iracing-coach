@@ -1,6 +1,6 @@
 //! SQLite store: one writer thread (all writes serialized), a small pool of read-only
-//! connections, additive migrations (`server/migrations/`, identical to
-//! `docs/08-rewrite/contracts/db-schema.sql` for version 1; a test pins that).
+//! connections, additive migrations (`server/migrations/`; their concatenation is
+//! `docs/08-rewrite/contracts/db-schema.sql`, which a test pins).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -16,13 +16,25 @@ use crate::error::{Error, Result};
 type WriteJob = Box<dyn FnOnce(&mut Connection) + Send>;
 
 /// (version, description, SQL). Version 1 carries its own `schema_migrations` row.
-pub const MIGRATIONS: &[(i64, &str, &str)] = &[(
-    1,
-    "initial rewrite schema",
-    include_str!("../migrations/0001_initial.sql"),
-)];
+pub const MIGRATIONS: &[(i64, &str, &str)] = &[
+    (
+        1,
+        "initial rewrite schema",
+        include_str!("../migrations/0001_initial.sql"),
+    ),
+    (
+        2,
+        "garage snapshots wait for their visit commit",
+        include_str!("../migrations/0002_garage_snapshots.sql"),
+    ),
+    (
+        3,
+        "lab library: recordings carry main or lab, lab windows",
+        include_str!("../migrations/0003_lab_library.sql"),
+    ),
+];
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 3;
 
 pub struct Store {
     writer: Mutex<Option<mpsc::Sender<WriteJob>>>,

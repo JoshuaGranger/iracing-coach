@@ -60,6 +60,12 @@ def group_id(header, path):
     num = header.get("sim_session_num", 0)
     if sub:
         return "subsession:%s:%s" % (sub, num), "disk_header"
+    if header.get("session_start_date") is not None:
+        # ibt_reader._fallback_group_key for an offline recording: keyed by the file's own start,
+        # so each stint of one sim session is a group of its own
+        return "local:%s:%s:%s:%s:%s:unknown:%s" % (
+            float(header["session_start_date"]), num, header.get("session_unique_id", 1),
+            header.get("track_id"), header.get("track_config"), header.get("car_path")), "disk_header"
     return "local:%s:%s" % (path, num), "mtime"
 
 

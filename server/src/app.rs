@@ -248,6 +248,19 @@ impl App {
         crate::ingest::reconcile(&app).await?;
         crate::jobs::recover(&app).await?;
         if app.cfg.background {
+            // In the background: it may read recording headers from the NAS, which can be slow
+            // or down; start-up never waits for it (`offline_sessions`).
+            let repair = app.clone();
+            tokio::spawn(async move { crate::offline_sessions::repair_on_start(&repair).await });
+            // Overviews stored before the round-2 figures gain them from their views.
+            let overviews = app.clone();
+            tokio::spawn(async move {
+                match crate::overview::refresh_on_start(&overviews).await {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(sessions = n, "session overviews refreshed"),
+                    Err(e) => tracing::warn!(error = %e, "session overviews not refreshed"),
+                }
+            });
             crate::jobs::spawn_lanes(&app);
             crate::scheduler::spawn(&app);
             crate::ingest::spawn_pending(&app);

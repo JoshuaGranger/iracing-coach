@@ -19,6 +19,7 @@ import math
 import os
 import re
 import statistics
+import struct
 import time
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
@@ -53,6 +54,7 @@ try:  # Support package imports and direct execution from the scripts folder.
         parse_telemetry_csv,
     )
     from .ibt_reader import (
+        IbtError,
         discover_sessions,
         iter_telemetry_chunks,
         load_telemetry,
@@ -93,6 +95,7 @@ except ImportError:  # pragma: no cover - normal path for CLI/MCP script loading
         parse_telemetry_csv,
     )
     from ibt_reader import (
+        IbtError,
         discover_sessions,
         iter_telemetry_chunks,
         load_telemetry,
@@ -1162,6 +1165,399 @@ def _phase_qualified_analysis_id(
     )
 
 
+#: Two files of one offline sim session agree on the session's start (disk
+#: ``sessionStartDate`` minus ``sessionStartTime``) to the whole-second rounding
+#: of ``sessionStartDate``; coach-server joins them by the same rule
+#: (``server/src/offline_sessions.rs``, ``ZERO_TOLERANCE_S``).
+OFFLINE_SESSION_START_TOLERANCE_S = 2.0
+#: Two stints may touch: one ends as the next begins (``OVERLAP_TOLERANCE_S``).
+OFFLINE_STINT_OVERLAP_TOLERANCE_S = 1.0
+#: The sim's ``Lap`` counter does not count past this lap of one sim session:
+#: it stays 1024 (1025 for five seconds after each start/finish crossing) and
+#: ``LapLastLapTime`` freezes (the IRP Test Drive of 2026-09-25, from 15 h in).
+#: A recording whose last ``Lap`` sample is at or above it has laps that cannot
+#: be told apart: it is never joined and never analysed
+#: (coach-server ``offline_sessions::LAP_COUNTER_LIMIT``).
+OFFLINE_LAP_COUNTER_LIMIT = 1024
+#: ``docs/08-rewrite/contracts/setup-keys.json`` ``excluded_leaf_patterns``:
+#: CarSetup leaves the sim derives or a run reads, not part of setup identity.
+#: Matched on the last key segment with ``_`` removed, ignoring case.
+SETUP_IDENTITY_EXCLUDED_LEAF_PATTERNS = (
+    "^CornerWeight$",
+    "^RideHeight$",
+    "^(Arb|TruckArm)?Preload$",
+    "^LastHotPressure",
+    "^LastTemps",
+    "^TreadRemaining",
+    "^UpdateCount$",
+)
+_SETUP_IDENTITY_EXCLUDED = tuple(
+    re.compile(pattern, re.IGNORECASE) for pattern in SETUP_IDENTITY_EXCLUDED_LEAF_PATTERNS
+)
+_YAML_NULL_TEXTS = frozenset({"", "~", "null", "Null", "NULL"})
+
+
+class _UnreadableSetup(Exception):
+    """The CarSetup block uses YAML this reader does not take apart (lists, flow literals)."""
+
+
+def setup_identity_excluded(key: str) -> bool:
+    """True when a CarSetup key's last segment matches ``setup-keys.json``."""
+
+    leaf = key.rsplit(".", 1)[-1].replace("_", "")
+    return any(pattern.search(leaf) for pattern in _SETUP_IDENTITY_EXCLUDED)
+
+
+def setup_values_fingerprint(values: Mapping[str, str]) -> str:
+    """The values fingerprint of ``setup-keys.json`` (``coach_ibt::setup_values_fingerprint``).
+
+    Excluded keys dropped; the rest in ascending UTF-8 byte order as
+    ``key + 0x1F + value.strip() + 0x1E``; SHA-256, lowercase hex, 32 characters.
+    """
+
+    digest = hashlib.sha256()
+    for key in sorted(values, key=lambda item: item.encode("utf-8")):
+        if setup_identity_excluded(key):
+            continue
+        digest.update(key.encode("utf-8") + b"\x1f" + str(values[key]).strip().encode("utf-8") + b"\x1e")
+    return digest.hexdigest()[:32]
+
+
+def _yaml_key_and_rest(content: str) -> tuple[str, str]:
+    quote: str | None = None
+    for index, character in enumerate(content):
+        if character in {"'", '"'}:
+            quote = None if quote == character else (character if quote is None else quote)
+        elif character == ":" and quote is None:
+            key = content[:index].strip()
+            if len(key) >= 2 and key[0] in {"'", '"'} and key[-1] == key[0]:
+                key = key[1:-1]
+            return key, content[index + 1 :].strip()
+    raise _UnreadableSetup(content)
+
+
+def _raw_car_setup_values(session_info_text: str) -> dict[str, str] | None:
+    """The CarSetup leaves as the sim published them (``coach_ibt`` ``SessionInfo::car_setup``).
+
+    Dotted key paths to the raw scalar text (quotes removed; null scalars
+    dropped), not the typed values ``scan_ibt`` parses: the server's
+    fingerprint hashes the text, so ``1.50`` and ``OFF`` stay as written. None
+    when there is no ``CarSetup`` mapping.
+    """
+
+    tokens: list[tuple[int, str]] = []
+    for raw_line in session_info_text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#") or stripped in {"---", "..."}:
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        tokens.append((indent, raw_line[indent:].rstrip()))
+    if not tokens:
+        return None
+    root = tokens[0][0]
+    start = next(
+        (
+            index
+            for index, (indent, content) in enumerate(tokens)
+            if indent == root and content.startswith("CarSetup") and _yaml_key_and_rest(content)[0] == "CarSetup"
+        ),
+        None,
+    )
+    if start is None:
+        return None
+    _, rest = _yaml_key_and_rest(tokens[start][1])
+    end = start + 1
+    while end < len(tokens) and tokens[end][0] > root:
+        end += 1
+    if rest or end == start + 1:
+        # A scalar or null CarSetup is no mapping.
+        return None
+    values: dict[str, str] = {}
+
+    def block(index: int, stop: int, indent: int, prefix: str) -> None:
+        while index < stop:
+            current, content = tokens[index]
+            if current != indent or content.startswith("-"):
+                raise _UnreadableSetup(content)
+            key, value = _yaml_key_and_rest(content)
+            path = f"{prefix}.{key}" if prefix else key
+            child_end = index + 1
+            while child_end < stop and tokens[child_end][0] > indent:
+                child_end += 1
+            if value:
+                if child_end != index + 1:
+                    raise _UnreadableSetup(content)
+                if len(value) >= 2 and value[0] in {"'", '"'} and value[-1] == value[0]:
+                    values[path] = value[1:-1]
+                elif value[0] in {"[", "{"} and value[-1] in {"]", "}"}:
+                    raise _UnreadableSetup(content)
+                elif value not in _YAML_NULL_TEXTS:
+                    values[path] = value
+            elif child_end != index + 1:
+                block(index + 1, child_end, tokens[index + 1][0], path)
+            index = child_end
+
+    block(start + 1, end, tokens[start + 1][0], "")
+    return values
+
+
+def _recording_setup_fingerprint(metadata: Mapping[str, Any]) -> str | None:
+    """The values fingerprint of the setup a recording was driven on, as coach-server stores it.
+
+    None when the recording has no ``CarSetup``. Raises ``_UnreadableSetup``
+    (or ``OSError``) when its session info cannot be read this way.
+    """
+
+    header = metadata.get("header") if isinstance(metadata.get("header"), Mapping) else {}
+    offset, length = header.get("session_info_offset"), header.get("session_info_length")
+    if not isinstance(offset, int) or not isinstance(length, int) or length <= 0:
+        return None
+    with open(str(metadata.get("path") or ""), "rb") as handle:
+        handle.seek(offset)
+        data = handle.read(length)
+    data = data.split(b"\x00", 1)[0]
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = data.decode("cp1252", errors="replace")
+    values = _raw_car_setup_values(text)
+    return None if values is None else setup_values_fingerprint(values)
+
+
+def _last_lap(metadata: Mapping[str, Any]) -> int | None:
+    """The recording's last ``Lap`` sample as stored (``coach_ibt`` ``edge_scalar``), else None."""
+
+    record_count = metadata.get("record_count")
+    header = metadata.get("header") if isinstance(metadata.get("header"), Mapping) else {}
+    buffer_length, buffer_offset = header.get("buffer_length"), metadata.get("buffer_offset")
+    variable = next(
+        (item for item in metadata.get("variables") or () if isinstance(item, Mapping) and item.get("name") == "Lap"),
+        None,
+    )
+    if (
+        variable is None
+        or variable.get("count") != 1
+        or variable.get("type") not in {"int", "bitfield"}
+        or not isinstance(record_count, int)
+        or record_count <= 0
+        or not isinstance(buffer_length, int)
+        or not isinstance(buffer_offset, int)
+    ):
+        return None
+    position = buffer_offset + (record_count - 1) * buffer_length + int(variable.get("offset") or 0)
+    with open(str(metadata.get("path") or ""), "rb") as handle:
+        handle.seek(position)
+        raw = handle.read(4)
+    if len(raw) != 4:
+        return None
+    return struct.unpack("<i" if variable.get("type") == "int" else "<I", raw)[0]
+
+
+def _lap_counter_stopped(metadata: Mapping[str, Any]) -> bool:
+    lap = _last_lap(metadata)
+    return lap is not None and lap >= OFFLINE_LAP_COUNTER_LIMIT
+
+
+class LapCounterStoppedError(WorkflowError):
+    """The sim's lap counter had stopped: the recording's laps cannot be told apart."""
+
+
+def _assert_lap_counter_running(path: str | os.PathLike[str], metadata: Mapping[str, Any]) -> None:
+    lap = _last_lap(metadata)
+    if lap is not None and lap >= OFFLINE_LAP_COUNTER_LIMIT:
+        raise LapCounterStoppedError(
+            f"Not analysed: the sim's lap counter had stopped at lap {OFFLINE_LAP_COUNTER_LIMIT} of this "
+            f"sim session when {Path(path).name} was recorded (Lap {lap}), so its laps cannot be told apart."
+        )
+
+
+def _offline_text(value: Any) -> str | None:
+    text = str(value).strip() if isinstance(value, (str, int, float)) and not isinstance(value, bool) else ""
+    return text or None
+
+
+def _offline_id(value: Any) -> bool:
+    return value is None or (isinstance(value, int) and not isinstance(value, bool) and value == 0)
+
+
+def _offline_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _offline_stint(metadata: Mapping[str, Any]) -> dict[str, Any] | None:
+    """One recording as a stint of an offline sim session, else None.
+
+    The rule of coach-server's ``offline_sessions::stint_of``: no SubSessionID or
+    SessionID, timed by the disk header, a session start from that header, and
+    a lap counter that still counts (:data:`OFFLINE_LAP_COUNTER_LIMIT`). The
+    key ends with the values fingerprint of the recording's own setup, so only
+    stints driven on one setup join (``offline_sessions::joins``); a recording
+    whose setup cannot be read is no stint.
+    """
+
+    if not _offline_id(metadata.get("subsession_id")) or not _offline_id(metadata.get("session_id")):
+        return None
+    if metadata.get("time_source") != "disk_header":
+        return None
+    try:
+        if _lap_counter_stopped(metadata):
+            return None
+        setup = _recording_setup_fingerprint(metadata)
+    except (_UnreadableSetup, OSError, struct.error):
+        return None
+    disk = metadata.get("disk") if isinstance(metadata.get("disk"), Mapping) else {}
+    date, clock = disk.get("session_start_date"), disk.get("session_start_time")
+    start, end = metadata.get("start_time_unix"), metadata.get("end_time_unix")
+    numbers = (date, clock, start)
+    if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) for value in numbers):
+        return None
+    if not (isinstance(end, (int, float)) and not isinstance(end, bool) and math.isfinite(end)):
+        end = start
+    track_id = _offline_int(metadata.get("track_id"))
+    track = str(track_id) if track_id is not None else _offline_text(metadata.get("track_name"))
+    car_path = _offline_text(metadata.get("car_path"))
+    session_type = _offline_text(metadata.get("sim_session_type")) or _offline_text(metadata.get("event_type"))
+    if track is None or car_path is None or session_type is None:
+        return None
+    return {
+        "key": (
+            _offline_int(metadata.get("driver_user_id")) or 0,
+            car_path,
+            track,
+            _offline_text(metadata.get("track_config_name")) or "",
+            _offline_int(metadata.get("sim_session_num")),
+            _offline_int(metadata.get("session_unique_id")),
+            session_type,
+            setup,
+        ),
+        "session_zero": float(date) - float(clock),
+        "start": float(start),
+        "end": max(float(end), float(start)),
+        "path": str(metadata.get("path") or ""),
+    }
+
+
+def _same_offline_session(first: Mapping[str, Any], second: Mapping[str, Any]) -> bool:
+    return (
+        first["key"] == second["key"]
+        and abs(first["session_zero"] - second["session_zero"]) <= OFFLINE_SESSION_START_TOLERANCE_S
+        and (
+            first["end"] <= second["start"] + OFFLINE_STINT_OVERLAP_TOLERANCE_S
+            or second["end"] <= first["start"] + OFFLINE_STINT_OVERLAP_TOLERANCE_S
+        )
+    )
+
+
+def _offline_session_groups(
+    selected: Mapping[str, Any],
+    sessions: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    """The discovery groups that are stints of the selected group's offline sim session and setup.
+
+    iRacing starts a new file each time the driver gets back in the car, and
+    discovery keys an offline file by its own start, so one Test Drive is one
+    group per stint. coach-server joins the stints driven on one setup into one
+    library session (``offline_sessions.rs``: a setup change between stints
+    starts another session, because an analysis has one setup) and selects it
+    by one stint's group ID; this returns every group of that session in time
+    order, the selected one alone when it is no offline stint or has no
+    sibling. Chains as the server's ``group`` does: a stint joins when it is a
+    stint of the same session and setup as every stint before it.
+    """
+
+    def stints_of(group: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+        result: list[dict[str, Any]] = []
+        for path in group.get("files") or ():
+            try:
+                stint = _offline_stint(scan_ibt(path))
+            except (IbtError, OSError, ValueError):
+                return None
+            if stint is None:
+                return None
+            result.append({**stint, "path": str(path), "group_id": str(group.get("group_id") or "")})
+        return result or None
+
+    own = stints_of(selected)
+    if own is None:
+        return [selected]
+    keys = {stint["key"] for stint in own}
+    if len(keys) != 1:
+        return [selected]
+    key = next(iter(keys))
+    by_id: dict[str, Mapping[str, Any]] = {str(selected.get("group_id") or ""): selected}
+    stints = list(own)
+    for group in sessions:
+        group_id = str(group.get("group_id") or "")
+        if group_id in by_id or group.get("kind") != "session":
+            continue
+        # Cheap screen on the group's own fields before reading any header.
+        if not _offline_id(group.get("subsession_id")) or not _offline_id(group.get("session_id")):
+            continue
+        if group.get("time_source") != "disk_header" or _offline_text(group.get("car_path")) != key[1]:
+            continue
+        members = stints_of(group)
+        if members is None or any(stint["key"] != key for stint in members):
+            continue
+        by_id[group_id] = group
+        stints.extend(members)
+    if len(by_id) == 1:
+        return [selected]
+    stints.sort(key=lambda stint: (stint["start"], stint["path"]))
+    chains: list[list[dict[str, Any]]] = []
+    for stint in stints:
+        if chains and all(_same_offline_session(member, stint) for member in chains[-1]):
+            chains[-1].append(stint)
+        else:
+            chains.append([stint])
+    own_paths = {stint["path"] for stint in own}
+    holding = [chain for chain in chains if own_paths & {stint["path"] for stint in chain}]
+    # A selected group whose own files fall in different sessions is left as it is.
+    if len(holding) != 1:
+        return [selected]
+    chain_ids = list(dict.fromkeys(stint["group_id"] for stint in holding[0]))
+    # Every file of a joined group must be a stint of this session.
+    chain_paths = {stint["path"] for stint in holding[0]}
+    chain_ids = [
+        group_id
+        for group_id in chain_ids
+        if all(str(path) in chain_paths for path in (by_id[group_id].get("files") or ()))
+    ]
+    if len(chain_ids) < 2 or str(selected.get("group_id") or "") not in chain_ids:
+        return [selected]
+    members = [by_id[group_id] for group_id in chain_ids]
+    members.sort(key=lambda group: (float(group.get("start_time_unix") or 0.0), str(group.get("group_id") or "")))
+    return members
+
+
+def _joined_offline_selection(members: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """One selection of the stints of an offline sim session, keyed by the first stint.
+
+    The first stint's group ID names the session whichever stint was selected,
+    so the analysis identity does not depend on which recording the server
+    stored first. Per-stint test-day tags do not describe the joined session
+    and are dropped; ``joined_group_ids`` lists the stints' own group IDs.
+    """
+
+    first = members[0]
+    joined = {key: value for key, value in first.items() if not str(key).startswith("test_day_")}
+    files = [str(path) for group in members for path in (group.get("files") or ())]
+    start = min(float(group.get("start_time_unix") or 0.0) for group in members)
+    end = max(float(group.get("end_time_unix") or 0.0) for group in members)
+    joined.update(
+        {
+            "start_time_unix": start,
+            "end_time_unix": end,
+            "start_time_utc": _datetime.datetime.fromtimestamp(start, tz=_datetime.timezone.utc).isoformat(),
+            "end_time_utc": _datetime.datetime.fromtimestamp(end, tz=_datetime.timezone.utc).isoformat(),
+            "latest_mtime_unix": max(float(group.get("latest_mtime_unix") or 0.0) for group in members),
+            "file_count": len(files),
+            "files": files,
+            "joined_group_ids": [str(group.get("group_id") or "") for group in members],
+        }
+    )
+    return joined
+
+
 def _resolve_session_selection(
     selector: str,
     iracing_root: str | os.PathLike[str] | None,
@@ -1200,6 +1596,12 @@ def _resolve_session_selection(
         None,
     )
     if group_match is not None:
+        # The stints of one offline sim session are one session, selected by
+        # any stint's group ID (coach-server joins them; worker-interface.md
+        # section 3).
+        members = _offline_session_groups(group_match, sessions)
+        if len(members) > 1:
+            group_match = _joined_offline_selection(members)
         return {
             **group_match,
             "selector_type": "group_id",
@@ -2176,7 +2578,9 @@ def _analyze_race_workflow(
     initial_signatures: dict[str, tuple[int, int]] = {}
     for path in source_paths:
         initial_signatures[path] = _file_signature(path)
-        _assert_finalized_ibt(path, scan_ibt(path))
+        metadata = scan_ibt(path)
+        _assert_finalized_ibt(path, metadata)
+        _assert_lap_counter_running(path, metadata)
     source_fingerprints = store.source_fingerprints(source_paths)
     fingerprints_by_path = {
         str(Path(item["path"]).resolve()): item for item in source_fingerprints

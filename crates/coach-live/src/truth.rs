@@ -8,6 +8,16 @@ use coach_wire::live_channels::FlagState;
 /// `test-data/live-truth-conformance-v1.json`; the C# `dotnet_legacy_caution_mask` (`0xC008`)
 /// omitted `0x100` and `0x200` and is retired.
 pub(crate) const CAUTION_MASK: u32 = 0x0000_C308;
+/// One lap to green. iRacing holds it on every sample of an Offline Testing session (the real
+/// Test Drive recording `test-data/sdk/g3-garage-pit-2026-10-03.sdkfix` reads `0x10000200` and
+/// `0x10040200` throughout) and through a Lone Qualify out-lap, with no yellow or caution bit.
+/// It is a caution bit only in a Race (or when the session type is unknown), the rule of the
+/// backend's `analysis_engine._caution_flag_series`; a yellow or caution bit counts in every session.
+/// The engine reads the session type of each sample; the backend reads the recording's own type
+/// and per-sample `SessionNum` only for a recording that is not a Race. They agree on a recording
+/// of one session; a recording whose type is Race but which also holds an earlier Practice or
+/// Qualify keeps `0x200` as a caution in that part in the backend and not here (docs/08-rewrite/reviews/bugfix-wave-2-review-codex-sol.md, finding 3).
+const ONE_LAP_TO_GREEN: u32 = 0x0000_0200;
 const REPAIR_MASK: u32 = 0x0010_0000;
 const DISQUALIFIED: u32 = 0x0002_0000;
 const BLACK: u32 = 0x0001_0000;
@@ -18,9 +28,27 @@ const GREEN: u32 = 0x0000_0004 | 0x8000_0000;
 
 /// First match wins in the order disqualified, black, red, caution, checkered, white, green, else
 /// racing; no flag word at all is unknown, never racing.
+///
+/// This is the session-agnostic reading (one lap to green is a caution bit); the live engine uses
+/// [`racing_state_in`] with the session's own rule.
+#[cfg(test)]
 pub(crate) fn racing_state(session_flags: Option<u32>) -> FlagState {
+    racing_state_in(session_flags, true)
+}
+
+/// [`racing_state`] for a session in which one lap to green is a caution bit only when
+/// `one_lap_to_green_is_caution` (a Race, or a session whose type is not known).
+pub(crate) fn racing_state_in(
+    session_flags: Option<u32>,
+    one_lap_to_green_is_caution: bool,
+) -> FlagState {
     let Some(flags) = session_flags else {
         return FlagState::Unknown;
+    };
+    let caution_mask = if one_lap_to_green_is_caution {
+        CAUTION_MASK
+    } else {
+        CAUTION_MASK & !ONE_LAP_TO_GREEN
     };
     if flags & DISQUALIFIED != 0 {
         FlagState::Disqualified
@@ -28,7 +56,7 @@ pub(crate) fn racing_state(session_flags: Option<u32>) -> FlagState {
         FlagState::Black
     } else if flags & RED != 0 {
         FlagState::Red
-    } else if flags & CAUTION_MASK != 0 {
+    } else if flags & caution_mask != 0 {
         FlagState::Caution
     } else if flags & CHECKERED != 0 {
         FlagState::Checkered
@@ -147,6 +175,31 @@ mod tests {
             checked += 1;
         }
         assert_eq!(checked, 52);
+    }
+
+    #[test]
+    fn one_lap_to_green_is_a_caution_only_where_the_session_says_so() {
+        // The recorded Offline Testing words: startHidden | oneLapToGreen, and with servicible.
+        for flags in [0x1000_0200_u32, 0x1004_0200] {
+            assert_eq!(racing_state_in(Some(flags), false), FlagState::Racing);
+            assert_eq!(racing_state_in(Some(flags), true), FlagState::Caution);
+            // A real caution bit counts in every session.
+            for bit in [0x8_u32, 0x100, 0x4000, 0x8000] {
+                assert_eq!(
+                    racing_state_in(Some(flags | bit), false),
+                    FlagState::Caution,
+                    "{flags:#x} | {bit:#x}"
+                );
+            }
+        }
+        // Higher states keep their order whatever the session.
+        assert_eq!(racing_state_in(Some(0x200 | 0x10), false), FlagState::Red);
+        assert_eq!(racing_state_in(Some(0x200 | 0x4), false), FlagState::Green);
+        assert_eq!(
+            racing_state_in(Some(0x200 | 0x1), false),
+            FlagState::Checkered
+        );
+        assert_eq!(racing_state_in(None, false), FlagState::Unknown);
     }
 
     #[test]

@@ -20,7 +20,7 @@
     { "index": 15, "id": "laps_remaining", "type": "u16", "unit": "lap", "source": "sdk:SessionLapsRemainEx else SessionLapsRemain; sentinel rule; absent when unknown" },
     { "index": 16, "id": "position", "type": "u8", "unit": "position", "source": "sdk:PlayerCarPosition" },
     { "index": 17, "id": "class_position", "type": "u8", "unit": "position", "source": "sdk:PlayerCarClassPosition" },
-    { "index": 18, "id": "flag_state", "type": "enum8", "enum": "flag_state", "source": "engine:LiveTruthPolicy" },
+    { "index": 18, "id": "flag_state", "type": "enum8", "enum": "flag_state", "source": "engine:LiveTruthPolicy; one lap to green (0x200) alone is a caution only in a Race or when the session type is unknown" },
     { "index": 19, "id": "session_flags", "type": "u32", "unit": "bits", "source": "sdk:SessionFlags" },
     { "index": 20, "id": "abs_active", "type": "bool8", "source": "sdk:BrakeABSactive" },
     { "index": 21, "id": "brake_bias", "type": "f32", "unit": "%", "source": "sdk:dcBrakeBias" },

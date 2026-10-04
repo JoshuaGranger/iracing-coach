@@ -357,6 +357,7 @@ fn engine_and_tile_vectors_match_the_csharp_monitor() {
     assert!(scenarios.len() >= 30);
     let mut tally = Tally::default();
     let mut steps_checked = 0;
+    let mut one_lap_to_green_rewrites = 0;
     let mut cue_ids = std::collections::BTreeSet::new();
     for scenario in scenarios {
         let name = scenario["name"].as_str().unwrap();
@@ -376,6 +377,23 @@ fn engine_and_tile_vectors_match_the_csharp_monitor() {
             }
             for (key, value) in step["expect"].as_object().unwrap() {
                 expect.insert(key.clone(), value.clone());
+            }
+            // Accepted difference (README): the C# monitor reads one lap to green (0x200) as a
+            // caution in every session; Offline Testing, Practice and Qualifying hold it with no
+            // caution, so there it is not one (`truth::racing_state_in`). This step sets 0x200
+            // alone in a Practice session: the state is racing, the gaps are live again and, with
+            // the car on a straight, the cue moves on to the one the next step states.
+            if name == "critical_cues_and_repair" && index == 11 {
+                assert_eq!(values["session_flags"].as_u64(), Some(0x200));
+                // Not under caution, the gaps are live again: what the next step (flags `0x80000000`,
+                // green, the same car state) expects, except for the flag state.
+                let next = scenario["steps"][12]["expect"].as_object().unwrap();
+                assert_eq!(next["cue"]["id"].as_u64(), Some(12));
+                for (key, value) in next {
+                    expect.insert(key.clone(), value.clone());
+                }
+                expect.insert("flag_state".into(), Value::from("racing"));
+                one_lap_to_green_rewrites += 1;
             }
             let mut sample = sample_from(&values);
             sample.connected = step["connected"].as_bool().unwrap();
@@ -408,6 +426,7 @@ fn engine_and_tile_vectors_match_the_csharp_monitor() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+    assert_eq!(one_lap_to_green_rewrites, 1);
     // Every cue the C# engine can say appears in the vectors, so each template was byte-compared.
     let missing: Vec<u8> = (1..=15).filter(|id| !cue_ids.contains(id)).collect();
     assert!(missing.is_empty(), "cues never exercised: {missing:?}");

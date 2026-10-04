@@ -8,12 +8,12 @@ use std::path::PathBuf;
 
 use coach_collector::fixture::{MapBuilder, SessionSpec, Step};
 use coach_collector::layout::Layout;
-use coach_collector::win::render::{Frame, Renderer, window_size};
+use coach_collector::win::render::{Dirty, Frame, Renderer, window_size};
 use serde_json::json;
 use support::*;
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS,
-    DeleteDC, DeleteObject, GdiFlush, HGDIOBJ, SelectObject,
+    DeleteDC, DeleteObject, GdiFlush, HDC, HGDIOBJ, SelectObject,
 };
 
 struct Image {
@@ -210,4 +210,238 @@ fn without_a_state_the_monitor_says_it_is_waiting() {
     assert!(distinct_colors(&img) > 3, "text on the background");
     let plain = render(&Layout::default_layout(), None, 1.0, 0);
     assert_eq!(img.pixels, plain.pixels, "rendering is deterministic");
+}
+
+/// A memory surface that keeps its pixels between paints, like the overlay's back buffer.
+struct Surface {
+    dc: HDC,
+    bitmap: windows::Win32::Graphics::Gdi::HBITMAP,
+    old: HGDIOBJ,
+    bits: *mut core::ffi::c_void,
+    width: i32,
+    height: i32,
+}
+
+impl Surface {
+    fn new(scale: f64) -> Surface {
+        let (width, height) = window_size(scale);
+        // SAFETY: a memory DC and a DIB section released in Drop.
+        unsafe {
+            let dc = CreateCompatibleDC(None);
+            let info = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width,
+                    biHeight: -height,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..BITMAPINFOHEADER::default()
+                },
+                ..BITMAPINFO::default()
+            };
+            let mut bits = std::ptr::null_mut();
+            let bitmap =
+                CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0).unwrap();
+            let old = SelectObject(dc, HGDIOBJ(bitmap.0));
+            Surface {
+                dc,
+                bitmap,
+                old,
+                bits,
+                width,
+                height,
+            }
+        }
+    }
+
+    fn pixels(&self) -> Vec<u8> {
+        // SAFETY: the DIB section holds width x height x 4 bytes while `self` lives.
+        unsafe {
+            let _ = GdiFlush();
+            std::slice::from_raw_parts(
+                self.bits as *const u8,
+                (self.width * self.height * 4) as usize,
+            )
+            .to_vec()
+        }
+    }
+}
+
+impl Drop for Surface {
+    fn drop(&mut self) {
+        // SAFETY: released once, in the reverse order of creation.
+        unsafe {
+            SelectObject(self.dc, self.old);
+            let _ = DeleteObject(HGDIOBJ(self.bitmap.0));
+            let _ = DeleteDC(self.dc);
+        }
+    }
+}
+
+fn frame<'a>(
+    s: &Surface,
+    layout: &'a Layout,
+    state: &'a coach_live::LiveState,
+    now_ms: u64,
+) -> Frame<'a> {
+    Frame {
+        width: s.width,
+        height: s.height,
+        scale: 1.0,
+        layout,
+        state: Some(state),
+        now_ms,
+    }
+}
+
+/// What the overlay does for one new state: nothing, the changed tiles, or everything.
+fn present(r: &mut Renderer, s: &Surface, f: &Frame<'_>) -> Dirty {
+    let dirty = r.dirty(f);
+    match &dirty {
+        Dirty::Nothing => {}
+        Dirty::Tiles(tiles) => r.paint_tiles(s.dc, f, tiles),
+        Dirty::All => r.paint(s.dc, f),
+    }
+    dirty
+}
+
+#[test]
+fn a_partial_repaint_leaves_exactly_the_pixels_a_full_repaint_would() {
+    let layout = rich_layout();
+    let a = live_state();
+    let mut b = a;
+    b.gear = Some(5);
+    b.position = Some(2);
+    b.last_lap = Some(23.912);
+    b.throttle = Some(0.91);
+    b.speed = a.speed.map(|v| v + 3.0);
+    b.steering_wheel_angle = Some(-0.4);
+
+    let partial = Surface::new(1.0);
+    let mut r = Renderer::new();
+    r.paint(partial.dc, &frame(&partial, &layout, &a, 1_000));
+    assert_eq!(
+        r.dirty(&frame(&partial, &layout, &a, 1_000)),
+        Dirty::Nothing,
+        "the state just painted needs nothing"
+    );
+    let first = partial.pixels();
+    let d = present(&mut r, &partial, &frame(&partial, &layout, &b, 1_100));
+    let Dirty::Tiles(tiles) = d else {
+        panic!("some tiles changed, not all: {d:?}");
+    };
+    assert!(
+        tiles.len() < layout.tiles.len() && tiles.len() >= 3,
+        "{tiles:?}"
+    );
+    assert_ne!(first, partial.pixels(), "the new state is on the surface");
+
+    let full = Surface::new(1.0);
+    let mut fr = Renderer::new();
+    fr.paint(full.dc, &frame(&full, &layout, &a, 1_000));
+    fr.paint(full.dc, &frame(&full, &layout, &b, 1_100));
+    assert_eq!(
+        partial.pixels(),
+        full.pixels(),
+        "tiles {tiles:?} redrawn in place equal a repaint of everything"
+    );
+    // And the next 100 ms with nothing new moves only the scrolling trend tiles.
+    let next = present(&mut r, &partial, &frame(&partial, &layout, &b, 1_200));
+    let trend_tiles: Vec<usize> = layout
+        .tiles
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.style == coach_collector::layout::Style::Trend)
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(next, Dirty::Tiles(trend_tiles));
+}
+
+#[test]
+fn a_tile_under_another_repaints_the_one_that_covers_it_in_turn() {
+    // A (column 0) lies under B (columns 0-2), which lies under C (columns 2-3), while A and C
+    // never meet. Only A's position changes; B is redrawn over A and C must be redrawn over B.
+    let layout = Layout::from_json(&json!({
+        "rows": 1, "columns": 4,
+        "tiles": [
+            {"tile_id": "a", "metric": "position", "row": 0, "column": 0, "row_span": 1, "column_span": 1, "style": "number"},
+            {"tile_id": "b", "metric": "last-lap", "row": 0, "column": 0, "row_span": 1, "column_span": 3, "style": "number"},
+            {"tile_id": "c", "metric": "gear", "row": 0, "column": 2, "row_span": 1, "column_span": 2, "style": "number"}
+        ]
+    }))
+    .unwrap();
+    let a = live_state();
+    let mut b = a;
+    b.position = Some(2);
+
+    let partial = Surface::new(1.0);
+    let mut r = Renderer::new();
+    r.paint(partial.dc, &frame(&partial, &layout, &a, 1_000));
+    let d = present(&mut r, &partial, &frame(&partial, &layout, &b, 1_100));
+    assert_eq!(d, Dirty::All, "A, B over A, and C over B: every tile");
+
+    let full = Surface::new(1.0);
+    let mut fr = Renderer::new();
+    fr.paint(full.dc, &frame(&full, &layout, &b, 1_100));
+    assert_eq!(partial.pixels(), full.pixels());
+}
+
+#[test]
+fn nothing_is_repainted_until_a_tile_shows_something_new() {
+    let layout = Layout::default_layout();
+    let a = live_state();
+    let s = Surface::new(1.0);
+    let mut r = Renderer::new();
+    assert_eq!(
+        r.dirty(&frame(&s, &layout, &a, 0)),
+        Dirty::All,
+        "a first paint draws everything"
+    );
+    r.paint(s.dc, &frame(&s, &layout, &a, 0));
+    // The car moves (speed, throttle, rpm change) but no default tile shows them.
+    let mut moving = a;
+    for i in 0..50 {
+        moving.speed = a.speed.map(|v| v + i as f32);
+        moving.throttle = Some(0.3 + i as f32 * 0.01);
+        moving.rpm = Some(6000.0 + i as f32 * 10.0);
+        assert_eq!(
+            r.dirty(&frame(&s, &layout, &moving, 100 * i)),
+            Dirty::Nothing,
+            "tick {i}"
+        );
+    }
+    // A new last lap changes one tile only.
+    moving.last_lap = Some(23.5);
+    match r.dirty(&frame(&s, &layout, &moving, 6_000)) {
+        Dirty::Tiles(t) => assert_eq!(t, [1], "the last-lap tile"),
+        other => panic!("{other:?}"),
+    }
+    // Another layout (or no state) is a full paint.
+    assert_eq!(
+        r.dirty(&frame(&s, &rich_layout(), &moving, 6_000)),
+        Dirty::All
+    );
+    let none = Frame {
+        state: None,
+        ..frame(&s, &layout, &moving, 6_000)
+    };
+    assert_eq!(r.dirty(&none), Dirty::All);
+}
+
+#[test]
+#[ignore = "timing; run in release"]
+fn a_full_repaint_of_a_busy_layout_costs_about_a_millisecond() {
+    let layout = rich_layout();
+    let state = live_state();
+    let s = Surface::new(1.0);
+    let mut r = Renderer::new();
+    r.paint(s.dc, &frame(&s, &layout, &state, 0));
+    let started = std::time::Instant::now();
+    let n = 300;
+    for i in 0..n {
+        r.paint(s.dc, &frame(&s, &layout, &state, 100 * (i + 1)));
+    }
+    let per = started.elapsed().as_secs_f64() * 1e6 / n as f64;
+    println!("perf-render full_paint_us={per:.0} (rich layout, 540x360)");
 }

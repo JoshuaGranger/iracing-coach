@@ -305,23 +305,70 @@ async fn apply_discovery(
         .store
         .write(move |conn| {
             let tx = conn.transaction()?;
-            tx.execute(
-                "INSERT INTO sessions(customer_id, subsession_id, sim_session_num, group_key, session_type, track,
-                   car_path, start_time_utc, discovered_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-                 ON CONFLICT(customer_id, group_key) DO UPDATE SET
-                   session_type = COALESCE(excluded.session_type, session_type),
-                   track = COALESCE(excluded.track, track),
-                   car_path = COALESCE(excluded.car_path, car_path),
-                   start_time_utc = CASE WHEN start_time_utc IS NULL OR excluded.start_time_utc < start_time_utc
-                                         THEN excluded.start_time_utc ELSE start_time_utc END",
-                params![customer, subsession, sim_num, group_key, session_type, track, car_path, start, iso_now()],
-            )?;
-            let session_id: i64 = tx.query_row(
-                "SELECT session_id FROM sessions WHERE customer_id = ?1 AND group_key = ?2",
-                params![customer, group_key],
-                |r| r.get(0),
-            )?;
+            // Another stint of the same offline sim session already has a session: join it
+            // (`offline_sessions`); the worker keys each stint by its own file start.
+            let joined = if subsession.is_none() && !path_dependent {
+                let own_group: Option<i64> = tx
+                    .query_row(
+                        "SELECT session_id FROM sessions WHERE customer_id = ?1 AND group_key = ?2",
+                        params![customer, group_key],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                if own_group.is_some() {
+                    // a recording discovered again into its own group stays there
+                    None
+                } else {
+                    // a recording discovered again after it joined another stint's session stays
+                    // in that session (it must not also start a session of its own); else the
+                    // session a first discovery joins
+                    let member: Option<i64> = tx
+                        .query_row(
+                            "SELECT sr.session_id FROM session_recordings sr
+                               JOIN sessions s ON s.session_id = sr.session_id
+                              WHERE sr.recording_sha256 = ?1 AND s.customer_id = ?2
+                              ORDER BY sr.session_id LIMIT 1",
+                            params![sha_owned, customer],
+                            |r| r.get(0),
+                        )
+                        .optional()?;
+                    match member {
+                        Some(id) => Some(id),
+                        None => crate::offline_sessions::joining_session(&tx, &sha_owned, customer)?,
+                    }
+                }
+            } else {
+                None
+            };
+            let session_id: i64 = match joined {
+                Some(id) => {
+                    tx.execute(
+                        "UPDATE sessions SET start_time_utc = ?2 WHERE session_id = ?1
+                           AND ?2 IS NOT NULL AND (start_time_utc IS NULL OR ?2 < start_time_utc)",
+                        params![id, start],
+                    )?;
+                    id
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO sessions(customer_id, subsession_id, sim_session_num, group_key, session_type, track,
+                           car_path, start_time_utc, discovered_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                         ON CONFLICT(customer_id, group_key) DO UPDATE SET
+                           session_type = COALESCE(excluded.session_type, session_type),
+                           track = COALESCE(excluded.track, track),
+                           car_path = COALESCE(excluded.car_path, car_path),
+                           start_time_utc = CASE WHEN start_time_utc IS NULL OR excluded.start_time_utc < start_time_utc
+                                                 THEN excluded.start_time_utc ELSE start_time_utc END",
+                        params![customer, subsession, sim_num, group_key, session_type, track, car_path, start, iso_now()],
+                    )?;
+                    tx.query_row(
+                        "SELECT session_id FROM sessions WHERE customer_id = ?1 AND group_key = ?2",
+                        params![customer, group_key],
+                        |r| r.get(0),
+                    )?
+                }
+            };
             tx.execute(
                 "INSERT OR IGNORE INTO session_recordings(session_id, recording_sha256) VALUES (?1, ?2)",
                 params![session_id, sha_owned],
@@ -342,6 +389,54 @@ async fn apply_discovery(
 }
 
 // ----------------------------------------------------------------- analyze
+
+/// The deferral of an analysis whose recordings include one with a stopped lap counter
+/// (`offline_sessions::lap_counter_stopped`): its laps cannot be told apart, so the analysis
+/// would report a few laps of several minutes. Deferred before the worker runs, with the reason.
+async fn lap_counter_deferral(
+    app: &AppState,
+    recordings: &[(String, String)],
+) -> Result<Option<JobOutcome>> {
+    let shas: Vec<String> = recordings.iter().map(|r| r.0.clone()).collect();
+    let stopped: Vec<(String, Option<i64>)> = app
+        .store
+        .read(move |conn| {
+            let mut out = Vec::new();
+            for sha in shas {
+                let header: Option<String> = conn
+                    .query_row(
+                        "SELECT header_json FROM recordings WHERE sha256 = ?1",
+                        [&sha],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                let header: Value = header
+                    .and_then(|h| serde_json::from_str(&h).ok())
+                    .unwrap_or(Value::Null);
+                if crate::offline_sessions::lap_counter_stopped(&header) {
+                    out.push((sha, header["lap_last"].as_i64()));
+                }
+            }
+            Ok(out)
+        })
+        .await?;
+    let Some((sha, lap)) = stopped.first() else {
+        return Ok(None);
+    };
+    let name = recordings
+        .iter()
+        .find(|r| &r.0 == sha)
+        .map(|r| r.1.as_str())
+        .unwrap_or_default();
+    Ok(Some(JobOutcome::Deferred {
+        code: crate::offline_sessions::LAP_COUNTER_STOPPED.to_string(),
+        message: format!(
+            "Not analysed: the sim's lap counter had stopped at lap {} of this sim session when {name} was recorded (Lap {}), so its laps cannot be told apart.",
+            crate::offline_sessions::LAP_COUNTER_LIMIT,
+            lap.unwrap_or(crate::offline_sessions::LAP_COUNTER_LIMIT),
+        ),
+    }))
+}
 
 async fn analyze(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOutcome> {
     let Some(customer) = job.customer_id else {
@@ -368,6 +463,9 @@ async fn analyze(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOut
                 .collect()
         })
         .unwrap_or_default();
+    if let Some(outcome) = lap_counter_deferral(app, &recordings).await? {
+        return Ok(outcome);
+    }
     let (root, names) = prepare_root(app, job, customer, &recordings, true).await?;
     let selector = match job.subject["local_file"].as_str() {
         Some(local_sha) => {
@@ -479,6 +577,24 @@ async fn analyze(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOut
             Ok(is_current)
         })
         .await?;
+    // The worker analyses the stints of one sim session and setup together (worker-interface.md
+    // section 3), the server's join rule (`offline_sessions::joins`); a session holding
+    // recordings the worker does not join (one joined under an earlier rule) is analysed for the
+    // stints its group key names. Said in the job result, not hidden.
+    let analysed = result["source_files"].as_array().map(Vec::len);
+    let left_out = analysed
+        .map(|n| recordings.len().saturating_sub(n))
+        .unwrap_or(0);
+    if left_out > 0 {
+        tracing::warn!(
+            session_id,
+            left_out,
+            "the analysis covers only part of the session's recordings"
+        );
+        return Ok(JobOutcome::Succeeded(json!({
+            "analysis_id": analysis_id, "current": current, "recordings_not_analysed": left_out,
+        })));
+    }
     Ok(JobOutcome::Succeeded(
         json!({"analysis_id": analysis_id, "current": current}),
     ))
@@ -549,21 +665,6 @@ async fn project(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
     }
 }
 
-const OVERVIEW_KEYS: [(&str, &str); 12] = [
-    ("starting_position", "starting_position"),
-    ("final_recorded_position", "final_position"),
-    ("recorded_laps", "recorded_laps"),
-    ("green_laps_estimated", "green_laps_estimated"),
-    ("caution_laps_estimated", "caution_laps_estimated"),
-    ("pit_stops_detected", "pit_stops_detected"),
-    ("runs_detected", "runs_detected"),
-    ("longest_green_run", "longest_green_run"),
-    ("pace_slope_s_per_lap", "pace_slope_s_per_lap"),
-    ("pace_consistency_percent", "pace_consistency_percent"),
-    ("best_clean_lap_s", "best_clean_lap_s"),
-    ("fuel_used_gal", "fuel_used_gal"),
-];
-
 async fn mark_projected(
     app: &AppState,
     analysis_id: &str,
@@ -571,20 +672,7 @@ async fn mark_projected(
     info: Option<crate::adapters::ProjectionInfo>,
 ) -> Result<()> {
     let view_dir = app.cfg.views_dir(analysis_id, version);
-    let overview = std::fs::read(view_dir.join("race.json"))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-        .map(|race| {
-            let mut out = serde_json::Map::new();
-            for (from, to) in OVERVIEW_KEYS {
-                if let Some(v) = race["race_summary"].get(from)
-                    && !v.is_null()
-                {
-                    out.insert(to.to_string(), v.clone());
-                }
-            }
-            Value::Object(out)
-        });
+    let overview = crate::overview::from_views(&view_dir);
     let id = analysis_id.to_string();
     let sessions: Vec<(i64, i64)> = app
         .store
@@ -972,6 +1060,7 @@ pub fn compare_result(backend: &Value) -> Value {
                         "right": scalar_text(&r["right"]),
                         "status": r["status"],
                         "readout": r["readout"].as_bool().unwrap_or(false),
+                        "unit": crate::setups::shared_unit(&r["left"], &r["right"]),
                     })
                 })
                 .collect()

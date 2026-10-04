@@ -6,9 +6,9 @@
 
 mod support;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use support::*;
 
@@ -577,7 +577,7 @@ async fn garage_snapshots_join_the_setup_their_visit_named_and_a_second_start_ch
         "an unchanged start writes no line"
     );
 
-    // the next harvest visit: its load snapshot is the committed setup
+    // the next harvest visit: its load snapshot is the committed setup (once the visit commits)
     let next = with(
         &atlanta,
         &[
@@ -601,10 +601,26 @@ async fn garage_snapshots_join_the_setup_their_visit_named_and_a_second_start_ch
         setups_before,
         "no new setup"
     );
+    env.app
+        .store
+        .write_blocking(move |c| {
+            let msg = json!({"type": "garage.commit", "visit_id": "d1d1d1d1-0000-4000-8000-000000000001",
+                "update_count": 9, "entered_at": "2026-10-05T03:59:00Z", "exited_at": "2026-10-05T04:00:01Z",
+                "car_path": SUPRA, "driver": {"customer_id": CUSTOMER}, "setup_name": ATLANTA,
+                "sto_sha256": sha("atlanta sto"), "is_modified": false, "load_type": "user", "values": {}});
+            coach_server::setups::record_garage_commit(c, &msg, COLLECTOR, &fake_fingerprint)?;
+            Ok(())
+        })
+        .expect("commit");
+    assert_eq!(
+        count(&env, "SELECT COUNT(*) FROM setups"),
+        setups_before,
+        "the commit is setup 71 again"
+    );
     assert_eq!(
         count(
             &env,
-            "SELECT COUNT(*) FROM setup_observations WHERE setup_id = 71 AND update_count = 9"
+            "SELECT COUNT(*) FROM setup_observations WHERE setup_id = 71 AND update_count = 9 AND source = 'garage_snapshot'"
         ),
         1,
         "it joined setup 71"
@@ -747,5 +763,505 @@ async fn exports_of_one_setup_merge_and_take_the_names_of_their_files() {
     assert_eq!(
         log_lines(&env)[0]["report"]["merges"][0]["merged"],
         json!([54])
+    );
+}
+
+// ------------------------------------------- schema version 2: only a commit makes a setup
+
+const CAMBER: &str = "claude G5 R RF camber -2.0.sto";
+const RESUME: &str = "9a7b35e9-a907-4c1e-93e5-3628afe3e9e4";
+const RESTORE: &str = "89505213-48f4-42dd-9ae0-d61c36edfe26";
+
+/// The resume run's file as committed (+5.8 deg left-front camber at Apply & Close) and as the
+/// garage read it while loaded and at the next entry (+5.9 deg), the 2026-10-04 shape of setups 73
+/// and 72; the car's previous file (`claude LV R CAM`, setup 10).
+fn camber_values() -> (Value, Value, Value) {
+    let committed = json!({
+        "Chassis.LeftFront.Camber": "+5.8 deg", "Chassis.RightFront.Camber": "-2.0 deg",
+        "Chassis.LeftFront.Caster": "+11.9 deg", "Chassis.FrontArb.LinkSlack": "-2 mm",
+        "Chassis.LeftFront.CornerWeight": "4509 N", "Tires.LeftFront.ColdPressure": "152 kPa",
+        "UpdateCount": "4",
+    });
+    let in_garage = with(
+        &committed,
+        &[
+            ("Chassis.LeftFront.Camber", "+5.9 deg"),
+            ("Chassis.LeftFront.CornerWeight", "4511 N"),
+            ("UpdateCount", "3"),
+        ],
+    );
+    let previous = with(
+        &committed,
+        &[
+            ("Chassis.RightFront.Camber", "-3.4 deg"),
+            ("Chassis.LeftFront.Camber", "+5.2 deg"),
+            ("UpdateCount", "7"),
+        ],
+    );
+    (committed, in_garage, previous)
+}
+
+#[test]
+fn the_sims_rounding_of_camber_and_pressure_is_one_setup_and_nothing_else_is() {
+    use coach_server::setups::same_setup_within_rounding as same;
+    let (committed, in_garage, previous) = camber_values();
+    let (c, g, p) = (map(&committed), map(&in_garage), map(&previous));
+    assert!(
+        same(&c, &g),
+        "camber 0.1 deg apart; corner weight is outside identity"
+    );
+    assert!(!same(&c, &p), "another file");
+    let changed = |key: &str, value: &str| map(&with(&committed, &[(key, value)]));
+    assert!(
+        !same(&c, &changed("Chassis.LeftFront.Camber", "+6.0 deg")),
+        "0.2 deg"
+    );
+    assert!(
+        !same(&c, &changed("Chassis.LeftFront.Caster", "+12.0 deg")),
+        "caster is not rounded"
+    );
+    assert!(
+        same(&c, &changed("Tires.LeftFront.ColdPressure", "152.6 kPa")),
+        "under 0.1 psi"
+    );
+    assert!(
+        !same(&c, &changed("Tires.LeftFront.ColdPressure", "153 kPa")),
+        "1 kPa is 0.145 psi"
+    );
+    let psi = |v: &str| map(&json!({"Tires.LeftRear.ColdPressure": v}));
+    assert!(same(&psi("22.0 psi"), &psi("22.1 psi")));
+    assert!(!same(&psi("22.0 psi"), &psi("22.2 psi")));
+    assert!(
+        !same(&psi("22.0 psi"), &psi("22.0 kPa")),
+        "units must agree"
+    );
+    assert!(
+        !same(&c, &changed("Chassis.FrontArb.LinkSlack", "-1 mm")),
+        "a setting"
+    );
+    let mut extra = c.clone();
+    extra.insert("Chassis.Rear.RearEndRatio".into(), "4.10".into());
+    assert!(!same(&c, &extra), "a key more is another setup");
+}
+
+#[tokio::test]
+async fn a_snapshot_only_setup_folds_into_its_visits_commit_and_a_second_start_changes_nothing() {
+    let env = Env::new().await;
+    let (committed, in_garage, previous) = camber_values();
+    // A version-1 server: setup 73 is the resume visit's commit, setup 72 its load snapshot and the
+    // restore visit's entry snapshot (both +5.9 deg), setup 74 an intermediate snapshot of the
+    // resume visit that equals no setup, setup 10 the previous file the restore visit committed,
+    // setup 75 a snapshot of a visit whose commit has not arrived.
+    let intermediate = with(&committed, &[("Chassis.RightFront.Camber", "-1.0 deg")]);
+    let waiting = with(&committed, &[("Chassis.FrontArb.LinkSlack", "-4 mm")]);
+    let (c73, g72, p10, i74, w75) = (
+        committed.clone(),
+        in_garage.clone(),
+        previous.clone(),
+        intermediate,
+        waiting,
+    );
+    let camber_sto = sha("camber sto");
+    let (cs, ps) = (camber_sto.clone(), sha("previous sto"));
+    seed(&env, move |c| {
+        let (camber_file, prev_file) = ((CAMBER, cs.as_str()), (PREVIOUS, ps.as_str()));
+        file(c, &cs, CAMBER, "sto")?;
+        setup(
+            c,
+            supra(10, &p10, "2026-09-28T15:23:02Z", "2026-10-04T12:51:26.275Z"),
+        )?;
+        visit(c, "v-earlier", Some(prev_file))?;
+        commit(c, 10, "v-earlier", 8, prev_file, "2026-09-28T15:23:02Z")?;
+        visit(c, RESUME, Some(camber_file))?;
+        let early = "2026-10-04T12:51:15.000Z";
+        setup(c, supra(74, &i74, early, early))?;
+        snapshot(c, 74, RESUME, 2, early)?;
+        setup(
+            c,
+            supra(
+                72,
+                &g72,
+                "2026-10-04T12:51:16.762Z",
+                "2026-10-04T12:51:22.763Z",
+            ),
+        )?;
+        snapshot(c, 72, RESUME, 3, "2026-10-04T12:51:16.762Z")?;
+        let applied = "2026-10-04T12:51:18.325Z";
+        setup(c, supra(73, &c73, applied, applied))?;
+        commit(c, 73, RESUME, 4, camber_file, applied)?;
+        visit(c, RESTORE, Some(prev_file))?;
+        snapshot(c, 72, RESTORE, 5, "2026-10-04T12:51:22.763Z")?;
+        commit(c, 10, RESTORE, 7, prev_file, "2026-10-04T12:51:26.275Z")?;
+        visit(c, "v-in-the-journal", None)?;
+        let later = "2026-10-04T13:00:00Z";
+        setup(c, supra(75, &w75, later, later))?;
+        snapshot(c, 75, "v-in-the-journal", 9, later)?;
+        note(c, 72, "camber reads high in the garage")?;
+        Ok(())
+    });
+    let env = env.restart().await;
+    assert_eq!(
+        ids(&env),
+        vec![10, 73, 75],
+        "72 folded into 73, 74 equals no setup, 75 waits for its commit"
+    );
+    assert_eq!(
+        sorted_observations(&env, 73),
+        vec!["garage_commit:4", "garage_snapshot:3", "garage_snapshot:5"],
+        "the load snapshot (its visit's commit) and the restore visit's entry snapshot (within \
+         rounding of 73, not of its own commit)"
+    );
+    assert_eq!(
+        sorted_observations(&env, 10),
+        vec!["garage_commit:7", "garage_commit:8"]
+    );
+    assert_eq!(
+        row(&env, 73).values,
+        committed,
+        "the commit's values stay the setup's"
+    );
+    assert_eq!(sorted_observations(&env, 75), vec!["garage_snapshot:9"]);
+    // the folded snapshots keep their values
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM garage_snapshots WHERE resolved_at IS NOT NULL"
+        ),
+        3
+    );
+    let kept: String = env.query(|c| {
+        c.query_row(
+            "SELECT values_json FROM garage_snapshots WHERE visit_id = ?1 AND update_count = 2",
+            [RESUME],
+            |r| r.get(0),
+        )
+    });
+    assert!(kept.contains("-1.0 deg"), "{kept}");
+    let notes: Vec<String> = env.query(|c| {
+        c.prepare("SELECT subject_id FROM notes")?
+            .query_map([], |r| r.get(0))?
+            .collect()
+    });
+    assert_eq!(notes, vec!["73"], "the note followed the setup");
+
+    let setups = library(&env).await;
+    assert_eq!(by_id(&setups, 73)["names"], json!([CAMBER]));
+    assert_eq!(by_id(&setups, 73)["observation_count"], 3);
+    assert_eq!(
+        by_id(&setups, 73)["sto_files"][0]["sha256"],
+        camber_sto.as_str()
+    );
+
+    let lines = log_lines(&env);
+    assert_eq!(lines.len(), 1);
+    let folds = lines[0]["report"]["folds"].as_array().unwrap().clone();
+    let fold = |setup: i64| folds.iter().find(|f| f["setup"] == setup).cloned();
+    let f72 = fold(72).expect("72 folded");
+    assert_eq!(f72["into"], json!([73]));
+    assert_eq!(f72["observations_moved"], 2);
+    assert_eq!(f72["removed"], true);
+    let f74 = fold(74).expect("74 folded");
+    assert_eq!(f74["into"], json!([]));
+    assert_eq!(f74["observations_without_setup"], 1);
+    assert!(
+        fold(75).is_none(),
+        "a visit without its commit is left alone"
+    );
+
+    let after = rows(&env);
+    let env = env.restart().await;
+    assert_eq!(rows(&env), after, "a second start changes nothing");
+    assert_eq!(log_lines(&env).len(), 1);
+}
+
+/// Sends a visit's events through the server as the collector would: its snapshots, then the
+/// commit, which references its last snapshot's values by `update_count`.
+fn visit_events(
+    env: &Env,
+    visit: &str,
+    snapshots: Vec<(i64, Value)>,
+    commit: Option<(Option<&str>, i64)>,
+) {
+    let visit = visit.to_string();
+    let commit = commit.map(|(name, count)| (name.map(str::to_string), count));
+    env.app
+        .store
+        .write_blocking(move |c| {
+            let fp = |v: &BTreeMap<String, String>| fake_fingerprint(v);
+            for (count, values) in &snapshots {
+                let msg = json!({"type": "garage.snapshot", "visit_id": visit, "update_count": count,
+                    "observed_at": format!("2026-10-04T12:51:{:02}.000Z", 10 + count), "car_path": SUPRA,
+                    "driver": {"customer_id": CUSTOMER}, "values": values});
+                let outcome =
+                    coach_server::setups::record_garage_snapshot(c, &msg, COLLECTOR, &fp).unwrap();
+                assert!(matches!(
+                    outcome,
+                    coach_server::setups::GarageOutcome::Stored(_)
+                ));
+            }
+            if let Some((name, count)) = &commit {
+                let msg = json!({"type": "garage.commit", "visit_id": visit, "update_count": count,
+                    "entered_at": "2026-10-04T12:51:10.000Z",
+                    "exited_at": format!("2026-10-04T12:51:{:02}.500Z", 10 + count),
+                    "car_path": SUPRA, "driver": {"customer_id": CUSTOMER}, "setup_name": name,
+                    "sto_sha256": name.as_ref().map(|n| sha(n)), "is_modified": name.is_none(),
+                    "load_type": "user", "values": {}});
+                let outcome =
+                    coach_server::setups::record_garage_commit(c, &msg, COLLECTOR, &fp).unwrap();
+                assert!(matches!(
+                    outcome,
+                    coach_server::setups::GarageOutcome::Stored(_)
+                ));
+            }
+            Ok(())
+        })
+        .expect("garage events");
+}
+
+#[tokio::test]
+async fn only_the_commit_creates_a_setup_and_the_visits_snapshots_observe_the_setup_they_equal() {
+    let env = Env::new().await;
+    let (committed, in_garage, previous) = camber_values();
+    seed(&env, |_| Ok(()));
+    // the car's previous file, committed by an earlier visit
+    visit_events(
+        &env,
+        "v-earlier",
+        vec![(1, previous.clone())],
+        Some((Some(PREVIOUS), 1)),
+    );
+    assert_eq!(count(&env, "SELECT COUNT(*) FROM setups"), 1);
+
+    // The resume visit: entry (the previous file, corner weight recomputed), load (+5.9 deg) and
+    // Apply & Close (+5.8 deg, the commit's values). Before the commit nothing is a setup.
+    let entry = with(
+        &previous,
+        &[
+            ("Chassis.LeftFront.CornerWeight", "4512 N"),
+            ("UpdateCount", "2"),
+        ],
+    );
+    let at_exit = with(&committed, &[("UpdateCount", "4")]);
+    visit_events(
+        &env,
+        RESUME,
+        vec![(2, entry), (3, in_garage.clone()), (4, at_exit.clone())],
+        None,
+    );
+    assert_eq!(
+        count(&env, "SELECT COUNT(*) FROM setups"),
+        1,
+        "snapshots wait for the commit"
+    );
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM garage_snapshots WHERE resolved_at IS NULL"
+        ),
+        3
+    );
+    visit_events(&env, RESUME, vec![], Some((Some(CAMBER), 4)));
+    let ids_now = ids(&env);
+    assert_eq!(ids_now.len(), 2, "the commit made one setup: {ids_now:?}");
+    let (prev_id, camber_id) = (ids_now[0], ids_now[1]);
+    assert_eq!(
+        sorted_observations(&env, camber_id),
+        vec!["garage_commit:4", "garage_snapshot:3", "garage_snapshot:4"]
+    );
+    assert_eq!(
+        sorted_observations(&env, prev_id),
+        vec!["garage_commit:1", "garage_snapshot:1", "garage_snapshot:2"],
+        "the entry snapshot is the setup the car had"
+    );
+
+    // The restore visit: entry reads the camber file at +5.9 deg (within rounding of that setup,
+    // not of this visit's commit), then the previous file is loaded back and committed.
+    let restore_entry = with(&in_garage, &[("UpdateCount", "5")]);
+    let reload = with(&previous, &[("UpdateCount", "6")]);
+    visit_events(
+        &env,
+        RESTORE,
+        vec![(5, restore_entry.clone()), (6, reload)],
+        Some((Some(PREVIOUS), 6)),
+    );
+    assert_eq!(ids(&env), ids_now, "no setup from the restore visit");
+    assert_eq!(
+        sorted_observations(&env, camber_id),
+        vec![
+            "garage_commit:4",
+            "garage_snapshot:3",
+            "garage_snapshot:4",
+            "garage_snapshot:5"
+        ]
+    );
+    assert_eq!(row(&env, camber_id).values, at_exit);
+
+    // A snapshot replayed after its commit is acknowledged and changes nothing.
+    let before = rows(&env);
+    visit_events(&env, RESTORE, vec![(5, restore_entry)], None);
+    assert_eq!(rows(&env), before);
+
+    // A modified exit makes the values-only setup; its snapshot within rounding observes it.
+    let edited = with(
+        &committed,
+        &[
+            ("Tires.LeftFront.ColdPressure", "160 kPa"),
+            ("UpdateCount", "8"),
+        ],
+    );
+    let edited_garage = with(
+        &edited,
+        &[
+            ("Chassis.LeftFront.Camber", "+5.9 deg"),
+            ("UpdateCount", "7"),
+        ],
+    );
+    visit_events(
+        &env,
+        "v-modified",
+        vec![(7, edited_garage), (8, edited)],
+        Some((None, 8)),
+    );
+    let ids_after = ids(&env);
+    assert_eq!(ids_after.len(), 3);
+    assert_eq!(
+        sorted_observations(&env, ids_after[2]),
+        vec!["garage_commit:8", "garage_snapshot:7", "garage_snapshot:8"]
+    );
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM garage_snapshots WHERE resolved_at IS NULL"
+        ),
+        0
+    );
+}
+
+// ------------------------------------------------------------- the G3 capture
+
+/// Every `CarSetup` the G3 rig capture published, with its `UpdateCount`, in publish order
+/// (`test-data/sdk/g3-garage-pit-2026-10-03.sdkfix`, read as `crates/coach-ibt/tests` reads it).
+fn g3_publishes() -> Vec<(i64, BTreeMap<String, String>)> {
+    let le_u32 =
+        |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../test-data/sdk/g3-garage-pit-2026-10-03.sdkfix");
+    let bytes = std::fs::read(&path).expect("the G3 fixture");
+    assert_eq!(&bytes[..8], b"IRCSDKF1");
+    let mut region_map: Vec<u8> = Vec::new();
+    let mut out: Vec<(i64, BTreeMap<String, String>)> = Vec::new();
+    let mut at = 8;
+    while at + 5 <= bytes.len() {
+        let (kind, len) = (bytes[at], le_u32(&bytes, at + 1));
+        let payload = &bytes[at + 5..at + 5 + len];
+        at += 5 + len;
+        if kind != 1 {
+            continue;
+        }
+        let region = &payload[4..];
+        if region_map.len() < region.len() {
+            region_map.resize(region.len(), 0);
+        }
+        region_map[..region.len()].copy_from_slice(region);
+        let (text_len, text_at) = (le_u32(&region_map, 16), le_u32(&region_map, 20));
+        let text = coach_ibt::decode_session_info(&region_map[text_at..text_at + text_len]);
+        let info = coach_ibt::SessionInfo::parse(&text).expect("session info parses");
+        if let Some(setup) = info.car_setup()
+            && let Some(count) = setup.update_count
+            && out.last().is_none_or(|(c, _)| *c != count)
+        {
+            out.push((count, setup.values));
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn the_g3_captures_visits_make_a_setup_per_commit_and_none_from_snapshots() {
+    let publishes = g3_publishes();
+    let in_range = |lo: i64, hi: i64| -> Vec<(i64, Value)> {
+        publishes
+            .iter()
+            .filter(|(c, _)| (lo..=hi).contains(c))
+            .map(|(c, v)| (*c, json!(v)))
+            .collect()
+    };
+    // The 209 s visit (counts 2 to 8: two files loaded, four applies, an unsaved edit, Apply and
+    // Close) and the later visits (leave without Apply 10 to 12, Revert 13 to 18, reload 19 to 21;
+    // `test-data/sdk/README.md`).
+    let visits: [(&str, i64, i64, Option<&str>); 4] = [
+        ("g3-visit-1", 2, 8, Some("Test LV R CAM.sto")),
+        ("g3-visit-2", 10, 12, None),
+        ("g3-visit-3", 13, 18, Some("Test LV R CAM.sto")),
+        ("g3-visit-4", 19, 21, Some("Test LV R CAM.sto")),
+    ];
+    // A version-1 server made a setup of every distinct fingerprint of the first visit.
+    let first = in_range(2, 8);
+    assert!(
+        first.len() >= 5,
+        "{} publishes in the first visit",
+        first.len()
+    );
+    let distinct: BTreeSet<String> = first
+        .iter()
+        .map(|(_, v)| fake_fingerprint(&map(v)))
+        .collect();
+    assert!(
+        distinct.len() >= 3,
+        "{} distinct snapshots in the first visit",
+        distinct.len()
+    );
+
+    let env = Env::new().await;
+    seed(&env, |_| Ok(()));
+    let mut commits = BTreeSet::new();
+    for (visit, lo, hi, name) in visits {
+        let snapshots = in_range(lo, hi);
+        let (last, values) = snapshots.last().cloned().expect("a snapshot");
+        commits.insert(fake_fingerprint(&map(&values)));
+        visit_events(&env, visit, snapshots, Some((name, last)));
+    }
+    assert_eq!(
+        count(&env, "SELECT COUNT(*) FROM setups") as usize,
+        commits.len(),
+        "one setup per distinct commit, none from a snapshot"
+    );
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM setups s WHERE NOT EXISTS (SELECT 1 FROM setup_observations o
+               WHERE o.setup_id = s.setup_id AND o.source = 'garage_commit')"
+        ),
+        0
+    );
+    // The last snapshot before Apply & Close (count 7) differs from the exit (count 8) only in
+    // derived values: both observe the first visit's commit.
+    let snapshot_of = |n: i64| -> Option<i64> {
+        env.query(move |c| {
+            c.query_row(
+                "SELECT setup_id FROM setup_observations WHERE visit_id = 'g3-visit-1'
+                   AND update_count = ?1 AND source = 'garage_snapshot'",
+                [n],
+                |r| r.get(0),
+            )
+            .optional()
+        })
+    };
+    let committed: i64 = env.query(|c| {
+        c.query_row(
+            "SELECT setup_id FROM setup_observations WHERE visit_id = 'g3-visit-1'
+               AND source = 'garage_commit'",
+            [],
+            |r| r.get(0),
+        )
+    });
+    assert_eq!(snapshot_of(7), Some(committed));
+    assert_eq!(snapshot_of(8), Some(committed));
+    assert_eq!(
+        count(
+            &env,
+            "SELECT COUNT(*) FROM garage_snapshots WHERE resolved_at IS NULL"
+        ),
+        0
     );
 }

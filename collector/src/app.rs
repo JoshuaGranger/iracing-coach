@@ -58,9 +58,13 @@ pub fn init_logging(paths: &Paths, console: bool) {
 }
 
 fn spawn<T: Send + 'static>(name: &str, f: impl FnOnce() -> T + Send + 'static) -> JoinHandle<T> {
+    let label = name.to_string();
     thread::Builder::new()
         .name(name.to_string())
-        .spawn(f)
+        .spawn(move || {
+            crate::cpu::register_thread(&label);
+            f()
+        })
         .unwrap_or_else(|e| panic!("cannot start the {name} thread: {e}"))
 }
 
@@ -87,6 +91,10 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
     fs::create_dir_all(&paths.state_dir)
         .map_err(|e| format!("cannot create {}: {e}", paths.state_dir.display()))?;
     init_logging(&paths, opts.no_ui);
+    crate::cpu::register_thread("main");
+    let cpu_reporter = opts
+        .cpu_report
+        .then(|| crate::cpu::Reporter::start(Duration::from_secs(10)));
 
     #[cfg(windows)]
     let _instance = if opts.replay.is_none() {
@@ -271,6 +279,9 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
             layout: l.layout,
         });
         let _ = cfg.save(&paths.state_dir);
+    }
+    if let Some(reporter) = cpu_reporter {
+        reporter.finish();
     }
     crate::info!("collector stopped");
     Ok(RunReport {

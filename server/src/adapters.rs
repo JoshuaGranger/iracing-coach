@@ -66,6 +66,16 @@ fn scalar_text(si: &coach_ibt::SessionInfo, path: &str) -> Option<String> {
     }
 }
 
+/// The recording's last `Lap` sample as stored (`IbtFile::edge_scalar`); None when the file has
+/// no integer `Lap` channel or no samples, or the sample cannot be read.
+fn last_lap(file: &coach_ibt::IbtFile) -> Option<i64> {
+    match file.edge_scalar("Lap").ok().flatten()? {
+        coach_ibt::SdkScalar::Int(lap) => Some(i64::from(lap)),
+        coach_ibt::SdkScalar::BitField(lap) => Some(i64::from(lap)),
+        _ => None,
+    }
+}
+
 impl RecordingParser for IbtParser {
     fn fingerprint(&self, values: &BTreeMap<String, String>) -> String {
         coach_ibt::setup_values_fingerprint(values)
@@ -103,7 +113,14 @@ impl RecordingParser for IbtParser {
             "buffer_length": file.buffer_length,
             "variable_count": file.vars.len(),
             "session_start_date": file.disk.session_start_date,
+            // the sim's SessionTime at the file's start and end: with the start date they give
+            // the sim session's own start (`offline_sessions`)
+            "session_start_time": file.disk.session_start_time,
+            "session_end_time": file.disk.session_end_time,
             "session_lap_count": file.disk.session_lap_count,
+            // the last `Lap` sample (null when the file has none): the sim stops counting laps
+            // at 1024 in one sim session (`offline_sessions::lap_counter_stopped`)
+            "lap_last": last_lap(&file),
             "file_size": file.file_size,
             "summary": serde_json::to_value(&summary).unwrap_or(Value::Null),
         });

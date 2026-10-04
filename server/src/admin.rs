@@ -338,6 +338,11 @@ fn apply_setup_file(conn: &Connection, plan: &SetupFilePlan) -> rusqlite::Result
     )?;
     delete_where_in(
         conn,
+        "DELETE FROM garage_snapshots WHERE visit_id IN",
+        &strs(&plan.visits),
+    )?;
+    delete_where_in(
+        conn,
         "DELETE FROM garage_visits WHERE visit_id IN",
         &strs(&plan.visits),
     )?;
@@ -873,4 +878,21 @@ pub async fn remove(app: &AppState, body: &[u8]) -> Result<Value> {
         app.jobs.wake_all();
     }
     Ok(report(&outcome, false, log_path.as_deref()))
+}
+
+// ------------------------------------------------------------------ lab library
+
+/// `GET /api/v1/admin/library/windows` (`library.rs`).
+pub async fn library_windows(app: &AppState) -> Result<Value> {
+    crate::library::get_windows(app).await
+}
+
+/// `POST /api/v1/admin/library/windows`: (created, the window).
+pub async fn library_window(app: &AppState, body: &[u8]) -> Result<(bool, Value)> {
+    crate::library::post_window(app, body).await
+}
+
+/// `POST /api/v1/admin/library/classify`: the windows applied to the stored recordings.
+pub async fn library_classify(app: &AppState, body: &[u8]) -> Result<Value> {
+    crate::library::classify_stored(app, body).await
 }

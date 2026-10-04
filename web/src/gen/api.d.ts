@@ -131,14 +131,17 @@ export interface paths {
         /** Drivers that have data (D7 landing). One driver -> the SPA opens that driver directly. */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`. */
+                    library?: components["parameters"]["Library"];
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description Drivers */
+                /** @description Drivers (`session_count` and `last_session_at` count the asked library's sessions) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -147,6 +150,7 @@ export interface paths {
                         "application/json": components["schemas"]["DriverList"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -168,7 +172,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`. */
+                    library?: components["parameters"]["Library"];
+                };
                 header?: never;
                 path: {
                     customer_id: components["parameters"]["CustomerId"];
@@ -177,7 +184,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Driver */
+                /** @description Driver (`session_count` and `last_session_at` count the asked library's sessions) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -186,6 +193,7 @@ export interface paths {
                         "application/json": components["schemas"]["Driver"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 404: components["responses"]["NotFound"];
             };
         };
@@ -227,6 +235,8 @@ export interface paths {
                     setup?: "fixed" | "open";
                     /** @description Text over track, layout, car, series. */
                     q?: string;
+                    /** @description Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`. */
+                    library?: components["parameters"]["Library"];
                     cursor?: components["parameters"]["Cursor"];
                     limit?: components["parameters"]["Limit"];
                 };
@@ -238,7 +248,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Page of sessions */
+                /** @description Page of sessions (of one library, `main` unless `library=lab`) */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -247,6 +257,7 @@ export interface paths {
                         "application/json": components["schemas"]["SessionPage"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -269,7 +280,10 @@ export interface paths {
         /** Cars and tracks seen in this driver's recordings (Find a baseline choices). */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`. */
+                    library?: components["parameters"]["Library"];
+                };
                 header?: never;
                 path: {
                     customer_id: components["parameters"]["CustomerId"];
@@ -278,7 +292,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Options */
+                /** @description Options from the asked library's recordings */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -287,6 +301,7 @@ export interface paths {
                         "application/json": components["schemas"]["CarTrackOptions"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -680,6 +695,8 @@ export interface paths {
                     raced_only?: boolean;
                     /** @description true: only setups seen in a race recording (as `raced_only`, and `unlinked_files` is empty); false: only setups never raced; absent: both. Overrides `raced_only`. */
                     raced?: boolean;
+                    /** @description Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`. */
+                    library?: components["parameters"]["Library"];
                     cursor?: components["parameters"]["Cursor"];
                     limit?: components["parameters"]["Limit"];
                 };
@@ -700,6 +717,7 @@ export interface paths {
                         "application/json": components["schemas"]["SetupPage"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
             };
         };
         put?: never;
@@ -721,7 +739,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`. */
+                    library?: components["parameters"]["Library"];
+                };
                 header?: never;
                 path: {
                     setup_id: number;
@@ -739,6 +760,7 @@ export interface paths {
                         "application/json": components["schemas"]["SetupDetail"];
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 404: components["responses"]["NotFound"];
             };
         };
@@ -759,7 +781,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within the server's inline wait (default 10 s), else 202. */
+        /**
+         * Compare two setups of the same car (Python `compare_iracing_setups`). Answers inline when done within the server's inline wait (default 10 s), else 202.
+         * @description One job per worker bundle, value sets and scheme: the same pair asked again (in the same order) answers from that finished job, a failed one runs again. `SetupVersion.changed_count` reads these finished comparisons.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -2116,6 +2141,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/library/windows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The lab windows, newest start first, each with the number of recordings it filed lab. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Windows */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LabWindowList"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * State a lab window (the iRacing-utility before it drives), or close one (the same start, car and track again with the end).
+         * @description A window says that the utility drives `car` at `track` from `from` until `until`. At ingest a recording is filed `lab` when its start (`start_time_utc`, both ends included) falls in a window, its `CarPath` or car screen name equals `car`, its `TrackName`, `TrackDisplayName` or `TrackID` equals `track` (case ignored), and it is a solo offline test (no `SubSessionID`, `EventType` Test): a hosted session or a race against AI is never lab. Anything else stays `main`. A window with the same `from`, `car` and `track` as a stored one is that window: its `until`, `note` and `source` are replaced (the utility opens a window with the planned end and posts it again with the time it stopped). Recordings already stored are not refiled by this call; that is `POST /api/v1/admin/library/classify`. Each call is logged (`$COACH_DATA_DIR/run/library.jsonl`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LabWindowWrite"];
+                };
+            };
+            responses: {
+                /** @description The window with this start, car and track, updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LabWindow"];
+                    };
+                };
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LabWindow"];
+                    };
+                };
+                /** @description `invalid_request`: a malformed field, `until` before `from`, longer than 72 hours, or a blank car or track */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/library/classify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the lab windows to the stored recordings (the historical repair). Lists what would change unless `dry_run` is false.
+         * @description Every parsed recording (one driver with `customer_id`) is filed by the rule of `POST /api/v1/admin/library/windows`: `lab` inside a matching window, else `main` (a recording whose start falls in a window without the matching car, track or session kind stays main and is listed in `overlaps_kept_main`). Synchronous, one transaction; `dry_run` defaults to true and then nothing changes. Idempotent: a second real call reports no change. A real call is logged (server log and one line holding the report in `$COACH_DATA_DIR/run/library.jsonl`) and announces `library_changed` for the drivers it changed. Raw files, the NAS and analyses are never touched; a session follows its recordings (`SessionSummary.library`).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["LibraryClassifyRequest"];
+                };
+            };
+            responses: {
+                /** @description The report (a plan when `dry_run` is true) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LibraryClassifyReport"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2205,6 +2355,10 @@ export interface components {
             runs_detected?: number | null;
             longest_green_run?: number | null;
             pace_slope_s_per_lap?: number | null;
+            /** @description Whether the backend's screened fit had enough eligible laps by its own rule (`race_investigation.runs[].fit`, null with `fit_unavailable_reason` under three screened laps with known exposure): true when at least one run of the phase has a fit, false when none has. Read from the analysis, never recomputed. Null when there is no `pace_slope_s_per_lap` or the analysis reports no runs. Always sent. */
+            pace_slope_supported?: boolean | null;
+            /** @description Median green-lap time of the phase, seconds: the median of the backend's `lap_time_s` over the green laps its own screen kept (`race_investigation.laps[].eligible`); no lap is screened again. Null without an analysis or when the screen kept no lap. Always sent. */
+            green_pace_median_s?: number | null;
             pace_consistency_percent?: number | null;
             best_clean_lap_s?: number | null;
             fuel_used_gal?: number | null;
@@ -2236,7 +2390,14 @@ export interface components {
             analysis_reason?: string | null;
             analysis_id?: string | null;
             overview: components["schemas"]["SessionOverview"];
+            /** @description `lab` when any of the session's recordings is lab, else `main` (this server always sends it). */
+            library?: components["schemas"]["Library"];
         };
+        /**
+         * @description Whose driving a recording is: `main` (Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). The driver stays who drove it.
+         * @enum {string}
+         */
+        Library: "main" | "lab";
         SessionPage: {
             sessions: components["schemas"]["SessionSummary"][];
             next_cursor?: string | null;
@@ -2585,6 +2746,8 @@ export interface components {
             observation_count: number;
             /** @description Seen in a Race session recording. */
             raced: boolean;
+            /** @description Race sessions with a recording of these values (distinct sessions, of the asked library as `raced`). Null when the count is unknown: a recording of the setup is in no session yet or in one whose type is unknown. Never 0 for an unknown count. Always sent. */
+            raced_count?: number | null;
             /** Format: date-time */
             first_seen_at: string;
             /** Format: date-time */
@@ -2617,6 +2780,19 @@ export interface components {
             /** @description Keys excluded from identity (setup-keys.json). */
             identity_excluded_keys: string[];
             observations: components["schemas"]["SetupObservation"][];
+            /** @description This setup and the other setups of its car that carry one of its names and have use in the asked library, oldest first (`first_seen_at`, then `setup_id`). Always sent; one entry when there is no other version. */
+            versions?: components["schemas"]["SetupVersion"][];
+        };
+        SetupVersion: {
+            setup_id: number;
+            /** Format: date-time */
+            first_seen_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            /** @description The version before this one; null for the oldest. */
+            previous_setup_id: number | null;
+            /** @description Settings changed from the previous version: the backend's `counts.changed` of `POST /setups/compare` with the previous version left and this one right (readouts and readings are not changes). Null for the oldest, for a pair that does not compare (a side without values, or one known only from an export), and until the backend has compared the pair under the running worker; the server never counts changes itself. */
+            changed_count: number | null;
         };
         SetupCompareRequest: {
             left_setup_id: number;
@@ -2631,6 +2807,8 @@ export interface components {
             status: "changed" | "unknown" | "identical";
             /** @description Derived readout, not a setting. */
             readout?: boolean;
+            /** @description The displayed unit `left` and `right` end in (`-3.2 deg` is `deg`), split as the backend reads a displayed value; the present side's when one is missing. Null for text, bare numbers, ratios and lists, and when the two sides show different units. `left` and `right` keep the full displayed text. */
+            unit?: string | null;
         };
         SetupCompareResult: {
             rows: components["schemas"]["SetupCompareRow"][];
@@ -3012,6 +3190,8 @@ export interface components {
         /** @description Selections of the Setups page filters; the values are the query values of `GET /drivers/{customer_id}/setups`. An absent value is no filter. */
         SetupFilters: {
             car_path?: string | null;
+            /** @description Selected cars (`car_path` values) when the page filters by several; absent, null or empty is no car filter. `car_path` stays for one car. */
+            car_paths?: string[] | null;
             /** @description true raced setups only, false never-raced only, null both. */
             raced?: boolean | null;
             text?: string | null;
@@ -3157,6 +3337,86 @@ export interface components {
             /** @description What a removal never touches. */
             kept: string[];
             /** @description Path of the removal log written by a real call; null for a dry run. */
+            log: string | null;
+        };
+        LabWindowWrite: {
+            /**
+             * Format: date-time
+             * @description Start, ISO 8601 with `Z` or an offset (`2026-10-04T08:00:00-05:00`); kept to the second.
+             */
+            from: string;
+            /**
+             * Format: date-time
+             * @description End, not before `from`, at most 72 hours after it. The utility gives the planned end and posts the window again with the time it stopped.
+             */
+            until: string;
+            /** @description `CarPath` (`stockcars2 supra2019`) or the car's screen name. */
+            car: string;
+            /** @description `TrackName` (`irp`, `vegas oval`), `TrackDisplayName` or `TrackID`. */
+            track: string;
+            note?: string;
+            /** @description Who states it: `testdriver`, `garage_harvest`, `historical`, ... Default `api`. */
+            source?: string;
+        };
+        LabWindow: {
+            window_id: number;
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            until: string;
+            car: string;
+            track: string;
+            note: string;
+            source: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description Recordings this window filed lab. */
+            recording_count: number;
+        };
+        LabWindowList: {
+            windows: components["schemas"]["LabWindow"][];
+        };
+        LibraryClassifyRequest: {
+            /** @description One driver's recordings; all drivers when absent. */
+            customer_id?: number | null;
+            /** @default true */
+            dry_run: boolean;
+        };
+        LibraryChange: {
+            sha256: string;
+            customer_id?: number | null;
+            /** Format: date-time */
+            start_time_utc?: string | null;
+            car_path?: string | null;
+            track?: string | null;
+            from: components["schemas"]["Library"];
+            to: components["schemas"]["Library"];
+            /** @description The window that files it lab; null when it goes to main. */
+            window_id?: number | null;
+        };
+        LibraryOverlap: {
+            sha256: string;
+            customer_id?: number | null;
+            /** Format: date-time */
+            start_time_utc?: string | null;
+            car_path?: string | null;
+            track?: string | null;
+            window_id: number;
+            reasons: ("car" | "track" | "not_solo_offline_test")[];
+        };
+        LibraryClassifyReport: {
+            dry_run: boolean;
+            windows: number;
+            /** @description Parsed recordings looked at. */
+            recordings_checked: number;
+            /** @description Lab recordings after the call (after a real one). */
+            lab_recordings: number;
+            changes: components["schemas"]["LibraryChange"][];
+            /** @description Recordings whose start falls in a window without its car, track or session kind; they stay main. */
+            overlaps_kept_main: components["schemas"]["LibraryOverlap"][];
+            /** @description Path of the library log written by a real call; null for a dry run. */
             log: string | null;
         };
         /** @description Built by tools/migrate from a copy of the legacy data root (D12). Converted once. */
@@ -3468,6 +3728,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description `invalid_request`: a parameter or the body is malformed */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Job queued (or the existing equivalent job) */
         Accepted: {
             headers: {
@@ -3513,6 +3782,8 @@ export interface components {
         Limit: number;
         /** @description Current `version`; required to update or delete an existing resource. */
         IfMatch: string;
+        /** @description Whose driving: `main` (the default when absent; Joshua's own) or `lab` (the iRacing-utility's bot, its setup harvest and other agent-driven rig runs). One library per request; Lab never enters the main counts. A session is `lab` when any of its recordings is (`SessionSummary.library`). Any other value is `400 invalid_request`. */
+        Library: components["schemas"]["Library"];
     };
     requestBodies: never;
     headers: never;

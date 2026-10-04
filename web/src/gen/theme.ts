@@ -70,7 +70,28 @@ export const theme = {
       "#A98BFF",
       "#2CCFC1",
       "#D9B27C"
+    ],
+    "runs": [
+      "#B7A1FF",
+      "#28B8D8",
+      "#E3B678",
+      "#7CC4FF",
+      "#B4D26B",
+      "#FF9E8A",
+      "#7F93D6",
+      "#A5B1BF"
+    ],
+    "progress": [
+      "#7B8CFF",
+      "#38C6F0",
+      "#4FD6A0",
+      "#D8E066",
+      "#FFA45C",
+      "#FF6F7D"
     ]
+  },
+  "layout": {
+    "toolbarPx": 48
   },
   "phase": {
     "p": "#5F748B",
@@ -221,6 +242,20 @@ export const cssVariables: Readonly<Record<string, string>> = {
   "--car-1": "#A98BFF",
   "--car-2": "#2CCFC1",
   "--car-3": "#D9B27C",
+  "--run-1": "#B7A1FF",
+  "--run-2": "#28B8D8",
+  "--run-3": "#E3B678",
+  "--run-4": "#7CC4FF",
+  "--run-5": "#B4D26B",
+  "--run-6": "#FF9E8A",
+  "--run-7": "#7F93D6",
+  "--run-8": "#A5B1BF",
+  "--progress-1": "#7B8CFF",
+  "--progress-2": "#38C6F0",
+  "--progress-3": "#4FD6A0",
+  "--progress-4": "#D8E066",
+  "--progress-5": "#FFA45C",
+  "--progress-6": "#FF6F7D",
   "--font-ui": "\"Segoe UI Variable Text\", \"Segoe UI\", sans-serif",
   "--font-metric": "\"Cascadia Mono\", Consolas, monospace",
   "--font-display": "Bahnschrift, \"DIN Alternate\", \"Barlow Semi Condensed\", \"Segoe UI Variable Text\", \"Segoe UI\", sans-serif",
@@ -258,6 +293,7 @@ export const cssVariables: Readonly<Record<string, string>> = {
   "--motion-structure": "500ms",
   "--motion-max-translate": "2px",
   "--motion-easing": "cubic-bezier(.2, 0, 0, 1)",
+  "--toolbar-height": "3rem",
   "--nav-expanded": "216px",
   "--nav-collapsed": "64px",
 };

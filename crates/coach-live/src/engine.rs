@@ -170,6 +170,7 @@ fn normalize_phase(value: &str) -> Option<Phase> {
 struct Norm {
     ts: u64,
     flags_known: bool,
+    flag_state: coach_wire::live_channels::FlagState,
     caution: bool,
     black: bool,
     repair: bool,
@@ -256,7 +257,7 @@ fn same_lap_gap(
     (value.is_finite() && value >= 0.0).then_some(f64::from(value))
 }
 
-fn normalise(sample: &Sample, ratio: Option<f64>) -> Norm {
+fn normalise(sample: &Sample, ratio: Option<f64>, one_lap_to_green_is_caution: bool) -> Norm {
     let player_index = sample.player_car_idx;
     let player = player_index.and_then(|i| usize::try_from(i).ok());
     let positions = &sample.car_idx_position;
@@ -282,13 +283,14 @@ fn normalise(sample: &Sample, ratio: Option<f64>) -> Norm {
         same_lap_gap(f2, laps, player, leader, true)
     };
     let flags = sample.session_flags;
-    let state = truth::racing_state(flags);
+    let state = truth::racing_state_in(flags, one_lap_to_green_is_caution);
     let leader_last_lap = leader
         .and_then(|index| sample.car_idx_last_lap_time.get(index))
         .map(|v| f64::from(*v));
     Norm {
         ts: sample.captured_unix_ms,
         flags_known: flags.is_some(),
+        flag_state: state,
         caution: state == coach_wire::live_channels::FlagState::Caution,
         black: matches!(
             state,
@@ -421,7 +423,9 @@ impl Engine {
             return self.disconnected(sample);
         }
         let ratio = sample.session.as_deref().and_then(|ctx| ctx.steering_ratio);
-        let norm = normalise(sample, ratio);
+        // The session phase gates the one-lap-to-green bit, so it is resolved before the flags.
+        self.refresh_phase(sample);
+        let norm = normalise(sample, ratio, self.one_lap_to_green_is_caution());
 
         let changed = self.observe_boundary(sample, &norm);
         if changed {
@@ -468,8 +472,14 @@ impl Engine {
         }
     }
 
+    /// One lap to green (`0x200`) is a caution bit in a Race and when the session type is not
+    /// known; in Offline Testing, Practice and Qualifying iRacing holds it with no caution
+    /// (`truth::racing_state_in`).
+    fn one_lap_to_green_is_caution(&self) -> bool {
+        matches!(self.phase_value, None | Some(Phase::Race))
+    }
+
     fn observe_boundary(&mut self, sample: &Sample, norm: &Norm) -> bool {
-        self.refresh_phase(sample);
         let phase = self.phase_value.as_ref();
         let subsession = sample.session.as_deref().and_then(|ctx| ctx.subsession_id);
         let memory = &mut self.boundary;
@@ -821,7 +831,7 @@ impl Engine {
         first_of_epoch: bool,
     ) -> LiveState {
         let road = road_wheel_radians(n.wheel, n.ratio);
-        let flag_state = truth::racing_state(sample.session_flags);
+        let flag_state = n.flag_state;
         let incidents = sample
             .player_car_my_incident_count
             .or(sample.player_incidents);

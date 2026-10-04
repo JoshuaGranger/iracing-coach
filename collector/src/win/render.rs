@@ -2,6 +2,7 @@
 //! bitmap in tests). Colors are the dark theme tokens of `config/theme.dark.json`.
 
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 use coach_live::{LiveState, TileState, TileText, display_range, format_tile};
 use coach_wire::live_channels::Priority;
@@ -50,10 +51,23 @@ pub struct Frame<'a> {
     pub now_ms: u64,
 }
 
+/// What the overlay has to repaint to show a new state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Dirty {
+    /// Every visible figure is as drawn.
+    Nothing,
+    /// Only these tiles (indexes into `Layout::tiles`, with every tile they overlap) changed.
+    Tiles(Vec<usize>),
+    /// Nothing valid is on the surface yet (first paint, other layout, no state): paint it all.
+    All,
+}
+
 pub struct Renderer {
     fonts: HashMap<(i32, i32), HFONT>,
     trends: HashMap<String, TrendBuffer>,
     last_epoch: Option<u32>,
+    /// Per layout tile, a fingerprint of what was last drawn for it (empty: nothing drawn).
+    marks: Vec<u64>,
 }
 
 impl Default for Renderer {
@@ -68,6 +82,7 @@ impl Renderer {
             fonts: HashMap::new(),
             trends: HashMap::new(),
             last_epoch: None,
+            marks: Vec::new(),
         }
     }
 
@@ -87,6 +102,7 @@ impl Renderer {
             SetBkMode(hdc, TRANSPARENT);
         }
         let Some(state) = state else {
+            self.marks.clear();
             self.centered(
                 hdc,
                 "Waiting for iRacing",
@@ -97,15 +113,93 @@ impl Renderer {
             );
             return;
         };
+        self.sync_epoch(state);
+        self.marks.clear();
+        self.marks.resize(layout.tiles.len(), 0);
+        for (i, (tile, rect)) in layout
+            .tiles
+            .iter()
+            .zip(tile_rects(layout, width, height, scale))
+            .enumerate()
+        {
+            self.marks[i] = self.draw_tile(hdc, tile, rect, state, now_ms, scale);
+        }
+    }
+
+    /// What differs between `frame` and what the last paint drew, without drawing. A tile counts
+    /// as changed when its text, accent or bar position differs; a trend tile with a value moves
+    /// with the clock, so it counts as changed in every 100 ms step.
+    pub fn dirty(&self, frame: &Frame<'_>) -> Dirty {
+        let (Some(state), true) = (frame.state, self.marks.len() == frame.layout.tiles.len())
+        else {
+            return Dirty::All;
+        };
+        let mut changed: Vec<usize> = Vec::new();
+        for (i, tile) in frame.layout.tiles.iter().enumerate() {
+            let text = format_tile(&tile.metric, state, tile.unit.as_deref(), tile.precision);
+            if tile_mark(tile, text.as_ref(), state, frame.now_ms) != self.marks[i] {
+                changed.push(i);
+            }
+        }
+        if changed.is_empty() {
+            return Dirty::Nothing;
+        }
+        // A tile drawn over another one's pixels takes the other one with it.
+        let rects = tile_rects(frame.layout, frame.width, frame.height, frame.scale);
+        let overlaps = |a: &TileRect, b: &TileRect| {
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        };
+        // Repeated until no tile joins: A under B under C repaints C although C meets only B.
+        let mut all = changed.clone();
+        loop {
+            let before = all.len();
+            for (j, other) in rects.iter().enumerate() {
+                if !all.contains(&j) && all.iter().any(|&i| overlaps(&rects[i], other)) {
+                    all.push(j);
+                }
+            }
+            if all.len() == before {
+                break;
+            }
+        }
+        all.sort_unstable();
+        if all.len() == frame.layout.tiles.len() {
+            Dirty::All
+        } else {
+            Dirty::Tiles(all)
+        }
+    }
+
+    /// Redraws only `tiles` over a surface that already holds the rest of the last paint.
+    pub fn paint_tiles(&mut self, hdc: HDC, frame: &Frame<'_>, tiles: &[usize]) {
+        let (Some(state), true) = (frame.state, self.marks.len() == frame.layout.tiles.len())
+        else {
+            self.paint(hdc, frame);
+            return;
+        };
+        self.sync_epoch(state);
+        let rects = tile_rects(frame.layout, frame.width, frame.height, frame.scale);
+        // SAFETY: plain device-context state on `hdc`.
+        unsafe {
+            SetBkMode(hdc, TRANSPARENT);
+        }
+        for &i in tiles {
+            let (Some(tile), Some(rect)) = (frame.layout.tiles.get(i), rects.get(i)) else {
+                continue;
+            };
+            // The rounded corners show the background, which the old drawing covered.
+            // SAFETY: fills inside `hdc`.
+            unsafe {
+                fill(hdc, rect.x, rect.y, rect.w, rect.h, BG);
+            }
+            self.marks[i] = self.draw_tile(hdc, tile, *rect, state, frame.now_ms, frame.scale);
+        }
+    }
+
+    fn sync_epoch(&mut self, state: &LiveState) {
         if self.last_epoch != Some(state.session_epoch) {
             self.trends.clear();
             self.last_epoch = Some(state.session_epoch);
-        }
-        let pad = (f64::from(PADDING) * scale).round() as i32;
-        let gap = (f64::from(GAP) * scale).round() as i32;
-        for tile in &layout.tiles {
-            let rect = layout.tile_rect(tile, width, height, pad, gap);
-            self.draw_tile(hdc, tile, rect, state, now_ms, scale);
         }
     }
 
@@ -117,7 +211,7 @@ impl Renderer {
         state: &LiveState,
         now_ms: u64,
         scale: f64,
-    ) {
+    ) -> u64 {
         let rect = RectI::new(r.x, r.y, r.w, r.h);
         let accent = tile_accent(tile, state);
         // SAFETY: GDI calls on `hdc` with objects created and released here.
@@ -132,10 +226,11 @@ impl Renderer {
                 accent,
             );
         }
-        let Some(text) = format_tile(&tile.metric, state, tile.unit.as_deref(), tile.precision)
-        else {
+        let text = format_tile(&tile.metric, state, tile.unit.as_deref(), tile.precision);
+        let mark = tile_mark(tile, text.as_ref(), state, now_ms);
+        let Some(text) = text else {
             self.centered(hdc, "Unknown tile", rect, UNAVAILABLE, 12.0 * scale, 400);
-            return;
+            return mark;
         };
         let compact = rect.h < (116.0 * scale) as i32 || rect.w < (132.0 * scale) as i32;
         let dense = rect.h < (64.0 * scale) as i32 || rect.w < (88.0 * scale) as i32;
@@ -199,6 +294,7 @@ impl Renderer {
                 );
             }
         }
+        mark
     }
 
     fn number(
@@ -641,6 +737,44 @@ unsafe fn arc(
         SelectObject(hdc, old);
         let _ = DeleteObject(HGDIOBJ(pen.0));
     }
+}
+
+/// The rectangle of every tile of `layout` in a `width` x `height` window at `scale`.
+pub fn tile_rects(layout: &Layout, width: i32, height: i32, scale: f64) -> Vec<TileRect> {
+    let pad = (f64::from(PADDING) * scale).round() as i32;
+    let gap = (f64::from(GAP) * scale).round() as i32;
+    layout
+        .tiles
+        .iter()
+        .map(|tile| layout.tile_rect(tile, width, height, pad, gap))
+        .collect()
+}
+
+/// A fingerprint of everything `draw_tile` puts on the surface for this tile besides its fixed
+/// layout: the text, the state, the accent and the bar or gauge position (to 1/256 of the range).
+/// A trend tile with a value also carries the time in 100 ms steps, because its line scrolls.
+fn tile_mark(tile: &Tile, text: Option<&TileText>, state: &LiveState, now_ms: u64) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    tile_accent(tile, state).hash(&mut h);
+    match text {
+        None => 0u8.hash(&mut h),
+        Some(text) => {
+            1u8.hash(&mut h);
+            text.primary.hash(&mut h);
+            text.secondary.hash(&mut h);
+            (text.state as u8).hash(&mut h);
+            match tile.style {
+                Style::Bar | Style::Gauge => {
+                    range_fraction(&tile.metric, text, &[])
+                        .map(|f| (f.clamp(0.0, 1.0) * 256.0) as i32)
+                        .hash(&mut h);
+                }
+                Style::Trend if text.value.is_some() => (now_ms / 100).hash(&mut h),
+                _ => {}
+            }
+        }
+    }
+    h.finish()
 }
 
 fn min_max(values: &[f64]) -> (f64, f64) {

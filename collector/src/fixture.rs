@@ -192,26 +192,28 @@ impl ReplayMap {
     }
 
     fn apply_next(&mut self) -> Option<u32> {
-        let record = self.records.get(self.next)?.clone();
+        // The record is read in place (no copy of its row): `records` and `map` are separate
+        // fields, and the header helpers below take the map bytes, not `self`.
+        let record = self.records.get(self.next)?;
         let first = self.next == 0;
         self.next += 1;
         match record {
             Record::Static { map_len, bytes } => {
-                if self.map.len() != map_len {
-                    self.map.resize(map_len, 0);
+                if self.map.len() != *map_len {
+                    self.map.resize(*map_len, 0);
                 }
                 let n = bytes.len().min(self.map.len());
                 self.map[..n].copy_from_slice(&bytes[..n]);
                 if first {
                     // Until the first tick record the replayed sim is "not connected", so the
                     // reader sees no phantom sample in buffers that have no row yet.
-                    self.put_i32(4, 0);
+                    put_i32(&mut self.map, 4, 0);
                 }
                 None
             }
             Record::Status { t_ms, status } => {
-                self.put_i32(4, status);
-                Some(t_ms)
+                put_i32(&mut self.map, 4, *status);
+                Some(*t_ms)
             }
             Record::Tick {
                 t_ms,
@@ -221,35 +223,23 @@ impl ReplayMap {
                 tick,
                 row,
             } => {
-                self.put_i32(4, status);
-                self.put_i32(8, tick_rate);
-                self.put_i32(12, update);
-                let num_buf = self.get_i32(32).clamp(1, 4) as usize;
-                let slot = (tick as u32 as usize) % num_buf;
+                put_i32(&mut self.map, 4, *status);
+                put_i32(&mut self.map, 8, *tick_rate);
+                put_i32(&mut self.map, 12, *update);
+                let num_buf = get_i32(&self.map, 32).clamp(1, 4) as usize;
+                let slot = (*tick as u32 as usize) % num_buf;
                 let entry = 48 + 16 * slot;
-                let offset = self.get_i32(entry + 4);
+                let offset = get_i32(&self.map, entry + 4);
                 if offset >= HEADER_LEN as i32 {
                     let off = offset as usize;
                     if off + row.len() <= self.map.len() {
-                        self.map[off..off + row.len()].copy_from_slice(&row);
+                        self.map[off..off + row.len()].copy_from_slice(row);
                     }
                 }
-                self.put_i32(entry, tick);
-                Some(t_ms)
+                put_i32(&mut self.map, entry, *tick);
+                Some(*t_ms)
             }
         }
-    }
-
-    fn put_i32(&mut self, at: usize, v: i32) {
-        if at + 4 <= self.map.len() {
-            self.map[at..at + 4].copy_from_slice(&v.to_le_bytes());
-        }
-    }
-
-    fn get_i32(&self, at: usize) -> i32 {
-        self.map
-            .get(at..at + 4)
-            .map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()))
     }
 
     fn pace(&mut self, t_ms: u32) {
@@ -268,6 +258,17 @@ impl ReplayMap {
             }
         }
     }
+}
+
+fn put_i32(map: &mut [u8], at: usize, v: i32) {
+    if at + 4 <= map.len() {
+        map[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    }
+}
+
+fn get_i32(map: &[u8], at: usize) -> i32 {
+    map.get(at..at + 4)
+        .map_or(0, |b| i32::from_le_bytes(b.try_into().unwrap()))
 }
 
 impl SdkMap for ReplayMap {
@@ -791,6 +792,85 @@ impl SessionSpec {
     }
 }
 
+/// A synthetic solo run of a car lapping an oval at speed, for the CPU harness and any test that
+/// needs values that change on every tick: speed, pedals, steering, gear, rpm, accelerations,
+/// position on the lap, lap counter and last lap time, fuel and session time all move. `seconds`
+/// of driving at `tick_rate` ticks per second; the first tick is SDK tick 1 at `t_ms` 0, and
+/// every tick is `1000 / tick_rate` ms after the previous one.
+pub fn synthetic_laps(seconds: f64, tick_rate: i32) -> Vec<u8> {
+    const LAP_S: f64 = 23.5;
+    let b = MapBuilder::new(tick_rate).engine_vars();
+    let session = SessionSpec {
+        subsession_id: 90_210,
+        track_name: "indianapolis irp oval".into(),
+        track_display: "Lucas Oil Indianapolis Raceway Park".into(),
+        ..SessionSpec::default()
+    }
+    .yaml();
+    let count = (seconds * f64::from(tick_rate)).round().max(1.0) as usize;
+    let mut steps = vec![Step::Static {
+        status: 1,
+        update: 1,
+        session_info: session,
+    }];
+    let mut last_lap = 0.0;
+    for i in 0..count {
+        let t = i as f64 / f64::from(tick_rate);
+        let lap_pos = t / LAP_S;
+        let lap = lap_pos.floor();
+        if lap >= 1.0 {
+            last_lap = LAP_S + 0.05 * (lap % 7.0);
+        }
+        // Two corners per lap: lift and brake into them, throttle out.
+        let phase = (lap_pos.fract() * 4.0 * std::f64::consts::PI).sin();
+        let speed = 56.0 + 12.0 * phase;
+        let mut row = b.row();
+        row.set_f64("SessionTime", 300.0 + t)
+            .set_i32("SessionNum", 0)
+            .set_i32("SessionUniqueID", 1)
+            .set_bits("SessionFlags", 0x4)
+            .set_i32("Lap", lap as i32 + 1)
+            .set_f64("LapDistPct", lap_pos.fract())
+            .set_f64("LapLastLapTime", last_lap)
+            .set_f64("Speed", speed)
+            .set_f64("Throttle", (0.55 + 0.45 * phase).clamp(0.0, 1.0))
+            .set_f64("Brake", (-phase).clamp(0.0, 1.0) * 0.6)
+            .set_f64(
+                "SteeringWheelAngle",
+                0.9 * (lap_pos.fract() * 4.0 * std::f64::consts::PI).cos(),
+            )
+            .set_i32("Gear", 4)
+            .set_f64("RPM", 6200.0 + 900.0 * phase)
+            .set_f64("YawRate", 0.5 * phase)
+            .set_f64("LatAccel", 25.0 * phase.abs())
+            .set_f64("LongAccel", 6.0 * phase)
+            .set_f64("Lat", 39.8 + 0.001 * lap_pos.fract())
+            .set_f64("Lon", -86.3 + 0.001 * lap_pos.fract())
+            .set_f64("FuelLevel", 70.0 - 0.012 * t)
+            .set_f64("FuelLevelPct", 1.0 - 0.00017 * t)
+            .set_f64("TrackTemp", 38.0)
+            .set_f64("AirTemp", 26.0)
+            .set_f64("dcBrakeBias", 54.5)
+            .set_bool("OnPitRoad", false)
+            .set_bool("IsOnTrack", true)
+            .set_i32("PlayerCarIdx", 0)
+            .set_i32("PlayerCarPosition", 1)
+            .set_i32("PlayerCarClassPosition", 1)
+            .set_array_i32("CarIdxPosition", 0, 1)
+            .set_array_i32("CarIdxClassPosition", 0, 1)
+            .set_array_i32("CarIdxLap", 0, lap as i32 + 1)
+            .set_array_f32("CarIdxF2Time", 0, 0.0)
+            .set_array_f32("CarIdxLastLapTime", 0, last_lap as f32);
+        steps.push(Step::Tick {
+            t_ms: (t * 1000.0).round() as u32,
+            tick: i as i32 + 1,
+            row,
+        });
+    }
+    b.write_steps(Vec::new(), &steps)
+        .expect("writing to a Vec cannot fail")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -827,6 +907,41 @@ mod tests {
             );
         }
         assert!(map.at_end());
+    }
+
+    #[test]
+    fn the_synthetic_run_is_a_valid_fixture_whose_values_move_on_every_tick() {
+        let data = synthetic_laps(2.0, 60);
+        let clock = Arc::new(ManualClock::new(1_000));
+        let mut src = ReplaySource::from_bytes(&data, Pacing::Virtual(clock)).unwrap();
+        let mut map = src.open().unwrap().unwrap();
+        let mut ticks = Vec::new();
+        let mut speeds = Vec::new();
+        while !map.at_end() {
+            map.wait(Duration::from_millis(1));
+            let header = crate::sdk::read_header(map.as_ref()).unwrap();
+            let newest = header.newest_buffer(map.len()).unwrap();
+            let mut row = vec![0u8; header.buf_len as usize];
+            assert!(map.read(newest.buf_offset as usize, &mut row));
+            ticks.push(newest.tick_count);
+            let table = coach_ibt::VarTable::parse_live(
+                &{
+                    let mut all = vec![0u8; map.len()];
+                    assert!(map.read(0, &mut all));
+                    all
+                },
+                &header,
+            )
+            .unwrap();
+            speeds.push(table.f64("Speed", &row).unwrap());
+        }
+        assert_eq!(ticks.len(), 120);
+        assert_eq!((ticks[0], ticks[119]), (1, 120));
+        assert!(
+            speeds.windows(2).all(|w| w[0] != w[1]),
+            "speed differs from one tick to the next"
+        );
+        assert!(speeds.iter().all(|v| (40.0..=70.0).contains(v)));
     }
 
     #[test]
