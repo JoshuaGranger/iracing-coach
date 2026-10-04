@@ -66,6 +66,8 @@ Follow-ups of #1 to #4 that this round could not close, and why.
 
 ## Done
 
+- Round 2 wave A (2026-10-04, released as `d827360`; `acceptance/round2-release.md`): #17 dense Sessions rows with the seven figures per phase, #19 filters in the heading by width, #18 the Lab library (597 recordings filed lab, 51 sessions left in Joshua's list), #20–#23 Setups (chips gone, collapsible cars with Show 10 more, Progressive tuning button removed, the detail with the name once and `Raced N×`), #24 parameter-only Versions with Recorded runs, #25 the direct Live editor, #28a–h the investigation cleanup, #28i answered (nothing drawn until extracted), #29 the sticky row, #30 selected ignores hover. Open from the round: #26 Crew Chief and #27 Driver page (wave B), the collector build on the sim, the Kansas 09-28 question (#32).
+
 - #1 One visual language (2026-10-04): Direction B "Broadcast" pages with Direction A's fixed-column boards, race colour tokens, display type, interaction in light only (`design/README.md`).
 - #1a Text size (2026-10-04): the raised base type scale is the one scale (`perf/type-scale.mjs --check` passes) and the Default/Larger/Largest selector was removed at the owner's request.
 - #1b Time-delta zero line (2026-10-04): fastest clean lap of the selection (complete, green, no pit, no incident, on track), else fastest complete lap, named in the header (`Δ vs lap 6`); laps 2, 6, 7, 8, 9, 40 now zero on lap 6.
