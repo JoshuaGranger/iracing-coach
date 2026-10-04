@@ -23,12 +23,12 @@ import { tooltipCapacityFor } from "./cursor-core";
  * paths were built from.
  */
 
-/** The root font size the geometry below was written for; `unit` arguments are pixels per rem (16 by default, more at the Larger and Largest text sizes). */
+/** The root font size the geometry below was written for; `unit` arguments are pixels per rem (16 by default, more where the browser's default font size is larger). */
 const DEFAULT_UNIT = 16;
 
 /**
  * Geometry of the value cards the cursor draws on the canvas, in CSS pixels. The card text is the `--text-data` size of the theme
- * (config/theme.dark.json) at the current root font size, so it reads like the rest of the app and follows the text-size step.
+ * (config/theme.dark.json) at the current root font size, so it reads like the rest of the app.
  */
 export interface CardMetrics {
   fontPx: number;

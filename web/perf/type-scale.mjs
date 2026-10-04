@@ -1,8 +1,7 @@
 // Type-scale audit: computed font sizes and control heights of the real app, page by page and viewport.
 //
 //   pnpm -C web build && node perf/type-scale.mjs [--dist dist] [--viewports 1920x1080,1536x864] [--tag before]
-//        [--text-size default|larger|largest] [--pages sessions,race,runs,sections,traces,setups,live,setup,baseline,tuning]
-//        [--check] [--shots <dir>]
+//        [--pages sessions,race,runs,sections,traces,setups,live,setup,baseline,tuning] [--check] [--shots <dir>]
 //
 // For every page it records the smallest and median computed size of body text, secondary text, table/rail/readout numbers
 // and tab/button labels, the shortest control, the smallest text on the page and any canvas font the cursor assigns. With
@@ -34,7 +33,6 @@ const VIEWPORTS = option("viewports", "1920x1080,1536x864").split(",").map((text
   return { name: text, width, height };
 });
 const TAG = option("tag", "run");
-const TEXT_SIZE = option("text-size", "default");
 const SHOTS = path.resolve(option("shots", path.join(repoRoot, "target", "W8", "type-scale")));
 const CHECK = args.includes("--check");
 const DRIVER = 1507810;
@@ -175,7 +173,7 @@ if (needShell) {
 }
 await mkdir(SHOTS, { recursive: true });
 const browser = await chromium.launch();
-const report = { tag: TAG, textSize: TEXT_SIZE, dist: DIST, results: [] };
+const report = { tag: TAG, dist: DIST, results: [] };
 let failures = 0;
 try {
   for (const viewport of VIEWPORTS) {
@@ -183,8 +181,7 @@ try {
       const spec = PAGES[name];
       if (!spec) throw new Error(`unknown page ${name}`);
       const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: 1 });
-      await context.addInitScript((size) => {
-        try { localStorage.setItem("coach.text-size", size); } catch { /* storage may be blocked */ }
+      await context.addInitScript(() => {
         const fonts = (window.__canvasFonts = new Set());
         const descriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "font");
         Object.defineProperty(CanvasRenderingContext2D.prototype, "font", {
@@ -192,7 +189,7 @@ try {
           get() { return descriptor.get.call(this); },
           set(value) { fonts.add(String(value)); descriptor.set.call(this, value); },
         });
-      }, TEXT_SIZE);
+      });
       const page = await context.newPage();
       const errors = [];
       page.on("pageerror", (error) => errors.push(String(error)));

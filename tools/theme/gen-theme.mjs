@@ -28,7 +28,7 @@ add("--font-ui", family(t.uiFamilies));
 add("--font-metric", family(t.metricFamilies));
 if (t.displayFamilies) add("--font-display", family(t.displayFamilies));
 // Sizes are authored in px against rootPx (the browser default, 16) and emitted in rem, so the root font size (the
-// browser or OS default, then the driver's text-size step below) scales every type size, control height and space.
+// browser or OS default; there is no other scale) scales every type size, control height and space.
 // Control heights keep a pixel floor so a small browser default cannot shrink a target under 36 px (desktop) or 44 px (touch).
 const rem = (px) => `${Number((px / t.rootPx).toFixed(4))}rem`;
 add("--text-body", rem(t.bodyPx));
@@ -62,13 +62,6 @@ const css = [
   `  color-scheme: ${theme.mode};`,
   ...vars.map(([n, v]) => `  ${n}: ${v};`),
   "}",
-  "",
-  "/* Text size: the root font size of the driver's step (data-text-size on <html>; Default when absent). */",
-  ...t.textSizes.flatMap((step) => [
-    `${step.id === "default" ? ":root, " : ""}:root[data-text-size="${step.id}"] {`,
-    `  font-size: ${step.percent}%;`,
-    "}",
-  ]),
   "",
   ...(m.honorReducedMotion
     ? [

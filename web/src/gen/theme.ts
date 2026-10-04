@@ -104,23 +104,6 @@ export const theme = {
       500,
       600
     ],
-    "textSizes": [
-      {
-        "id": "default",
-        "label": "Default",
-        "percent": 100
-      },
-      {
-        "id": "larger",
-        "label": "Larger",
-        "percent": 112.5
-      },
-      {
-        "id": "largest",
-        "label": "Largest",
-        "percent": 125
-      }
-    ],
     "displayFamilies": [
       "Bahnschrift",
       "DIN Alternate",

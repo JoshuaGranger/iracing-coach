@@ -76,6 +76,11 @@ def window_stats(rows: list[dict], label: str, before: dict | None) -> dict:
         "gpu_median": statistics.median(gpu) if gpu else None,
         "on_track_samples": sum(1 for v in on_track if v == 1),
         "speed_max": max((num(r, "Speed") or 0.0) for r in rows),
+        "speed_min": min((num(r, "Speed") or 0.0) for r in rows),
+        "speed_median": statistics.median((num(r, "Speed") or 0.0) for r in rows),
+        # bot-driven run (W): every sample on track, off pit road, at >= 15 m/s
+        "on_pit_road_samples": sum(1 for r in rows if num(r, "OnPitRoad") == 1),
+        "laps": sorted({int(num(r, "Lap")) for r in rows if num(r, "Lap") is not None}),
         "collector_samples": sum(1 for r in rows if r.get("pid")),
     }
     if label.startswith("C"):
@@ -209,6 +214,13 @@ def main(argv: list[str] | None = None) -> int:
     reads = sum(c["io_read_bytes"] for c in cs)
     all_on = all(s["on_track_samples"] == s["samples"] for s in stats.values())
     verdict["G4-6"] = {"read_bytes": reads, "all_samples_on_track": all_on, "pass_collector_side": reads == 0 and all_on}
+    driven = {}
+    for label, st in stats.items():
+        rows_w = groups[label]
+        ok = all(num(r, "IsOnTrack") == 1 and num(r, "OnPitRoad") == 0 and (num(r, "Speed") or 0.0) >= 15.0 for r in rows_w)
+        driven[label] = {"pass": ok, "speed_min": st["speed_min"], "speed_median": st["speed_median"],
+                         "on_pit_road_samples": st["on_pit_road_samples"], "laps": st["laps"]}
+    verdict["W"] = {"pass": all(d["pass"] for d in driven.values()), "windows": driven}
     if args.viewers:
         g48 = [{"window": c["label"], "A": c["viewers"]["A_median"], "B": c["viewers"]["B_median"]} for c in cs]
         verdict["G4-8"] = {"pass": all(x["A"] is not None and x["A"] >= 59 and x["B"] is not None and x["B"] >= 59 for x in g48), "windows": g48}

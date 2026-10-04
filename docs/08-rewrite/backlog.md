@@ -36,7 +36,7 @@ Follow-ups of #1 to #4 that this round could not close, and why.
 ## Done
 
 - #1 One visual language (2026-10-04): Direction B "Broadcast" pages with Direction A's fixed-column boards, race colour tokens, display type, interaction in light only (`design/README.md`).
-- #1a Text size (2026-10-04): larger type scale and a per-driver Default/Larger/Largest step saved in prefs (`text_size`); `perf/type-scale.mjs --check` passes.
+- #1a Text size (2026-10-04): the raised base type scale is the one scale (`perf/type-scale.mjs --check` passes) and the Default/Larger/Largest selector was removed at the owner's request.
 - #1b Time-delta zero line (2026-10-04): fastest clean lap of the selection (complete, green, no pit, no incident, on track), else fastest complete lap, named in the header (`Δ vs lap 6`); laps 2, 6, 7, 8, 9, 40 now zero on lap 6.
 - #1c Lap rail (2026-10-04): strict column grid, 1.76x wider, one selected/spotlight/focus-visible state model, sector blocks, flags, chips, pit pictogram.
 - #1d Agentic prose (2026-10-04): disclaimer sentences removed; incident `L50 · x2`; the banned-phrase grep over src, mock, e2e and perf is clean.

@@ -6,7 +6,8 @@
   Windows PowerShell 5.1 with an inline C# sampler (compiled by Add-Type, no build step). Read-only
   towards iRacing: it opens the SDK shared-memory map `Local\IRSDKMemMapFileName` for reading and
   never touches Documents\iRacing. It reads the collector process's CPU time, working set, private
-  bytes and Win32 I/O counters.
+  bytes and Win32 I/O counters. Lap, LapDistPct, OnPitRoad and PlayerTrackSurface (appended columns) show
+  whether the car is lapping (the bot-driven run's workload check).
 
   -Mode windows  Runs the window plan at 1 Hz (one CSV row per second, the same recorder in every
                  window). B = collector not running (asked to exit through its quit event
@@ -70,7 +71,8 @@ public static class G4
     static MemoryMappedFile mmf;
     static MemoryMappedViewAccessor acc;
     static Dictionary<string, int[]> vars;
-    static readonly string[] Wanted = { "FrameRate", "CpuUsageFG", "CpuUsageBG", "GpuUsage", "IsOnTrack", "Speed", "SessionTick" };
+    // Appended after SessionTick (G4-bot): positions of the first seven are unchanged.
+    static readonly string[] Wanted = { "FrameRate", "CpuUsageFG", "CpuUsageBG", "GpuUsage", "IsOnTrack", "Speed", "SessionTick", "Lap", "LapDistPct", "OnPitRoad", "PlayerTrackSurface" };
 
     static bool Open()
     {
@@ -104,14 +106,14 @@ public static class G4
         vars = map;
     }
 
-    /// <summary>Returns "connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick".</summary>
+    /// <summary>Returns "connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick,Lap,LapDistPct,OnPitRoad,PlayerTrackSurface".</summary>
     public static string Sdk()
     {
-        if (!Open()) return "nomap,,,,,,,";
+        if (!Open()) return "nomap,,,,,,,,,,,";
         try
         {
             int status = acc.ReadInt32(4);
-            if ((status & 1) == 0) { vars = null; return "0,,,,,,,"; }
+            if ((status & 1) == 0) { vars = null; return "0,,,,,,,,,,,"; }
             if (vars == null || vars.Count < Wanted.Length) LoadVars();
             int numBuf = acc.ReadInt32(32);
             int best = -1, bestTick = int.MinValue;
@@ -138,7 +140,7 @@ public static class G4
             }
             return sb.ToString();
         }
-        catch { acc = null; mmf = null; vars = null; return "err,,,,,,,"; }
+        catch { acc = null; mmf = null; vars = null; return "err,,,,,,,,,,,"; }
     }
 
     public static Process Collector()
@@ -166,7 +168,7 @@ public static class G4
         catch { return ",,,,,,,,,"; }
     }
 
-    const string Header = "utc,t_s,label,in_window,connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick,pid,cpu_ms,ws,private,io_r,io_w,io_o,ops_r,ops_w,ops_o";
+    const string Header = "utc,t_s,label,in_window,connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick,Lap,LapDistPct,OnPitRoad,PlayerTrackSurface,pid,cpu_ms,ws,private,io_r,io_w,io_o,ops_r,ops_w,ops_o";
 
     static void SetStatus(string path, string text)
     {
@@ -257,7 +259,7 @@ public static class G4
         try {
         using (var w = new StreamWriter(outCsv, false, new UTF8Encoding(false)))
         {
-            w.WriteLine("ms,utc,connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick,pid,cpu_ms,ws,private,io_r,io_w,io_o,ops_r,ops_w,ops_o");
+            w.WriteLine("ms,utc,connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick,Lap,LapDistPct,OnPitRoad,PlayerTrackSurface,pid,cpu_ms,ws,private,io_r,io_w,io_o,ops_r,ops_w,ops_o");
             Process proc = Collector();
             string lastKey = null;
             long lastRow = -1000, lastFind = 0;
@@ -292,7 +294,7 @@ Add-Type -TypeDefinition $source -Language CSharp
 
 switch ($Mode) {
     'probe' {
-        "sdk  connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick"
+        "sdk  connected,FrameRate,CpuUsageFG,CpuUsageBG,GpuUsage,IsOnTrack,Speed,SessionTick,Lap,LapDistPct,OnPitRoad,PlayerTrackSurface"
         "     " + [G4]::Sdk()
         "proc pid,cpu_ms,ws,private,io_r,io_w,io_o,ops_r,ops_w,ops_o"
         "     " + [G4]::Proc([G4]::Collector())

@@ -6,15 +6,14 @@ import { readJson, writeJson } from "./store";
 
 export type DriverPrefs = Schemas["DriverPrefs"];
 export type DriverPrefsWrite = Schemas["DriverPrefsWrite"];
-/** What this app writes: the contract's fields (`text_size`, `session_filters` and `setup_filters` included). */
+/** What this app writes: the contract's fields (`session_filters` and `setup_filters` included). */
 export type DriverPrefsPatch = DriverPrefsWrite;
 export type LastInvestigation = Schemas["LastInvestigation"];
-export type TextSize = Schemas["TextSize"];
 export type SessionFilters = Schemas["SessionFilters"];
 export type SetupFilters = Schemas["SetupFilters"];
 
 /**
- * Driver preferences (active layouts, last investigation, motion, safe glance, units, text size, page filters). Writes go through
+ * Driver preferences (active layouts, last investigation, motion, safe glance, units, page filters). Writes go through
  * the outbox with the version last read.
  */
 export function usePrefs(customerId: number | null) {

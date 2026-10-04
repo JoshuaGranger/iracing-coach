@@ -93,3 +93,27 @@ Deviations from the method as written: (1) G4-9 names `GET /api/v1/sessions/{id}
 ## Left as found
 
 `iRacingSim64DX11` and `iRacingUI` not running (only the `iRacingService64` service); the sim window was moved for clicks and quit from there (its position is not stored); no replay saved; Discord in the foreground as before; lease released. The collector stays installed and running. The recorder scripts and CSVs on the sim were deleted with `C:\Users\joshu\coach-rig\` at the end of the task; copies of the CSVs and screenshots are on the dev PC under `C:\Users\joshu\source\coach-migration\w9\g4\`.
+
+
+---
+
+# Bot-driven run (task G4-bot, 2026-10-04)
+
+The owner has permitted the bot-driven version (2026-10-04, relayed: "use the driver to do whatever driver things you needed my permission for"). This part re-runs G4 as `workstreams.md` defines it, with the vJoy bot driving IRP. As above, the thresholds and method in this section were written before any measurement of this run (2026-10-04 13:02Z, before the sim was touched) and are not adjusted afterwards; the results are appended below them. The parked-car results above stand as their own record.
+
+## Thresholds for the bot-driven run (written before measuring; never adjusted afterwards)
+
+The ten criteria G4-1 to G4-10 and their pass thresholds are those of the table above, unchanged, with these clarifications that follow from the car moving:
+
+- **Workload validity (W).** A window counts as bot-driven only if all its 100 samples have `IsOnTrack 1`, `OnPitRoad 0` and `Speed >= 15 m/s` (the bot lapping, not stopped, towed or in the pits). The run is a bot-driven G4 only if all nine windows meet W. A window that fails W is reported with its numbers and the gate is not passed for the bot-driven run by assumption; it is not re-measured into a pass.
+- **G4-6.** "Starts >= 5 s after `IsOnTrack` became 1" is checked against the first `IsOnTrack 1` sample of the stint (the car is on track from the stall before the launch).
+- **G4-7.** The transition is the car going back on track (the session screen's **Test**) while the collector is reading the bot run's finalized recording for upload (that recording is finalized when the driver leaves the car after the windows). Same limit: last increase of the collector's `ReadTransferCount` <= 100 ms after the first `IsOnTrack 1` sample (fast sampler). If the collector has finished reading before the transition, G4-7 is reported as not exercised, not as passed.
+- **G4-9.** "Visible" as `workstreams.md` now defines it: the session reports `analysis_state` `ready` (`GET /api/v1/drivers/{id}/sessions`, the session's `analysis_id` set) and `GET /api/v1/analyses/{analysis_id}/race` answers 200, with every recording of this sim session in the session (`recording_count` equal to the recordings iRacing wrote). Measured from the finalization of the session's last recording (its `.ibt` last-write time on the sim) to that state; limit 120 s.
+- **G4-10.** A screenshot of the sim with the collector overlay drawn over the moving car, taken while the collector runs and streams, in a C window's 20 s settle period (outside the measured 100 s, so the GDI capture is not in any sample).
+
+Method: as above (window plan B1 C1 B2 C2 B3 C3 B4 C4 B5, 100 s windows, 20 s settle before C, 10 s after the collector exits before B, the same 1 Hz recorder through every window, two Chromium viewers on the dev PC holding the Live page at 1280x720 for the whole run), with:
+
+- **Driver.** The vJoy bot of iRacing-utility (`testdriver/`, a bundle of `main` at its current commit), with the arguments of `capture/g4-workload.json` (plan L at a fixed 0.95 pace, `--guard-log-only`, `--steer vjoy --pedals vjoy`, default `--inputs human`, `--max-resets 0`) plus `--fresh-tyres`; `--laps 61` (out-lap + 60, the orchestrator's default) instead of the pointer's 41, because nine windows with their settle periods need about 17 minutes of lapping after the out-lap (41 laps is about 16 minutes). Started directly with `drive.py` (one run, no `--end-in-stall`, so the run ends with the car stopped on the backstretch and the recording is finalized by the driver leaving the car).
+- **Session.** Solo offline Test Drive, NASCAR O'Reilly Toyota Supra at Lucas Oil Indianapolis Raceway Park (oval), `NOAPS_MaconiSetupShop IRP 26S4 R.sto` loaded unmodified; the bot's controls profile `agent` selected through iRacing's own Control Profile list, Joshua's files backed up with hashes before and verified after the switch back to `Baseline` (iRacing-utility `AGENTS.md`). The collector is stopped during the garage visits so they leave no garage snapshots in Coach's library.
+- **Recorder.** `tools/rig/g4-perf.ps1` also records `Lap`, `LapDistPct`, `OnPitRoad` and `PlayerTrackSurface` (appended columns, read the same way) for W; started once the out-lap is done and the car is lapping.
+- **Live-engine observations (information, no threshold).** What the P3 report left open (its "Measurement limits": engine arithmetic under motion not exercised; overlay focus with a driver not checked): collector CPU per C window with the car moving against the parked run; the bot's own focus-loss record (`drive.py` summary `focus_graces_ms`, failsafe trips) across the four collector starts and stops; the collector's status at the server during the run (`on_track`, `streaming`, viewers); screenshots of the Live page in a viewer during C windows; the overlay's content on the sim.

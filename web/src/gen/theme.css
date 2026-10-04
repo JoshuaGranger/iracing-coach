@@ -100,17 +100,6 @@
   --nav-collapsed: 64px;
 }
 
-/* Text size: the root font size of the driver's step (data-text-size on <html>; Default when absent). */
-:root, :root[data-text-size="default"] {
-  font-size: 100%;
-}
-:root[data-text-size="larger"] {
-  font-size: 112.5%;
-}
-:root[data-text-size="largest"] {
-  font-size: 125%;
-}
-
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-hover: 0ms;

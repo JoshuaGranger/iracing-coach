@@ -25,7 +25,7 @@
   scrollbar-color: var(--color-border-strong) transparent;
 }
 
-/* The root font size is the browser default scaled by the driver's text-size step (gen/theme.css). Every size below is rem. */
+/* The root font size is the browser default and there is no other scale. Every size below is rem. */
 html,
 body {
   margin: 0;
@@ -492,23 +492,6 @@ label.check > span:first-child {
 }
 .driver-switch select {
   min-width: 10rem;
-}
-.text-size button {
-  min-width: var(--control-height);
-  padding: 0 var(--space-2);
-  font-family: var(--font-ui);
-  font-weight: var(--weight-medium);
-  letter-spacing: 0;
-  text-transform: none;
-}
-.text-size .step-default {
-  font-size: 1rem;
-}
-.text-size .step-larger {
-  font-size: 1.25rem;
-}
-.text-size .step-largest {
-  font-size: 1.5rem;
 }
 .banner {
   margin: 0;
@@ -2079,9 +2062,6 @@ tr.group-head th {
   }
   label.check {
     min-height: var(--touch-target);
-  }
-  .text-size button {
-    min-width: var(--touch-target);
   }
   .seg button {
     min-height: var(--touch-target);

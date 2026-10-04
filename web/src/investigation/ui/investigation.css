@@ -1,7 +1,7 @@
 /* Investigation workspace: one viewport-bound screen in the Broadcast language (docs/08-rewrite/design, Direction B) with Direction A's
    fixed-column discipline on every data board. Colour carries racing data only: green flag, caution, pit, fastest lap, loss, fuel and
-   lap or car identity; interaction (selected, current, focus, cursor) is light, never a hue. Every size is rem so the driver's text
-   size scales the workspace together; the charts read the same root size (ui/unit.ts) for the geometry they draw in pixels.
+   lap or car identity; interaction (selected, current, focus, cursor) is light, never a hue. Every size is rem so the browser's
+   default font size scales the workspace together; the charts read the same root size (ui/unit.ts) for the geometry they draw in pixels.
    The race colours fall back to the design README's values until gen/theme.css carries the race tokens. */
 .ri-workspace {
   --ri-green: var(--race-green, #3DDC84);

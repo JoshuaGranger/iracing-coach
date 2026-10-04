@@ -2,9 +2,8 @@ import { useEffect, useState } from "preact/hooks";
 
 /**
  * The charts and maps draw in pixels (an SVG whose view box is its own size, a canvas), so their margins, label offsets and card
- * sizes follow the root font size the way the CSS does: one rem is the root font size, the browser default scaled by the driver's
- * text-size step (`data-text-size` on <html>, gen/theme.css). The geometry constants in their callers were set for the default
- * 16 px root; `scaleFor` is their factor.
+ * sizes follow the root font size the way the CSS does: one rem is the root font size, the browser's default font size. The
+ * geometry constants in their callers were set for the default 16 px root; `scaleFor` is their factor.
  */
 export const DEFAULT_ROOT_PX = 16;
 
@@ -15,12 +14,12 @@ export function remPx(): number {
   return Number.isFinite(size) && size > 0 ? size : DEFAULT_ROOT_PX;
 }
 
-/** Factor to apply to geometry written for the default root: 1 at 16 px, 1.125 at the Larger step, 1.25 at Largest. */
+/** Factor to apply to geometry written for the default root: 1 at 16 px, more where the browser's default font size is larger. */
 export function scaleFor(root: number): number {
   return root / DEFAULT_ROOT_PX;
 }
 
-/** The root font size, current when the text-size step changes. */
+/** The root font size, current when the window resizes or the root element's style or class changes. */
 export function useRemPx(): number {
   const [px, setPx] = useState(remPx);
   useEffect(() => {
@@ -28,7 +27,7 @@ export function useRemPx(): number {
     update();
     window.addEventListener("resize", update);
     const observer = typeof MutationObserver === "function" ? new MutationObserver(update) : null;
-    observer?.observe(document.documentElement, { attributes: true, attributeFilter: ["data-text-size", "style", "class"] });
+    observer?.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class"] });
     return () => {
       window.removeEventListener("resize", update);
       observer?.disconnect();

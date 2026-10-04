@@ -86,11 +86,6 @@
     "controlHeightPx": 36,
     "touchTargetPx": 44,
     "weights": [400, 500, 600],
-    "textSizes": [
-      { "id": "default", "label": "Default", "percent": 100 },
-      { "id": "larger", "label": "Larger", "percent": 112.5 },
-      { "id": "largest", "label": "Largest", "percent": 125 }
-    ],
     "displayFamilies": ["Bahnschrift", "DIN Alternate", "Barlow Semi Condensed", "Segoe UI Variable Text", "Segoe UI", "sans-serif"],
     "heroPx": 44,
     "figurePx": 20,

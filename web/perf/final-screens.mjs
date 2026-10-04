@@ -2,7 +2,7 @@
 // and Live from web/mock, Race, Runs, Sections and Traces from the committed g2 fixture through the real app (the mock carries no
 // race data). Writes `<prefix>-<page>.png` to `--out`. Not a gate.
 //
-//   node perf/final-screens.mjs [--out <dir>] [--prefix final] [--size 1536x864] [--pages sessions,race,...] [--text-size default]
+//   node perf/final-screens.mjs [--out <dir>] [--prefix final] [--size 1536x864] [--pages sessions,race,...]
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
@@ -15,7 +15,6 @@ const option = (name, fallback) => (args.includes(`--${name}`) ? args[args.index
 const out = path.resolve(option("out", path.join(outRoot, "final-screens")));
 const prefix = option("prefix", "final");
 const [width, height] = option("size", "1536x864").split("x").map(Number);
-const textSize = option("text-size", "default");
 const DRIVER = 1507810;
 
 const PAGES = {
@@ -68,13 +67,6 @@ try {
     const page = PAGES[name];
     if (!page) throw new Error(`unknown page ${name}`);
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
-    await context.addInitScript((value) => {
-      try {
-        localStorage.setItem("coach.text-size", value);
-      } catch {
-        /* storage blocked */
-      }
-    }, textSize);
     const tab = await context.newPage();
     tab.on("pageerror", (error) => errors.push(`${name}: ${error}`));
     tab.on("console", (message) => {

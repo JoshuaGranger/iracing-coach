@@ -4,10 +4,11 @@
 // with --watch-upload <sha256>, HEAD /api/v1/uploads/<sha256> (Upload-Offset).
 //
 //   node tools/rig/g4_viewers.mjs --base http://192.168.1.81:8210 --out <scratch>/g4 --seconds 1500
-//        [--watch-upload <sha256>] [--stop-file <path>]
+//        [--watch-upload <sha256>] [--stop-file <path>] [--shot-every <seconds>]
 //
 // Writes <out>/viewers.jsonl (one line per second), <out>/viewers-summary.json, screenshots at start and
-// end. Read-only apart from opening two live sockets (each counts as a viewer).
+// end, and with --shot-every N a screenshot of viewer A every N seconds while it receives live frames
+// (shot-<utc>.png; dev-PC work only). Read-only apart from opening two live sockets (each counts as a viewer).
 import { createRequire } from "node:module";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -26,6 +27,7 @@ const out = arg("out");
 const seconds = Number(arg("seconds", "1500"));
 const watch = arg("watch-upload");
 const stopFile = arg("stop-file");
+const shotEvery = Number(arg("shot-every", "0"));
 await mkdir(out, { recursive: true });
 const log = path.join(out, "viewers.jsonl");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -91,6 +93,10 @@ for (let i = 0; i < seconds; i++) {
       const r = await fetch(`${base}/api/v1/uploads/${watch}`, { method: "HEAD", signal: AbortSignal.timeout(900) });
       row.watch = { http: r.status, offset: r.headers.get("upload-offset"), state: r.headers.get("upload-state") };
     } catch (e) { row.watch = { error: String(e).slice(0, 80) }; }
+  }
+  if (shotEvery > 0 && (i + 1) % shotEvery === 0 && row.A > 0) {
+    const name = `shot-${row.utc.replace(/[:.]/g, "-")}.png`;
+    try { await viewers[0].page.screenshot({ path: path.join(out, name) }); row.shot = name; } catch (e) { row.shot_error = String(e).slice(0, 80); }
   }
   rows.push(row);
   await appendFile(log, JSON.stringify(row) + "\n");

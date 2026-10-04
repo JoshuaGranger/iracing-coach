@@ -8,14 +8,12 @@ import { cachedValue, invalidate, invalidateKey, useResource } from "./core/reso
 import { type ParsedRoute, href, navigate, useRoute } from "./core/router";
 import { events } from "./core/sse";
 import { readJson, useStore, writeJson } from "./core/store";
-import { useSavedTextSize } from "./core/text-size";
 import { DriversPage } from "./pages/drivers";
 import { SessionsPage } from "./pages/sessions";
 import { InvestigationSlot } from "./ui/investigation-slot";
 import { Notice } from "./ui/kit";
 import { Lazy } from "./ui/lazy";
 import { OutboxBar } from "./ui/outbox-bar";
-import { TextSizeControl } from "./ui/text-size-control";
 
 const loadSetups = () => import("./pages/setups");
 const loadSetupDetail = () => import("./pages/setup-detail");
@@ -147,7 +145,6 @@ function TopBar({ route, who }: { route: ParsedRoute; who: CurrentDriver }) {
       ) : driver ? (
         <span class="driver-name">{driver.name}</span>
       ) : null}
-      <TextSizeControl customerId={current} />
     </header>
   );
 }
@@ -164,15 +161,13 @@ function Banner() {
   );
 }
 
-function ThemeBinding({ route, current }: { route: ParsedRoute; current: number | null }) {
+function ThemeBinding({ route }: { route: ParsedRoute }) {
   const id = driverIdFor(route);
   const { prefs } = usePrefs(id);
   const reduced = useReducedMotion(id ? prefs : null);
   useEffect(() => {
     document.documentElement.dataset.motion = reduced ? "reduced" : "full";
   }, [reduced]);
-  // The saved text size follows the driver the app is showing, also on the pages that have no driver in the route.
-  useSavedTextSize(current);
   return null;
 }
 
@@ -209,7 +204,7 @@ function Chrome({ route, children }: { route: ParsedRoute; children: ComponentCh
   const who = useCurrentDriver(route);
   return (
     <>
-      <ThemeBinding route={route} current={who.current} />
+      <ThemeBinding route={route} />
       <TopBar route={route} who={who} />
       {children}
     </>

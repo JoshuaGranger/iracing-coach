@@ -1,10 +1,11 @@
 """Gate G4-9: watch the server for the rig session's recording to appear analysed (stdlib only).
 
 Polls ``GET /api/v1/drivers/{id}/sessions`` once a second from before the sim exits. Every session
-not present at start is followed: first seen, each ``analysis_state`` change, and the first time
-``GET /api/v1/sessions/{id}/analysis`` answers 200.
-Prints JSON lines (dev-PC clock, UTC) and exits when
-a new session is ready and its analysis answers 200, or after --timeout seconds.
+not present at start is followed: first seen, each ``analysis_state`` or ``recording_count`` change, and
+the first time it is visible: ``analysis_state`` ``ready`` with an ``analysis_id``, at least
+--min-recordings recordings, and ``GET /api/v1/analyses/{analysis_id}/race`` answering 200 (workstreams.md
+G4; the contract has no GET on ``/sessions/{id}/analysis``, which is POST only).
+Prints JSON lines (dev-PC clock, UTC) and exits when a new session is visible, or after --timeout seconds.
 
     python tools/rig/g4_time_to_visible.py --server http://192.168.1.81:8210 --timeout 900 --start-after 2026-10-03T14:40:00Z
 """
@@ -54,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--server", default="http://192.168.1.81:8210")
     p.add_argument("--timeout", type=float, default=900)
     p.add_argument("--start-after", default="", help="only sessions whose start_time_utc is at or after this ISO time")
+    p.add_argument("--min-recordings", type=int, default=1,
+                   help="visible only once the session holds at least this many recordings")
     args = p.parse_args(argv)
     server = args.server.rstrip("/")
     _, drivers = get(f"{server}/api/v1/drivers")
@@ -68,15 +71,19 @@ def main(argv: list[str] | None = None) -> int:
             if sid in known or (args.start_after and (s.get("start_time_utc") or "") < args.start_after):
                 continue
             state = s.get("analysis_state")
-            if states.get(sid) != state:
-                states[sid] = state
+            key = f"{state}|{s.get('recording_count')}|{s.get('analysis_id')}"
+            if states.get(sid) != key:
+                states[sid] = key
                 print(json.dumps({"at": now(), "event": "session", "session_id": sid, "state": state,
                                   "type": s.get("session_type"), "track": s.get("track"), "start": s.get("start_time_utc"),
-                                  "recordings": s.get("recording_count"), "reason": s.get("analysis_reason")}), flush=True)
-            if state == "ready":
-                status, _ = get(f"{server}/api/v1/sessions/{sid}/analysis")
+                                  "recordings": s.get("recording_count"), "analysis_id": s.get("analysis_id"),
+                                  "reason": s.get("analysis_reason")}), flush=True)
+            aid = s.get("analysis_id")
+            if state == "ready" and aid and (s.get("recording_count") or 0) >= args.min_recordings:
+                status, _ = get(f"{server}/api/v1/analyses/{aid}/race")
                 if status == 200:
-                    print(json.dumps({"at": now(), "event": "visible", "session_id": sid}), flush=True)
+                    print(json.dumps({"at": now(), "event": "visible", "session_id": sid, "analysis_id": aid,
+                                      "recordings": s.get("recording_count")}), flush=True)
                     known.add(sid)
                     return 0
             if state in ("failed", "deferred"):
