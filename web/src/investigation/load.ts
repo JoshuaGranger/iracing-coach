@@ -2,6 +2,7 @@ import { createAnalysisCache, type AnalysisCache } from "./cache";
 import { decodeCcol, joinCcol, type CcolChannel, type TraceTable } from "./ccol";
 import { createTraceData, type TraceData } from "./geometry/trace-model";
 import { parseInvestigation, type Investigation } from "./investigation-model";
+import { parseSectionLaps, type SectionLaps } from "./ui/section-laps";
 import type { InvestigationViewData, RaceViewData, RunsViewData, TraceCatalogData, TrackGeometryData } from "./types";
 
 /**
@@ -35,6 +36,8 @@ export interface Overview {
   investigation: Investigation | null;
   investigationError: string | null;
   track: TrackGeometryData | null;
+  /** The investigation view's `section_laps` (projection 3); null without it. */
+  sectionLaps?: SectionLaps | null;
 }
 
 export interface AnalysisHandle {
@@ -123,7 +126,8 @@ export function createAnalysisLoader(options: LoaderOptions = {}): AnalysisLoade
           investigationError = error instanceof Error ? error.message : String(error);
         }
       }
-      return { race: race.value!, runs: runs.value!, investigation, investigationError, track: track.value };
+      const sectionLaps = investigation ? parseSectionLaps(inv.value?.section_laps) : null;
+      return { race: race.value!, runs: runs.value!, investigation, investigationError, track: track.value, sectionLaps };
     }
 
     async function loadTraces(): Promise<TraceData> {

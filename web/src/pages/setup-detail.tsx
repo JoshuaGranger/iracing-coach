@@ -185,9 +185,7 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
           </h2>
           {settingCount === 0 ? (
             <p>
-              <Chip variant="constraint" title="The setup's values are not decoded">
-                No values
-              </Chip>
+              <Chip variant="constraint">No values</Chip>
             </p>
           ) : (
             <ValueGroups groups={settings} />

@@ -16,11 +16,13 @@ import {
   analysisException,
   carKey,
   carName,
+  cellKind,
+  cellSlots,
+  gridTemplate,
   hasFigures,
   isOpenable,
   phaseColumns,
   phaseOf,
-  phaseSlots,
   seriesLabel,
   setupTypeOf,
 } from "./model";
@@ -46,14 +48,20 @@ export function SetupBadge({ type }: { type: SetupType }) {
   );
 }
 
-function SlotView({ slot }: { slot: Slot }) {
+/**
+ * One labelled figure. `quiet` is the practice and qualifying type (backlog #33): secondary size and colour, its own classes so the
+ * type audit holds it to the 14 px secondary minimum and the race's figures to the 15 px one.
+ */
+function SlotView({ slot, quiet }: { slot: Slot; quiet: boolean }) {
+  const v = quiet ? "sx-qv" : "sx-v";
+  const p = quiet ? "sx-qp" : "sx-p";
   return (
     <div class={slot.missing ? "sx-slot none" : "sx-slot"} data-slot={slot.key} title={slot.title}>
       <span class="sx-l">{slot.label}</span>
-      <b class={slot.eventBest ? "sx-v event-best" : "sx-v"} data-event-best={slot.eventBest ? "true" : undefined}>
-        {slot.parts.map((p, i) => (
-          <span key={i} class={p.tone ? `sx-p ${p.tone}` : "sx-p"}>
-            {p.text}
+      <b class={slot.eventBest ? `${v} event-best` : v} data-event-best={slot.eventBest ? "true" : undefined}>
+        {slot.parts.map((part, i) => (
+          <span key={i} class={part.tone ? `${p} ${part.tone}` : p}>
+            {part.text}
           </span>
         ))}
       </b>
@@ -104,8 +112,9 @@ function tileHref(customerId: number, s: Session): string {
 }
 
 /**
- * One phase of an event: a header slot and the seven labelled slots in a 4 x 2 grid. The whole cell opens the investigation when
- * it can. A session with no figures shows its lap count and the one exception that explains it.
+ * One phase of an event, its own panel: a header slot and the labelled slots of its kind (race seven in a 4 x 2 grid; practice four
+ * and qualifying three, in quieter type). The whole cell opens the investigation when it can. A session with no figures shows its
+ * lap count and the one exception that explains it.
  */
 export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: EventGroup; customerId: number; now: Date; column: number }) {
   const phase = phaseOf(s.session_type);
@@ -116,23 +125,25 @@ export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: 
   const when = localDayTime(s.start_time_utc, now);
   const name = `${phase.label}, ${trackLabel(s.track, s.track_config)}${when ? `, ${when}` : ""}`;
   const laps = s.overview.recorded_laps;
+  const kind = cellKind(s);
+  const quiet = kind !== "race";
   const body = (
     <>
       <div class="sx-slots" data-figures={figures ? "true" : "false"}>
         <div class="sx-slot sx-head">
           <span class="sx-l">{[time, s.recording_count > 1 ? `${s.recording_count} rec` : null].filter(Boolean).join(" · ") || NONE}</span>
-          <b class="sx-v sx-phase">
+          <b class={quiet ? "sx-qv sx-phase" : "sx-v sx-phase"}>
             {phase.label}
             {type !== null && type !== ev.setupType ? <SetupBadge type={type} /> : null}
           </b>
         </div>
         {figures ? (
-          phaseSlots(s, ev.bestLapS).map((slot) => <SlotView key={slot.key} slot={slot} />)
+          cellSlots(s, ev.bestLapS).map((slot) => <SlotView key={slot.key} slot={slot} quiet={quiet} />)
         ) : (
           <div class="sx-slot" data-slot="recorded">
             <span class="sx-l">Laps</span>
-            <b class="sx-v">
-              <span class="sx-p">{laps != null ? String(laps) : NONE}</span>
+            <b class={quiet ? "sx-qv" : "sx-v"}>
+              <span class={quiet ? "sx-qp" : "sx-p"}>{laps != null ? String(laps) : NONE}</span>
             </b>
           </div>
         )}
@@ -141,7 +152,7 @@ export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: 
     </>
   );
   return (
-    <li class="session-row sx-cell" data-state={s.analysis_state} data-phase={phase.code} data-session={s.session_id} style={{ "--col": column + 1 }}>
+    <li class="session-row sx-cell" data-state={s.analysis_state} data-phase={phase.code} data-kind={kind} data-session={s.session_id} style={{ "--col": column + 1 }}>
       {open ? (
         <a class="sx-cell-body sx-open" href={tileHref(customerId, s)} aria-label={name}>
           {body}
@@ -155,7 +166,10 @@ export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: 
   );
 }
 
-/** One compact row per event: identity at the left, the phases as equal cells (stacked rows on a phone). */
+/**
+ * One compact row per event, three blocks: identity at the left behind a divider, then each phase its own panel across a gutter, the
+ * race widest (stacked rows on a phone).
+ */
 export function EventRow({ ev, customerId, colors, now, layout }: { ev: EventGroup; customerId: number; colors: ReadonlyMap<string, number>; now: Date; layout: readonly ColumnCode[] }) {
   const head = ev.head;
   const car = colors.get(carKey(head)) ?? 0;
@@ -163,7 +177,7 @@ export function EventRow({ ev, customerId, colors, now, layout }: { ev: EventGro
   const day = localDay(ev.start, now);
   const trackKey = trackLabel(head.track, head.track_config);
   const analysisId = ev.sessions.find((s) => isOpenable(s) && s.analysis_id)?.analysis_id ?? null;
-  const { columns, count } = phaseColumns(ev.sessions, layout);
+  const { columns, tracks } = phaseColumns(ev.sessions, layout);
   return (
     <section class="sx-event" data-car={car} aria-label={trackKey}>
       <div class="sx-row">
@@ -181,7 +195,7 @@ export function EventRow({ ev, customerId, colors, now, layout }: { ev: EventGro
             <span title={series ? `${carName(head)} · ${series}` : undefined}>{carName(head)}</span>
           </div>
         </header>
-        <ul class="sx-cells" style={{ "--cols": count }}>
+        <ul class="sx-cells" style={{ "--tracks": gridTemplate(tracks) }}>
           {ev.sessions.map((s, i) => (
             <PhaseCell key={s.session_id} s={s} ev={ev} customerId={customerId} now={now} column={columns[i] ?? i} />
           ))}

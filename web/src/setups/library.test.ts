@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Schemas } from "../core/api";
 import { resetCarOrder } from "../core/identity";
-import { CAR_COLORS, carColors, groupLibrary, racedCountOf, racedCountOver } from "./library";
+import { CAR_COLORS, carColors, carsWithSetups, groupLibrary, racedCountOf, racedCountOver } from "./library";
 
 type Setup = Schemas["SetupSummary"];
 type File = Schemas["SetupFileEntry"];
@@ -31,6 +31,25 @@ describe("car colours", () => {
     expect(carColors(["c", "a"], []).get("c")).toBe(CAR_COLORS[2]);
     resetCarOrder();
     expect(carColors(["B"], ["b", "a"]).get("a")).toBe(CAR_COLORS[1]);
+  });
+});
+
+describe("the Car dropdown (#38)", () => {
+  it("offers the cars that have setups, with their setup counts, and not a car that only has unlinked files", () => {
+    const g = groupLibrary(
+      [setup(1, ["a.sto"]), setup(2, [], { car_path: "mx5", car_name: "Global Mazda MX-5 Cup" }), setup(3, [], { car_path: "mx5", car_name: "Global Mazda MX-5 Cup" })],
+      [file("loose.sto", "dallara"), file("other.sto", "supra")],
+      colors,
+    );
+    expect(g).toHaveLength(3);
+    const offered = carsWithSetups(g);
+    expect(offered.map((c) => [c.carPath, c.setups])).toEqual(expect.arrayContaining([["supra", 1], ["mx5", 2]]));
+    expect(offered.map((c) => c.carPath)).not.toContain("dallara");
+    expect(offered).toHaveLength(2);
+  });
+
+  it("offers nothing for an empty library", () => {
+    expect(carsWithSetups(groupLibrary([], [], colors))).toEqual([]);
   });
 });
 

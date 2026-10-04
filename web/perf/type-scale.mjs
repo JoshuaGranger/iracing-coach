@@ -43,7 +43,7 @@ const PAGES = {
   sessions: { source: "mock", hash: `/d/${DRIVER}/sessions`, ready: "li.session-row" },
   race: { source: "shell", view: "race", ready: ".ri-dot" },
   runs: { source: "shell", view: "runs", ready: ".ri-dot" },
-  sections: { source: "shell", view: "sections", ready: "[data-ri-chart]" },
+  sections: { source: "shell", view: "sections", ready: ".ri-sl-tabs" },
   traces: { source: "shell", view: "traces", ready: "[data-analysis-trace-path]" },
   setups: { source: "mock", hash: `/d/${DRIVER}/setups`, ready: ".s-car a.s-name" },
   live: { source: "mock", hash: `/d/${DRIVER}/live`, ready: "[data-metric=position]" },
@@ -59,17 +59,18 @@ const GROUPS = {
   secondary: {
     min: 14,
     selector: [
-      ".row-meta, .sub, .event-meta, .sx-meta, .sx-car, .sx-l, .sx-p.unit, .sx-error, .chip, .eyebrow, .count, .tile-label, .tile-secondary, .tile-unit, label > span:first-child, .field-error, .inline-error, .note-meta",
+      ".row-meta, .sub, .event-meta, .sx-meta, .sx-car, .sx-l, .sx-p.unit, .sx-qv, .sx-qp, .sx-error, .chip, .eyebrow, .count, .tile-label, .tile-secondary, .tile-unit, label > span:first-child, .field-error, .inline-error, .note-meta",
       ".ri-muted, .ri-fine, .ri-heading span, .ri-comparison-laps, .ri-legend, .ri-run-legend, .ri-key small, .ri-timing, .ri-foot, .ri-rail-foot, .ri-toolbox-foot, .ri-run-head, .ri-section-head, .ri-section-range, .ri-map-legend",
       ".ri-fact-label, .ri-pbar-title, .ri-pbar-role, .ri-pbar-scale, .ri-dotrow-name, .ri-dotrow-fig small, .ri-dotrow-axis, .ri-cmp-key, .ri-progress-key, .ri-fit-label, .ri-direction",
       ".ri-axis, .ri-axis-title, .ri-bracket-label, .ri-event-label, .ri-y-axis span, .ri-x-axis span, .ri-zone, .ri-row-unit, .ri-chip, .ri-rail-cols span, .ri-count-chip, .ri-unavailable, .ri-channel-label small, .ri-tabs, .crumbs, .driver-name",
+      ".ri-sl-key span, .ri-sl-cols span, .ri-sl-median span, .ri-sl-facts span, .ri-sl-open h2 small, .ri-sl-action > span, .ri-sl-none",
     ].join(", "),
   },
-  numbers: { min: 15, selector: "td, .sx-v, .sx-p:not(.unit), .ri-tm, .ri-dl, .ri-fu, .ri-n, .ri-kv strong, .ri-run-range, .ri-inc-chip, .ri-pit-cell, .ri-readings output, .ri-readout, .ri-cursor-readout, .ri-timing b, .ri-median, .ri-comparison strong, .tile-primary, dd, .stepper output, .ri-section-id, .turn-text, .map-handle text, .ri-map-label text, .ri-fact-value, .ri-pbar-row b, .ri-dotrow-fig b, .ri-delta b" },
+  numbers: { min: 15, selector: "td, .sx-v, .sx-p:not(.unit), .ri-tm, .ri-dl, .ri-fu, .ri-n, .ri-kv strong, .ri-run-range, .ri-inc-chip, .ri-pit-cell, .ri-readings output, .ri-readout, .ri-cursor-readout, .ri-timing b, .ri-median, .ri-comparison strong, .tile-primary, dd, .stepper output, .ri-section-id, .turn-text, .map-handle text, .ri-map-label text, .ri-fact-value, .ri-pbar-row b, .ri-dotrow-fig b, .ri-delta b, .ri-sl-dl, .ri-sl-facts b, .ri-sl-read, .ri-sl-label text" },
   controls: {
     min: 15,
     height: true,
-    selector: "button, .btn, .nav-link, select, input:not([type=checkbox]):not([type=radio]):not([type=range]), .ri-tab, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-icon-pill, .ri-pqr-seg, .ri-text-button, .ri-toggle, .ri-lap-row, .ri-section, .ri-comparison, label.check, .ri-filters label, .crumbs a",
+    selector: "button, .btn, .nav-link, select, input:not([type=checkbox]):not([type=radio]):not([type=range]), .ri-tab, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-icon-pill, .ri-pqr-seg, .ri-text-button, .ri-toggle, .ri-lap-row, .ri-section, .ri-comparison, .ri-sl-tab, label.check, .ri-filters label, .crumbs a",
   },
 };
 
@@ -212,8 +213,9 @@ try {
         }
       }
       if (name === "sections") {
-        const chart = page.locator("[data-ri-chart]").first();
-        const box = await chart.boundingBox();
+        // Hover the first listed lap when the view has section times (the readout), else nothing.
+        const row = page.locator(".ri-sl-list [data-lap]").first();
+        const box = (await row.count()) ? await row.boundingBox() : null;
         if (box) {
           await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
           await page.waitForTimeout(200);

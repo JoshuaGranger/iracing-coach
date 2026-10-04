@@ -2,25 +2,25 @@
   "cpuThrottle": 4,
   "seconds": 4,
   "board": {
-    "frames": 242,
+    "frames": 241,
     "meanFrameMs": 16.6,
-    "p95FrameMs": 16.7,
-    "scriptMsPerS": 55,
-    "styleLayoutMsPerS": 36
+    "p95FrameMs": 16.8,
+    "scriptMsPerS": 56,
+    "styleLayoutMsPerS": 42
   },
   "editorIdle": {
     "frames": 241,
-    "meanFrameMs": 16.62,
+    "meanFrameMs": 16.6,
     "p95FrameMs": 16.7,
-    "scriptMsPerS": 44,
-    "styleLayoutMsPerS": 45
+    "scriptMsPerS": 47,
+    "styleLayoutMsPerS": 52
   },
   "editorSelected": {
-    "frames": 241,
-    "meanFrameMs": 16.61,
+    "frames": 242,
+    "meanFrameMs": 16.59,
     "p95FrameMs": 16.7,
     "scriptMsPerS": 49,
-    "styleLayoutMsPerS": 39
+    "styleLayoutMsPerS": 49
   },
   "rateMessages": []
 }

@@ -606,7 +606,7 @@ fn session_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
         overview = json!({});
     }
     // always sent: null until an analysis measures them (`overview.rs`)
-    for key in crate::overview::ROUND2_KEYS {
+    for key in crate::overview::always_sent() {
         if overview.get(key).is_none() {
             overview[key] = Value::Null;
         }

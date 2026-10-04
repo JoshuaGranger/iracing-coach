@@ -19,58 +19,102 @@ for (const device of ROUND2_DEVICES) {
         expect(pill!.y + pill!.height, "same heading row").toBeLessThanOrEqual(h1!.y + h1!.height + 20);
         // The heading row holds the controls at the right edge of the page content.
         const row = await bar.locator(".fb-row").boundingBox();
-        const last = await bar.locator(".lib-ctl").boundingBox();
+        const last = await bar.getByRole("button", { name: /^Series/ }).boundingBox();
         expect(row!.x + row!.width - (last!.x + last!.width)).toBeLessThan(40);
       } else {
         await expect(bar).toHaveAttribute("data-layout", "collapsed");
         await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
         await expect(bar.getByRole("button", { name: /^Car/ })).toHaveCount(0);
       }
+      // No Library control, no Clear in the heading, no chip row.
+      await expect(page.getByText("Library", { exact: false })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Lab" })).toHaveCount(0);
+      await expect(bar.locator(".fb-row").getByRole("button", { name: "Clear" })).toHaveCount(0);
+      await expect(page.locator(".filter-chip, .fb-chips")).toHaveCount(0);
       await expectNoHorizontalScroll(page);
     });
 
-    test("inside the surface: choose a car and Lab, the button counts them, Clear resets, and the library is not saved", async ({ page }) => {
+    test("a dropdown carries its selection and clears from inside its list; setting and clearing never move the heading", async ({ page }) => {
       await page.goto(hash("/__kit"));
       const bar = page.locator(".fb");
-      if (phone) {
-        await page.getByRole("button", { name: "Filters", exact: true }).click();
-        // Touch: a bottom sheet, modal.
-        const sheet = page.getByRole("dialog", { name: "Filters" });
-        await expect(sheet).toBeVisible();
-        await expect(sheet).toHaveClass(/fb-sheet/);
-        const box = await sheet.boundingBox();
-        expect(box!.y + box!.height).toBeCloseTo(device.viewport.height, 0);
-        await sheet.getByRole("button", { name: /^Car/ }).click();
-        await sheet.getByRole("option", { name: /Dallara/ }).click();
-        await sheet.getByRole("button", { name: "Lab", exact: true }).click();
-        await expect(sheet.getByRole("button", { name: "Lab", exact: true })).toHaveAttribute("aria-pressed", "true");
-        await sheet.getByRole("button", { name: "Done" }).click();
-        await expect(page.getByRole("button", { name: "Filters · 2" })).toBeVisible();
-        await page.getByRole("button", { name: "Filters · 2" }).click();
-        await page.getByRole("dialog", { name: "Filters" }).getByRole("button", { name: "Clear", exact: true }).click();
-        await expect(page.getByRole("dialog", { name: "Filters" }).getByRole("button", { name: "Joshua" })).toHaveAttribute("aria-pressed", "true");
-        await page.getByRole("dialog", { name: "Filters" }).getByRole("button", { name: "Lab", exact: true }).click();
-      } else {
-        await bar.getByRole("button", { name: /^Car/ }).click();
-        await page.getByRole("option", { name: /Dallara/ }).click();
-        await page.keyboard.press("Escape");
-        await bar.getByRole("button", { name: "Lab", exact: true }).click();
-        await expect(bar.getByRole("button", { name: "Lab", exact: true })).toHaveAttribute("aria-pressed", "true");
-        await bar.getByRole("button", { name: "Clear", exact: true }).click();
-        await expect(bar.getByRole("button", { name: "Joshua" })).toHaveAttribute("aria-pressed", "true");
-        await expect(bar.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0);
-        await bar.getByRole("button", { name: "Lab", exact: true }).click();
-      }
-      // Per visit: a reload is back on Joshua and nothing about the library is stored.
-      await page.reload();
-      const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }).toLowerCase());
-      expect(stored).not.toContain("lab");
-      if (phone) {
-        await page.getByRole("button", { name: "Filters", exact: true }).click();
-        await expect(page.getByRole("dialog", { name: "Filters" }).getByRole("button", { name: "Joshua" })).toHaveAttribute("aria-pressed", "true");
-      } else {
-        await expect(page.locator(".fb").getByRole("button", { name: "Joshua" })).toHaveAttribute("aria-pressed", "true");
-      }
+      /** Position and size of everything in the heading row, to the tenth of a pixel. */
+      const headingBoxes = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll(".fb-row h1, .fb-row .fb-controls > *, .fb-row .fb-trigger")].map((e) => {
+            const r = e.getBoundingClientRect();
+            return [r.x, r.y, r.width, r.height].map((n) => Math.round(n * 10) / 10);
+          }),
+        );
+      const surface = async () => {
+        if (!phone) return bar;
+        await page.getByRole("button", { name: /^Filters/ }).click();
+        return page.getByRole("dialog", { name: "Filters" });
+      };
+      const closeSurface = async () => {
+        if (phone) await page.getByRole("dialog", { name: "Filters" }).getByRole("button", { name: "Done" }).click();
+      };
+      await expect(bar.getByRole("heading", { name: "Components" })).toBeVisible();
+      const before = await headingBoxes();
+      expect(before.length).toBeGreaterThan(1);
+
+      let s = await surface();
+      await s.getByRole("button", { name: /^Car/ }).click();
+      await page.getByRole("option", { name: /Dallara/ }).click();
+      await page.keyboard.press("Escape");
+      await expect(s.getByRole("button", { name: "Car · Dallara IR-18" })).toBeVisible();
+      await s.getByRole("button", { name: /^Car/ }).click();
+      await page.getByRole("option", { name: /Global Mazda/ }).click();
+      await page.keyboard.press("Escape");
+      await expect(s.getByRole("button", { name: "Car · 2" })).toBeVisible();
+      await closeSurface();
+      if (phone) await expect(page.getByRole("button", { name: "Filters · 2" })).toBeVisible();
+      // Set: the title, the controls and the collapsed button sit exactly where they did.
+      expect(await headingBoxes()).toEqual(before);
+      await expect(page.locator(".filter-chip, .fb-chips")).toHaveCount(0);
+      await expect(bar.locator(".fb-row").getByRole("button", { name: "Clear" })).toHaveCount(0);
+
+      // Clear is the first row inside the dropdown; nothing outside it moves.
+      s = await surface();
+      await s.getByRole("button", { name: /^Car/ }).click();
+      const panel = page.getByRole("group", { name: "Car filter" });
+      const rowsBefore = await panel.getByRole("option").first().boundingBox();
+      await panel.getByRole("button", { name: "Clear" }).click();
+      await expect(s.getByRole("button", { name: "Car", exact: true })).toBeVisible();
+      await expect(panel.getByRole("button", { name: "Clear" })).toBeDisabled();
+      expect((await panel.getByRole("option").first().boundingBox())!.y, "options do not shift when the selection clears").toBeCloseTo(rowsBefore!.y, 0);
+      await page.keyboard.press("Escape");
+      await closeSurface();
+      expect(await headingBoxes()).toEqual(before);
+    });
+
+    test("screenshots: the filter bar with a choice made, and its dropdown open", async ({ page }) => {
+      await page.goto(hash("/__kit"));
+      const bar = page.locator(".fb");
+      await expect(bar.getByRole("heading", { name: "Components" })).toBeVisible();
+      if (phone) await page.getByRole("button", { name: /^Filters/ }).click();
+      const where = phone ? page.getByRole("dialog", { name: "Filters" }) : bar;
+      await where.getByRole("button", { name: /^Car/ }).click();
+      await page.getByRole("option", { name: /Dallara/ }).click();
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `target/round3/R2/filters-open-${device.viewport.width}.png` });
+      await page.keyboard.press("Escape");
+      if (phone) await where.getByRole("button", { name: "Done" }).click();
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: `target/round3/R2/filters-set-${device.viewport.width}.png`, clip: { x: 0, y: 0, width: device.viewport.width, height: 160 } });
+    });
+
+    test("the Clear row is reached by Tab from the search field and works from the keyboard", async ({ page }) => {
+      await page.goto(hash("/__kit"));
+      if (phone) await page.getByRole("button", { name: /^Filters/ }).click();
+      const where = phone ? page.getByRole("dialog", { name: "Filters" }) : page.locator(".fb");
+      await where.getByRole("button", { name: /^Car/ }).click();
+      await page.getByRole("option", { name: /Dallara/ }).click();
+      await page.getByRole("combobox", { name: "Search car" }).focus();
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("group", { name: "Car filter" }).getByRole("button", { name: "Clear" })).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(where.getByRole("button", { name: "Car", exact: true })).toBeVisible();
     });
 
     test("chips are exceptions, constraints or actions: squared, never a pill, Retry works, no status-normal chip", async ({ page }) => {
@@ -162,7 +206,7 @@ for (const device of ROUND2_DEVICES) {
       await expectNoHorizontalScroll(page);
     });
 
-    test("the mock serves the lab library apart from the driver's own and echoes it on the usage and statistics calls", async ({ request }) => {
+    test("the mock serves the lab library apart from the driver's own", async ({ request }) => {
       await resetMock(request);
       const main = await (await request.get(`/api/v1/drivers/${DRIVER}/sessions?limit=50`)).json();
       const lab = await (await request.get(`/api/v1/drivers/${DRIVER}/sessions?library=lab`)).json();
@@ -170,8 +214,6 @@ for (const device of ROUND2_DEVICES) {
       expect(main.sessions.some((s: { session_id: number }) => s.session_id >= 900)).toBe(false);
       const labSetups = await (await request.get(`/api/v1/drivers/${DRIVER}/setups?library=lab`)).json();
       expect(labSetups.setups.map((s: { names: string[] }) => s.names[0])).toEqual(["bot sweep.sto"]);
-      expect((await (await request.get(`/api/v1/drivers/${DRIVER}/setups/usage?library=lab`)).json()).library).toBe("lab");
-      expect((await (await request.get(`/api/v1/drivers/${DRIVER}/statistics`)).json()).library).toBe("main");
     });
   });
 }
@@ -187,7 +229,11 @@ test.describe("narrow desktop window", () => {
     const pop = page.getByRole("dialog", { name: "Filters" });
     await expect(pop).toHaveClass(/fb-pop/);
     await expect(page.locator(".fb-backdrop")).toHaveCount(0);
-    await pop.getByRole("button", { name: "Lab", exact: true }).click();
+    await pop.getByRole("button", { name: /^Car/ }).click();
+    await page.getByRole("option", { name: /Dallara/ }).click();
+    await page.keyboard.press("Escape");
+    await expect(pop).toBeVisible();
+    await expect(pop.getByRole("button", { name: "Car · Dallara IR-18" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Filters · 1" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(pop).toHaveCount(0);

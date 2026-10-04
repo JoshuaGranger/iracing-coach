@@ -1,0 +1,93 @@
+/* Sections (backlog #48, #49): the map on top with the chosen section's six clean laps as strands; bottom left the section tabs and
+   the six laps in the Traces rail's row style; bottom right the section's median and Open in Traces. Colour carries data only: three
+   green shades for the fastest three, three red shades for the slowest three (the strongest shade is the extreme lap). */
+.ri-sl {
+  --sl-g1: var(--ri-green);
+  --sl-g2: color-mix(in srgb, var(--ri-green) 70%, var(--ri-card));
+  --sl-g3: color-mix(in srgb, var(--ri-green) 46%, var(--ri-card));
+  --sl-r1: var(--ri-loss);
+  --sl-r2: color-mix(in srgb, var(--ri-loss) 70%, var(--ri-card));
+  --sl-r3: color-mix(in srgb, var(--ri-loss) 46%, var(--ri-card));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(17rem, 24rem);
+  grid-template-rows: minmax(9rem, 1fr) auto;
+  grid-template-areas: "map map" "laps open";
+  gap: var(--ri-gap);
+  height: 100%;
+  min-height: 0;
+}
+.ri-sl-map, .ri-sl-laps, .ri-sl-open { min-width: 0; min-height: 0; border: 1px solid var(--ri-line); border-radius: 0.875rem; background: linear-gradient(180deg, var(--ri-card), color-mix(in srgb, var(--ri-card) 82%, var(--color-app))); box-shadow: inset 0 1px 0 var(--ri-lit); }
+
+/* Map */
+.ri-sl-map { grid-area: map; display: flex; flex-direction: column; }
+.ri-sl-key { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); color: var(--ri-t3); font-size: var(--text-compact); }
+.ri-sl-key > span { display: inline-flex; align-items: center; gap: 0.375rem; }
+.ri-sl-key i { display: inline-block; width: 1.5rem; height: 0.3125rem; border-radius: 2px; }
+.ri-sl-key i.g { background: linear-gradient(90deg, var(--sl-g1), var(--sl-g2), var(--sl-g3)); }
+.ri-sl-key i.r { background: linear-gradient(90deg, var(--sl-r3), var(--sl-r2), var(--sl-r1)); }
+.ri-sl-svg { flex: 1; width: 100%; min-height: 8rem; touch-action: pan-y; }
+.ri-sl-track { fill: none; stroke: var(--color-border-strong); stroke-width: 4px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* The bundle's backing band: six strands at 3.25 px plus a margin. */
+.ri-sl-segment { fill: none; stroke: var(--ri-raise); stroke-width: 1.625rem; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.ri-sl-strand { fill: none; stroke: var(--lap); stroke-width: 2.5px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.ri-sl-strand.selected { stroke-width: 3px; }
+.ri-sl-strand.hot { stroke-width: 4.5px; }
+.ri-sl-start { stroke: var(--ri-t1); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.ri-sl-leader { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.ri-sl-label { cursor: pointer; }
+.ri-sl-label circle { fill: var(--ri-card2); stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.ri-sl-label text { fill: var(--ri-t1); font-family: var(--ri-disp); font-weight: 700; pointer-events: none; }
+.ri-sl-label.selected circle { fill: var(--ri-ice); stroke: var(--ri-ice); }
+.ri-sl-label.selected text { fill: var(--ri-on-ice); }
+@media (hover: hover) { .ri-sl-label:not(.selected):hover circle { fill: var(--color-surface-hover); } }
+.ri-sl-label:focus-visible { outline: none; }
+.ri-sl-label:focus-visible circle { stroke: var(--ri-ice); stroke-width: 2px; }
+
+/* Section tabs and the six laps */
+.ri-sl-laps { grid-area: laps; display: flex; flex-direction: column; overflow: hidden; }
+.ri-sl-tabs { display: flex; flex: none; flex-wrap: wrap; gap: 0.375rem; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--ri-line); }
+.ri-sl-tab { min-width: 2.75rem; height: var(--control-height); padding: 0 0.875rem; border: 1px solid var(--ri-line); border-radius: 0.5rem; background: transparent; color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: 700; letter-spacing: 0.04em; cursor: pointer; }
+.ri-sl-tab[aria-selected="true"] { border-color: var(--ri-ice); background: var(--ri-ice); color: var(--ri-on-ice); }
+@media (hover: hover) { .ri-sl-tab:not([aria-selected="true"]):hover { background: var(--color-surface-hover); color: var(--ri-t1); } }
+.ri-sl-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--space-1); }
+/* One template for the header, the six rows and the median line: swatch, lap, section time, Δ to the median, Δ bar. */
+.ri-sgrid { display: grid; grid-template-columns: 1.25rem 2.5rem 5rem 4.75rem minmax(3rem, 16rem); column-gap: 0.375rem; align-items: center; justify-content: start; padding: 0 var(--space-3); }
+.ri-sl-cols { height: 1.625rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
+.ri-sl-cols .r, .ri-sl-median .r { text-align: right; }
+.ri-lap-row.ri-sgrid { min-height: 2.375rem; }
+.ri-sl-sw { display: block; width: 1.125rem; height: 0.375rem; border-radius: 2px; background: var(--lap); }
+.ri-sl-dl { text-align: right; font-weight: var(--weight-medium); }
+.ri-sl-dl.gain { color: var(--ri-green); }
+.ri-sl-dl.loss { color: var(--ri-loss); }
+.ri-sl-bar, .ri-sl-zero { position: relative; display: block; height: 0.375rem; }
+.ri-sl-bar { border-radius: 2px; background: var(--ri-raise); }
+.ri-sl-bar::before, .ri-sl-zero::before { content: ""; position: absolute; left: 50%; top: -0.25rem; bottom: -0.25rem; width: 1px; background: var(--ri-t3); }
+.ri-sl-bar i { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--lap); }
+.ri-sl-median { min-height: 1.875rem; border-top: 1px dashed var(--ri-line); border-bottom: 1px dashed var(--ri-line); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
+.ri-sl-median > span:nth-child(2) { color: var(--ri-t3); font-size: var(--text-compact); letter-spacing: 0.08em; text-transform: uppercase; }
+.ri-lap-row.ri-sgrid.hot:not(.selected) { background: var(--color-surface-hover); }
+.ri-sl-none { padding: var(--space-3); color: var(--ri-t2); font-size: var(--text-body); }
+
+/* Section facts and Open in Traces */
+.ri-sl-open { grid-area: open; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3) var(--space-3); }
+.ri-sl-open h2 { margin: 0; font-family: var(--ri-disp); font-size: 1.125rem; font-weight: 700; font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
+.ri-sl-open h2 small { color: var(--ri-t3); font-weight: var(--weight-regular); letter-spacing: 0; text-transform: none; }
+.ri-sl-facts { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; }
+.ri-sl-facts b { margin-left: 0.375rem; color: var(--ri-t1); font-size: var(--text-data); font-stretch: semi-condensed; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.ri-sl-read { display: block; min-height: 1.5rem; color: var(--ri-t1); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
+.ri-sl-action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: auto; }
+.ri-sl-action > span { color: var(--ri-t2); font-size: var(--text-body); }
+
+/* Tablet portrait and phone: map, tabs and laps, then the facts and the button, one column; the page scrolls. */
+@media (max-width: 900px) {
+  .ri-sl { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "map" "laps" "open"; height: auto; }
+  .ri-sl-svg { min-height: 15rem; }
+  .ri-sl-laps { overflow: visible; }
+  .ri-sl-list { overflow: visible; }
+}
+@media (max-width: 900px), (pointer: coarse) {
+  .ri-sl-tab { height: var(--touch-target); min-width: var(--touch-target); }
+}
+@media (max-width: 420px) {
+  .ri-sgrid { grid-template-columns: 1.125rem 2.25rem 4.5rem 4.5rem minmax(2rem, 1fr); column-gap: 0.25rem; }
+}

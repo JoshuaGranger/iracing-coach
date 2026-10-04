@@ -27,6 +27,12 @@ import {
   phaseColumns,
   phaseLayout,
   phaseSlots,
+  cellKind,
+  cellSlots,
+  formatDelta,
+  gridTemplate,
+  practiceSlots,
+  qualifySlots,
 } from "./model";
 
 beforeEach(() => resetCarOrder());
@@ -316,17 +322,80 @@ describe("phase columns", () => {
   it("keeps practice, qualifying and race in the same column in every event", () => {
     const layout = phaseLayout([p, q, r]);
     expect(layout).toEqual(["P", "Q", "R"]);
-    expect(phaseColumns([p, r], layout)).toEqual({ columns: [0, 2], count: 3 });
-    expect(phaseColumns([r], layout)).toEqual({ columns: [2], count: 3 });
+    expect(phaseColumns([p, r], layout)).toEqual({ columns: [0, 2], count: 3, tracks: ["P", "Q", "R"] });
+    expect(phaseColumns([r], layout)).toEqual({ columns: [2], count: 3, tracks: ["P", "Q", "R"] });
   });
   it("leaves one column when a filter shows only races", () => {
     const layout = phaseLayout([r]);
     expect(layout).toEqual(["R"]);
-    expect(phaseColumns([r], layout)).toEqual({ columns: [0], count: 1 });
+    expect(phaseColumns([r], layout)).toEqual({ columns: [0], count: 1, tracks: ["R"] });
   });
   it("puts a test in practice's column and follows running order when an event repeats a phase", () => {
     expect(phaseLayout([session({ session_type: "Offline Testing" }), r])).toEqual(["P", "R"]);
     const p2 = session({ session_type: "Practice" });
-    expect(phaseColumns([p, p2, r], ["P", "R"])).toEqual({ columns: [0, 1, 2], count: 3 });
+    expect(phaseColumns([p, p2, r], ["P", "R"])).toEqual({ columns: [0, 1, 2], count: 3, tracks: ["P", "P", "R"] });
+  });
+  it("gives the race the widest column, practice less, qualifying least, the same fractions in every row", () => {
+    expect(gridTemplate(["P", "Q", "R"])).toBe("minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 1.9fr)");
+    expect(gridTemplate(["R"])).toBe("minmax(0, 1.9fr)");
+    expect(gridTemplate([])).toBe("minmax(0, 1.9fr)");
+  });
+});
+
+describe("practice and qualifying cells (round 3, #33)", () => {
+  const text = (s: ReturnType<typeof phaseSlots>[number]) => s.parts.map((p) => p.text).join(" ");
+  const practice = session({
+    session_type: "Practice",
+    overview: { final_position: 5, best_clean_lap_s: 15.5, longest_run_laps: 14, longest_run_pace_loss_s: 0.214, fuel_used_gal: 6.1, pit_stops_detected: 1, timed_lap_1_s: 16.0 },
+  });
+  const qualify = session({ session_type: "Qualify", overview: { final_position: 2, best_clean_lap_s: 15.41, timed_lap_1_s: 15.61, timed_lap_2_s: 15.41, fuel_used_gal: 0.9 } });
+
+  it("reads the kind from the session type; a test or warmup reads as practice", () => {
+    expect(cellKind(session({ session_type: "Race" }))).toBe("race");
+    expect(cellKind(qualify)).toBe("qualify");
+    expect(cellKind(practice)).toBe("practice");
+    expect(cellKind(session({ session_type: "Offline Testing" }))).toBe("practice");
+    expect(cellKind(session({ session_type: "Warmup" }))).toBe("practice");
+  });
+
+  it("practice: position, fastest lap, longest run without a reset, its pace loss; no fuel or stops", () => {
+    const slots = practiceSlots(practice, null);
+    expect(slots.map((s) => s.key)).toEqual(["pos", "best", "run", "loss"]);
+    expect(slots.map((s) => s.label)).toEqual(["Pos", "Best", "Run", "Fall-off"]);
+    expect(slots.map(text)).toEqual(["P5", "15.500", "14 laps", "+0.21 s"]);
+    expect(cellSlots(practice, null)).toEqual(slots);
+    expect(colouredFigures(slots)).toBe(0);
+  });
+
+  it("practice: a faster end is a true-minus figure; a run the backend could not measure is a dash", () => {
+    const faster = practiceSlots(session({ session_type: "Practice", overview: { longest_run_laps: 9, longest_run_pace_loss_s: -0.083 } }), null);
+    expect(text(faster.find((s) => s.key === "loss")!)).toBe("−0.08 s");
+    const none = practiceSlots(session({ session_type: "Practice", overview: { longest_run_laps: 2, longest_run_pace_loss_s: null } }), null);
+    expect(none.find((s) => s.key === "loss")!.missing).toBe(true);
+    expect(text(none.find((s) => s.key === "loss")!)).toBe("—");
+    expect(practiceSlots(session({ session_type: "Practice", overview: {} }), null).every((s) => s.missing)).toBe(true);
+  });
+
+  it("qualifying: position, lap 1, lap 2; the event's fastest lap marked by weight", () => {
+    const slots = qualifySlots(qualify, 15.41);
+    expect(slots.map((s) => s.key)).toEqual(["pos", "lap1", "lap2"]);
+    expect(slots.map((s) => s.label)).toEqual(["Pos", "Lap 1", "Lap 2"]);
+    expect(slots.map(text)).toEqual(["P2", "15.610", "15.410"]);
+    expect(slots.map((s) => s.eventBest ?? false)).toEqual([false, false, true]);
+    expect(cellSlots(qualify, 15.41)).toEqual(slots);
+    const one = qualifySlots(session({ session_type: "Qualify", overview: { final_position: 3, timed_lap_1_s: 76.204, timed_lap_2_s: null } }), null);
+    expect(one.map(text)).toEqual(["P3", "1:16.204", "—"]);
+  });
+
+  it("the race cell is unchanged: seven slots", () => {
+    expect(cellSlots(session({ session_type: "Race", overview: { final_position: 4 } }), null).map((s) => s.key)).toEqual(["pos", "laps", "best", "pace", "stops", "fuel", "run"]);
+  });
+
+  it("signed seconds to two decimals", () => {
+    expect([0.214, -0.083, 0, 0.004, null].map(formatDelta)).toEqual(["+0.21", "−0.08", "0.00", "0.00", "—"]);
+  });
+
+  it("a practice with only its long run measured has figures", () => {
+    expect(hasFigures(session({ session_type: "Practice", overview: { recorded_laps: 20, longest_run_laps: 12 } }))).toBe(true);
   });
 });

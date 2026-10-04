@@ -521,7 +521,6 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
           ))}
         </Notice>
       ) : null}
-      {!trackKey ? <Notice tone="warn">Track configuration unavailable</Notice> : null}
       {stale > 0 ? <Notice>{stale === 1 ? "1 older correction skipped" : `${stale} older corrections skipped`}</Notice> : null}
 
       <div class="tuning-grid">
@@ -560,7 +559,7 @@ function Workbench({ customerId, analysisId }: { customerId: number; analysisId:
             })}
           </div>
           {!ctx.map.is_verified && turn && !correction ? (
-            <button type="button" class="link-btn" disabled={!annKey} title={annKey ? undefined : "Track configuration unavailable"} onClick={openCorrection}>
+            <button type="button" class="link-btn" disabled={!annKey} onClick={openCorrection}>
               Correct selected zone
             </button>
           ) : null}

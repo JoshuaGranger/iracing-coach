@@ -1,11 +1,9 @@
 import { useState } from "preact/hooks";
 import { carColor } from "../core/identity";
 import { RUN_COLORS, raceProgressColour, runColour, runDash } from "../core/palette";
-import { useLibraryChoice } from "../core/library";
 import { Chip, Dot, EventHeader, FlagGlyph, IncidentChip, PageHead, PhaseTile, PositionChange, SetupBadge, Stat, StatusChip, Stripe, TrackSilhouette } from "../ui/kit";
 import { PitStopCard, PitStopPictogram } from "../ui/pictograms";
 import { FilterBar, type FilterControl } from "../ui/filter-bar";
-import { LIBRARY_MIN_REM, LibraryControl } from "../ui/library-control";
 import { MultiSelect } from "../ui/multi-select";
 import { Segmented } from "../ui/segmented";
 
@@ -20,18 +18,28 @@ export default function KitPage() {
   const [view, setView] = useState<string | null>("a");
   const [retries, setRetries] = useState(0);
   const [cars, setCars] = useState<string[]>([]);
-  const [library, setLibrary] = useLibraryChoice();
+  const [tracks, setTracks] = useState<string[]>([]);
+  const [series, setSeries] = useState<string[]>([]);
   const controls: FilterControl[] = [
     {
       id: "car",
       label: "Car",
       node: <MultiSelect label="Car" noun="cars" options={[{ key: "a", label: "Dallara IR-18" }, { key: "b", label: "Global Mazda MX-5 Cup" }]} selected={cars} onChange={setCars} />,
     },
-    { id: "library", label: "Library", minRem: LIBRARY_MIN_REM, node: <LibraryControl value={library} onChange={setLibrary} /> },
+    {
+      id: "track",
+      label: "Track",
+      node: <MultiSelect label="Track" noun="tracks" options={[{ key: "a", label: "Lime Rock Park" }, { key: "b", label: "Bristol Motor Speedway" }, { key: "c", label: "New Hampshire" }]} selected={tracks} onChange={setTracks} />,
+    },
+    {
+      id: "series",
+      label: "Series",
+      node: <MultiSelect label="Series" noun="series" options={[{ key: "a", label: "IndyCar Series" }, { key: "b", label: "Global Mazda MX-5 Cup" }]} selected={series} onChange={setSeries} />,
+    },
   ];
   return (
     <>
-      <FilterBar title="Components" controls={controls} activeCount={cars.length + (library === "lab" ? 1 : 0)} onClear={() => (setCars([]), setLibrary("main"))} />
+      <FilterBar title="Components" controls={controls} activeCount={cars.length + tracks.length + series.length} />
       <section class="panel" aria-label="Marks">
         <h2>Marks</h2>
         <div class="chips" style={{ alignItems: "center" }}>

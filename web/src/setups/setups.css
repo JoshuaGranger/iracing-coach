@@ -289,6 +289,19 @@
   font-stretch: semi-condensed;
   color: var(--color-text-primary);
 }
+/* Past ten rows a car section keeps its ten-row height (measured and set inline by the page; this is the first-paint guess) and scrolls
+   inside. Native overflow scrolling: the page takes the wheel or the finger at the region's ends (no overscroll containment). */
+.ds .s-scroll[data-scroll="true"] {
+  max-height: 33rem;
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+.ds .s-scroll:focus-visible {
+  outline: 2px solid var(--color-interaction);
+  outline-offset: -2px;
+}
 .ds .s-list,
 .ds .s-versions {
   margin: 0;
@@ -490,6 +503,10 @@
   }
   .ds .s-grid > button.versions {
     margin-left: auto;
+  }
+  /* The heading row on a phone: Setups, this link and the Filters button share 358 px. */
+  .ds .s-baseline {
+    padding: 0 var(--space-3);
   }
 }
 

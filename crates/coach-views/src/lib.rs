@@ -20,6 +20,7 @@ mod laps;
 mod output;
 mod parse;
 mod prune;
+mod section_laps;
 mod traces;
 mod tuning;
 mod val;
@@ -28,7 +29,7 @@ use parse::{Doc, Kind};
 use prune::Spec;
 use val::{Obj, int_of};
 
-pub const PROJECTION_VERSION: u32 = 2;
+pub const PROJECTION_VERSION: u32 = 3;
 
 /// `analysis_view.schema_version` this crate reads, and the analysis document's own.
 const VIEW_SCHEMA_VERSION: i64 = 1;
@@ -465,11 +466,13 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
         )?,
     ));
 
-    // Investigation.
-    if investigation_map.is_some() {
+    // Investigation, with the projector's per-section clean-lap times beside the backend's subtree.
+    let section_laps = investigation_map.map(|inv| section_laps::build(inv, &lap_traces.traces));
+    if let Some(section_laps) = section_laps {
         let mut view = Map::new();
         envelope.apply(&mut view);
         view.insert("race_investigation".into(), investigation);
+        view.insert("section_laps".into(), section_laps);
         views.push((
             ViewKind::Investigation,
             "investigation.json",

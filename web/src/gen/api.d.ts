@@ -2359,6 +2359,14 @@ export interface components {
             pace_slope_supported?: boolean | null;
             /** @description Median green-lap time of the phase, seconds: the median of the backend's `lap_time_s` over the green laps its own screen kept (`race_investigation.laps[].eligible`); no lap is screened again. Null without an analysis or when the screen kept no lap. Always sent. */
             green_pace_median_s?: number | null;
+            /** @description Laps of the phase's longest backend run: the complete laps between two pit or stall visits (`runs[].lap_numbers` as joined onto `race.json` `laps[].run_number`), so a reset to the pits or the garage starts a new run. The earlier run on a tie. Null when no lap names a run. Always sent. */
+            longest_run_laps?: number | null;
+            /** @description Observed pace loss over that run, seconds, 3 decimals: the last minus the first `lap_time_s` of its green laps the backend's screen kept (`race_investigation.laps[].eligible`), in lap order; negative when the run ended faster. A difference of two observed laps, not a fit. Null under three kept laps or without an investigation. Always sent. */
+            longest_run_pace_loss_s?: number | null;
+            /** @description The phase's first timed lap, seconds (`race.json` `laps[].lap_time_s`): the first lap in lap order that is complete, has a time, spent under 1 s on pit road and is neither a pit-in nor a pit-out lap, so an out lap is never one. The Sessions row shows it for qualifying. Null when there is none. Always sent. */
+            timed_lap_1_s?: number | null;
+            /** @description The second such lap; null when the phase has fewer than two. Always sent. */
+            timed_lap_2_s?: number | null;
             pace_consistency_percent?: number | null;
             best_clean_lap_s?: number | null;
             fuel_used_gal?: number | null;
@@ -2549,6 +2557,37 @@ export interface components {
             race_investigation: {
                 [key: string]: unknown;
             };
+            section_laps?: components["schemas"]["SectionLaps"];
+        };
+        /**
+         * @description Projector-derived (projection 3; absent from views projected before it): per detected section, the clean laps' times
+         *     through it. A lap's section time is the backend's own rule, `race_inspection.section_elapsed` (session time at the end
+         *     boundary minus at the start, each interpolated inside the first plausible sample pair of `lap_traces`; withheld when a
+         *     sample pair touching the section is untimed, more than 2 s or more than 0.03 lap apart), rounded to 3 decimals as the
+         *     backend rounds a pass's `section_s`. Clean is the backend's lap screen, `race_investigation.laps[].eligible` (green, no
+         *     pit, no incident or off-track, no close traffic, no restart). Nothing is screened again.
+         */
+        SectionLaps: {
+            /** @description One per `race_investigation.sections.sections[]` entry with 0 <= start_pct < end_pct <= 1, in that order. */
+            sections: {
+                /** @description race_investigation.sections.sections[].id (a detected section, not an official turn). */
+                section_id: string;
+                /** @description Clean laps with a section time. */
+                clean_lap_count: number;
+                /** @description Median of those section times (the mean of the middle two for an even count), 3 decimals; null without one. */
+                median_s: number | null;
+                /** @description Up to three fastest, fastest first; min(3, floor(clean_lap_count / 2)) entries, so fastest and slowest never share a lap. Ties order by lap. */
+                fastest: components["schemas"]["SectionLap"][];
+                /** @description Up to three slowest, slowest first; as many entries as `fastest`. */
+                slowest: components["schemas"]["SectionLap"][];
+            }[];
+        };
+        SectionLap: {
+            lap: number;
+            /** @description Seconds through the section, 3 decimals. */
+            section_s: number;
+            /** @description section_s minus the section's median_s, 3 decimals; negative is faster. */
+            delta_s: number;
         };
         /** @description TD-037: road-wheel steering when the ratio is known; never guessed. A declaration that is not basis road_wheel with steering_ratio > 0 is read as steering-wheel angle (SteeringBasisMapper.cs). */
         SteeringBasis: {

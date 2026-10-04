@@ -2,40 +2,44 @@
 
 The components and helpers every page codes against. Specification: `docs/08-rewrite/web-round-2-plan.md`. Tokens come from `config/theme.dark.json` through `pnpm gen:theme`; a page never writes a colour literal.
 
-## FilterBar (`filter-bar.tsx`)
+## FilterBar (`filter-bar.tsx`) and MultiSelect (`multi-select.tsx`)
 
-The page heading and its filters, one rule for every page.
+The page heading and its filters, one rule for every page (round 3, #34-#36).
 
 ```tsx
 <FilterBar
   title="Sessions"                      // string -> h1; or a node (h1 plus a Live now link)
   controls={[
-    { id: "car", label: "Car", node: <MultiSelect .../> },
-    { id: "library", label: "Library", minRem: LIBRARY_MIN_REM, node: <LibraryControl value={library} onChange={setLibrary} /> },
+    { id: "car", label: "Car", node: <MultiSelect label="Car" noun="cars" options={cars} selected={sel.car} onChange={...} /> },
+    { id: "name", label: "Name", minRem: 12, node: <input .../> },
   ]}
-  activeCount={selectedValues + (library === "lab" ? 1 : 0)}
-  onClear={clearAll}
->
-  {chips}                               // optional: removable chips, rendered under the heading in both layouts
-</FilterBar>
+  activeCount={selectedValues}          // reads on the collapsed button: Filters · N
+/>
 ```
 
-- Props: `{ title, controls: FilterControl[], activeCount, onClear, children? }`. `FilterControl = { id, label, node, minRem? }`.
+- Props: `{ title, controls: FilterControl[], activeCount }`. `FilterControl = { id, label, node, minRem? }`. No `onClear`, no children.
 - The bar renders its own `<header class="page-head fb-row">`; do not also render `PageHead`.
-- **Inline** when the title and every control, each at `minRem` (default 7.5, a multi-select pill), with their gaps and the Clear button (while `activeCount > 0`) fit the heading row. The decision is a `ResizeObserver` measurement (`fitsInline`, pure and unit-tested), never a device test. Set `minRem` for a wider control (`LIBRARY_MIN_REM` is 15; a search field is wider).
-- **Collapsed** otherwise: one `Filters` button (`Filters · N` while `activeCount` is N) opening a popover under the heading (pointer devices) or a bottom sheet with a backdrop (`(pointer: coarse)`). Each control shows under its `label`; `Clear` and `Done` are in the surface footer. Escape, outside press and Done close it; focus returns to the button.
-- A `MultiSelect` inside the surface opens in the flow (full width), so the surface scrolls and never clips it.
-- The bar holds no selection state. The page owns it and saves it per page through the driver's prefs (`session_filters`, `setup_filters`) so Back and navigation keep it. `activeCount` counts what is in force, a non-default library included.
-- Test hooks: `.fb[data-layout="inline" | "collapsed"]`, `.fb-trigger`, `.fb-pop`, `.fb-sheet`, dialog named `Filters`.
+- **Nothing in the heading moves when a filter is set or cleared.** There is no Clear button and no row of chips. Every inline control has a fixed width (a `MultiSelect` pill is 10 rem, `DEFAULT_CONTROL_REM`; set `minRem` for a wider control such as a search field) and the collapsed `Filters · N` button is 7.5 rem whatever N is. A control that appears or disappears must not move its neighbours.
+- **Each dropdown carries its own selection**: `pillText(label, options, selected)` reads `Car` (nothing chosen), `Car · Supra` (one) or `Car · 2` (several); only values the options still offer count; long text ellipsizes inside the fixed pill.
+- **Clear lives inside the dropdown**: the first row of the list, always present and disabled while nothing is chosen, so the options never shift when the first one is chosen. Tab from the search field reaches it; focus leaving the control closes the list. The footer reads `n of m` and nothing else. A `Segmented` clears by choosing All; a search field clears itself.
+- **Inline** when the title and every control at its width, with the gaps, fit the heading row. The decision is a `ResizeObserver` measurement (`fitsInline`, pure and unit-tested), never a device test.
+- **Collapsed** otherwise: one `Filters` button (`Filters · N` while `activeCount` is N) opening a popover under the heading (pointer devices) or a bottom sheet with a backdrop (`(pointer: coarse)`). Each control shows under its `label`; `Done` is in the surface footer. The same rule holds inside: each dropdown carries and clears its own selection. Escape, outside press and Done close it; focus returns to the button.
+- A `MultiSelect` inside the surface opens in the flow (full width), so the surface scrolls and never clips it. Pressing inside an open list keeps focus on its search field, so the surrounding dialog never counts as leaving.
+- The bar holds no selection state. The page owns it and saves it per page through the driver's prefs (`session_filters`, `setup_filters`) so Back and navigation keep it.
+- **A filter offers only values that exist in what it filters.** Setups' Car list is the cars that have setups in the setups response (a car with only unlinked files is not offered, a name search does not shrink the list); `carsWithSetups(groups)` in `setups/library.ts`.
+- Test hooks: `.fb[data-layout="inline" | "collapsed"]`, `.fb-trigger`, `.fb-pop`, `.fb-sheet`, `.ms-clear-row`, dialog named `Filters`, group named `<Label> filter`.
 
-## LibraryControl (`library-control.tsx`) and `core/library.ts`
+## The library (`core/library.ts`)
 
-`Library: Joshua | Lab`. Props `{ value: Library, onChange, mainLabel? }`; place it as a `FilterControl` (`minRem: LIBRARY_MIN_REM`). `useLibraryChoice()` returns `[library, setLibrary]`: default `"main"`, shared across pages for the visit, **never saved** (a reload is back on `main`).
+There is no Library control and no mention of Lab in the interface. `main` is the default everywhere; `lab` is reached only by `?library=lab` in the page's URL (`#/d/1507810/sessions?library=lab`, `#/d/1507810/setups?library=lab`). `useLibraryChoice(): Library` reads the hash query on every render (`libraryOfQuery`); nothing is stored. A link to another page drops the query, so the lab is asked for page by page.
 
 API (`core/api.ts`): `type Library = "main" | "lab"`. `paths.sessions(c, { library })`, `paths.setups(c, { library })` (and so `api.sessions`, `api.setups`) take it; only `lab` is sent (`?library=lab`), `main` keeps the plain URL. Resource keys include the query, so the two libraries cache apart; the shell's prefix invalidation covers both.
 
-
 Mock (`web/mock`): `library=lab` on sessions and setups returns the lab fixture (sessions 900 and 901, IRP practice with the NASCAR car; setup 90 `bot sweep.sto`); the main list never contains them.
+
+## Absence is silence
+
+A field the backend does not report is a dash or nothing. No sentence says what the software did not do or could not do (`not extracted`, `not measured`, `unavailable`, `the server`, `the backend`); a tooltip does not either. State a fact that changes a decision (`No values`, `Queued`, `Failed`), not the pipeline's failure to produce one.
 
 ## Chip rule (`kit.tsx`)
 

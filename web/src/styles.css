@@ -748,8 +748,7 @@ button.chip-action {
   }
 }
 .ms-pill,
-.ms-clear,
-.filter-clear {
+.ms-clear-row {
   display: inline-flex;
   align-items: center;
   font-family: var(--font-display);
@@ -757,26 +756,17 @@ button.chip-action {
   text-transform: uppercase;
   letter-spacing: 0.07em;
 }
-.filter-chip {
-  display: inline-flex;
-  align-items: center;
-}
 
 /* ---- filters (ui/multi-select.tsx): Sessions and Setups -------------------------------- */
-.filter-bar {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
 .ms {
   position: relative;
 }
+/* A fixed width (FilterBar's DEFAULT_CONTROL_REM): choosing a value changes the text, never the width or the neighbours. */
 .ms-pill {
+  width: 10rem;
   min-height: var(--ms-pill-h);
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  justify-content: space-between;
   gap: var(--space-2);
   border-radius: var(--radius-pill);
   border: 1px solid var(--color-border-strong);
@@ -785,27 +775,21 @@ button.chip-action {
   font-weight: var(--weight-semibold);
   white-space: nowrap;
 }
+.ms-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.ms-pill.has:not(.open) {
+  border-color: color-mix(in srgb, var(--color-interaction) 55%, var(--color-border-strong));
+}
 .ms-pill.open {
   border-color: var(--color-interaction);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-interaction) 30%, transparent), 0 0 1.125rem color-mix(in srgb, var(--color-interaction) 14%, transparent);
 }
 .ms-chev {
   color: var(--color-text-muted);
-}
-.ms-count {
-  min-width: 1.5rem;
-  height: 1.5rem;
-  padding: 0 0.4375rem;
-  border-radius: var(--radius-pill);
-  background: var(--color-interaction);
-  color: #081017;
-  font-family: var(--font-display);
-  font-stretch: semi-condensed;
-  font-size: var(--text-body);
-  font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1.5rem;
-  text-align: center;
 }
 .ms-panel {
   position: absolute;
@@ -842,7 +826,6 @@ button.chip-action {
 }
 .ms-opts {
   max-height: 18rem;
-  margin-top: var(--space-2);
   overflow-y: auto;
 }
 .ms-opt {
@@ -909,47 +892,33 @@ button.chip-action {
   color: var(--color-text-muted);
   font-size: var(--text-compact);
 }
-.ms-clear,
-.filter-clear {
-  min-height: var(--ms-ctl-h);
+/* The Clear row: first in the list, always present (disabled while nothing is chosen) so the options never move. */
+.ms-clear-row {
+  width: 100%;
+  min-height: max(2.75rem, var(--control-height));
+  margin-top: var(--space-2);
   padding: 0 var(--space-2);
+  gap: var(--space-3);
+  justify-content: flex-start;
+  text-align: left;
   border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
+  border-radius: 0.5rem 0.5rem 0 0;
   background: transparent;
   color: var(--color-text-secondary);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
 }
-.ms-clear:hover:not(:disabled),
-.filter-clear:hover:not(:disabled) {
-  background: transparent;
+.ms-clear-row svg {
+  width: 1.25rem;
+  flex: none;
+}
+.ms-clear-row:hover:not(:disabled) {
+  background: var(--color-surface3);
   color: var(--color-text-primary);
-  text-decoration: underline;
 }
-.ms-clear:disabled {
-  background: transparent;
+.ms-clear-row:disabled {
   color: var(--color-text-disabled);
-}
-.filter-sep {
-  width: 1px;
-  height: 1.625rem;
-  margin: 0 var(--space-1);
-  background: var(--color-border-strong);
-}
-.filter-chip {
-  min-height: var(--ms-pill-h);
-  padding: 0 var(--space-3) 0 var(--space-3);
-  gap: var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--car, var(--color-text-muted)) 45%, var(--color-border-strong));
-  background: color-mix(in srgb, var(--car, var(--color-text-muted)) 14%, var(--color-surface2));
-  font-size: var(--text-body);
-  font-weight: var(--weight-medium);
-}
-.filter-chip:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--car, var(--color-text-muted)) 24%, var(--color-surface2));
-}
-.filter-x {
-  color: var(--color-text-secondary);
 }
 
 @media (max-width: 700px) {
@@ -991,8 +960,11 @@ button.chip-action {
   position: relative;
   margin-left: auto;
 }
+/* A fixed width, so `Filters` and `Filters · 3` take the same room: the heading does not change when a filter is set. */
 .fb-trigger {
-  gap: var(--space-2);
+  width: 7.5rem;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  gap: var(--space-1);
 }
 .fb-surface {
   display: flex;
@@ -1076,32 +1048,6 @@ button.chip-action {
   width: auto;
   margin-top: var(--space-2);
   box-shadow: none;
-}
-.fb-surface .lib-ctl {
-  justify-content: flex-start;
-}
-/* The field heading already says Library. */
-.fb-surface .lib-label {
-  display: none;
-}
-.fb-chips {
-  margin-top: var(--space-2);
-}
-.lib-ctl {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  white-space: nowrap;
-}
-.lib-label {
-  font: var(--weight-semibold) var(--text-compact) / 1 var(--font-display);
-  font-stretch: condensed;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-.lib-label::after {
-  content: ":";
 }
 @media (max-width: 700px) {
   .fb-row {

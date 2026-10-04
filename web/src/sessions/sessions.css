@@ -1,6 +1,7 @@
 /*
- * Sessions page, web round 2 (docs/08-rewrite/web-round-2-plan.md, "Sessions"): one compact row per event. Identity at the left,
- * the phases as equal cells with seven labelled slots each (a stacked row per phase on a phone). Colour is data and nothing else:
+ * Sessions page, web round 2 (docs/08-rewrite/web-round-2-plan.md, "Sessions"; round 3 #33): one compact row per event, read as
+ * blocks. Identity at the left behind a divider, then each phase its own panel across a gutter: the race widest with its seven
+ * figures, practice and qualifying narrower in quieter type (a stacked row per phase on a phone). Colour is data and nothing else:
  * gain or loss on a supported position change, caution on a count above zero, the phase's one unsaturated hue on its edge, the
  * car's stripe. No saturated fills, no glow. Interaction is light, never a hue. Sizes are rem.
  */
@@ -90,6 +91,7 @@
   grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
   min-height: 5.5rem;
 }
+/* The identity block ends at a visible divider; the phase panels sit a gutter beyond it. */
 .sx-id {
   display: flex;
   flex-direction: column;
@@ -97,6 +99,7 @@
   gap: 0.125rem;
   min-width: 0;
   padding: var(--space-2) var(--space-4);
+  border-right: 1px solid var(--color-border-subtle);
 }
 .sx-id-title {
   display: flex;
@@ -144,18 +147,25 @@
 }
 
 /* ---- phase cells ------------------------------------------------------------------- */
+/* Phase columns from the row's template (`gridTemplate`): fractions of one width, so a phase keeps its edge in every row. */
 .sx-cells {
   display: grid;
-  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  grid-template-columns: var(--tracks, minmax(0, 1fr));
+  gap: var(--space-3);
   min-width: 0;
+  padding: var(--space-2) var(--space-3);
   list-style: none;
 }
+/* Each phase is its own panel: border, radius, a step lighter than the row. */
 .sx-cell {
   grid-column: var(--col, auto);
   grid-row: 1;
   display: flex;
   min-width: 0;
-  border-left: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--color-surface2);
+  overflow: hidden;
 }
 .sx-cell-body {
   position: relative;
@@ -170,7 +180,7 @@
   box-shadow: inset 2px 0 0 var(--b);
 }
 a.sx-cell-body:hover {
-  background: var(--color-surface2);
+  background: var(--color-surface3);
   text-decoration: none;
 }
 a.sx-cell-body:focus-visible {
@@ -185,6 +195,15 @@ a.sx-cell-body:focus-visible {
 }
 .sx-slots[data-figures="false"] {
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+}
+/* Practice: header, position, best / run, fall-off. Qualifying: header, position / lap 1, lap 2. */
+.sx-cell[data-kind="practice"] .sx-slots[data-figures="true"] {
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr));
+  max-width: 19rem;
+}
+.sx-cell[data-kind="qualify"] .sx-slots[data-figures="true"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 13rem;
 }
 .sx-slot {
   display: flex;
@@ -213,7 +232,23 @@ a.sx-cell-body:focus-visible {
   line-height: 1.25rem;
   white-space: nowrap;
 }
-.sx-slot.none .sx-v {
+/* Practice and qualifying figures: the preamble, at the secondary size (the owner's 14 px minimum) and colour. */
+.sx-qv {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3125rem;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-display);
+  font-stretch: semi-condensed;
+  font-size: var(--text-compact);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+.sx-slot.none .sx-v,
+.sx-slot.none .sx-qv {
   color: var(--color-text-disabled);
 }
 .sx-phase {
@@ -223,7 +258,8 @@ a.sx-cell-body:focus-visible {
   font-weight: var(--weight-semibold);
 }
 /* The event's fastest lap is marked by weight, never by colour. */
-.sx-v.event-best {
+.sx-v.event-best,
+.sx-qv.event-best {
   font-weight: 700;
 }
 .sx-p.gain {
@@ -236,11 +272,13 @@ a.sx-cell-body:focus-visible {
   color: var(--race-caution);
 }
 .sx-p.sep,
-.sx-p.unit {
+.sx-p.unit,
+.sx-qp.unit {
   color: var(--color-text-muted);
   font-weight: var(--weight-regular);
 }
-.sx-p.unit {
+.sx-p.unit,
+.sx-qp.unit {
   font-family: var(--font-ui);
   font-size: var(--text-compact);
 }
@@ -298,11 +336,10 @@ a.sx-cell-body:focus-visible {
   .sx-id-title {
     flex: 0 1 auto;
   }
-  .sx-cells {
-    border-top: 1px solid var(--color-border-subtle);
-  }
-  .sx-cell:first-child {
-    border-left: 0;
+  /* The divider moves under the identity line. */
+  .sx-id {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border-subtle);
   }
 }
 
@@ -310,15 +347,12 @@ a.sx-cell-body:focus-visible {
 @container (max-width: 40rem) {
   .sx-cells {
     grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+    padding: var(--space-2);
   }
   .sx-cell {
     grid-column: 1;
     grid-row: auto;
-    border-left: 0;
-    border-top: 1px solid var(--color-border-subtle);
-  }
-  .sx-cell:first-child {
-    border-top: 0;
   }
   .sx-id {
     flex-direction: column;

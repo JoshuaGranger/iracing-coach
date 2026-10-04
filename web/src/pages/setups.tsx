@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Schemas, api, paths } from "../core/api";
 import { formatDate, formatDateTime } from "../core/format";
 import { savePrefs, usePrefs } from "../core/prefs";
+import { useLibraryChoice } from "../core/library";
 import { useDebounced, useResource } from "../core/resource";
 import { href } from "../core/router";
 import { readJson, writeJson } from "../core/store";
 import { Chip, Empty, ErrorLine, Loading, Notice, Stripe } from "../ui/kit";
 import { FilterBar, type FilterControl } from "../ui/filter-bar";
-import { FilterChip, MultiSelect } from "../ui/multi-select";
+import { MultiSelect } from "../ui/multi-select";
 import { Segmented } from "../ui/segmented";
-import { type CarGroup, type Entry, type RacedFilter, carColors, groupLibrary, racedCountOf } from "../setups/library";
+import { type CarGroup, type Entry, type RacedFilter, carColors, carsWithSetups, groupLibrary, racedCountOf } from "../setups/library";
 import { Chevron, RacedMark } from "../setups/glyphs";
 import {
+  FIRST_ROWS,
   MORE_ROWS,
   type SetupSelection,
   activeCount,
@@ -102,22 +104,45 @@ function Captures({ e, customerId }: { e: Extract<Entry, { kind: "captures" }>; 
   );
 }
 
-/** A file whose values the library cannot decode: the name, and why there is nothing more. */
+/** A file whose values the library cannot decode: the name and the constraint tag. */
 function FileEntry({ e }: { e: Extract<Entry, { kind: "file" }> }) {
   return (
     <li class="s-entry unknown" data-entry="file">
       <div class="s-row s-grid">
         <span class="s-name">
           <span class="s-title">{e.name}</span>
-          <Chip variant="constraint" title="The file's values are not decoded">
-            No values
-          </Chip>
+          <Chip variant="constraint">No values</Chip>
         </span>
         <span />
         <span />
       </div>
     </li>
   );
+}
+
+/**
+ * The height of the first ten rows of a car section, in px: the sum of their main rows and the lines between them. A row's own
+ * height follows the width (a phone wraps the date under the name), so it is measured, not assumed. Null until measured, or while
+ * the section is hidden. Opening a capture stack inside a row changes the section's content, never this height.
+ */
+function useTenRowHeight(region: { current: HTMLDivElement | null }, active: boolean): number | null {
+  const [px, setPx] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = region.current;
+    if (!el || !active) return undefined;
+    const measure = () => {
+      const rows = [...el.querySelectorAll<HTMLElement>(":scope > .s-list > .s-entry > .s-row")].slice(0, FIRST_ROWS);
+      if (rows.length < FIRST_ROWS) return;
+      const h = rows.reduce((sum, r) => sum + r.getBoundingClientRect().height, 0) + (FIRST_ROWS - 1);
+      if (h > 0) setPx((p) => (p !== null && Math.abs(p - h) < 0.5 ? p : Math.ceil(h)));
+    };
+    measure();
+    if (typeof ResizeObserver !== "function") return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [active]);
+  return px;
 }
 
 function CarSection({
@@ -137,6 +162,9 @@ function CarSection({
 }) {
   const id = `car-${g.carPath.replace(/[^A-Za-z0-9]+/g, "-")}`;
   const rest = g.entries.length - shown;
+  const scrolls = g.entries.length > FIRST_ROWS;
+  const region = useRef<HTMLDivElement>(null);
+  const cap = useTenRowHeight(region, scrolls && !collapsed);
   return (
     <section class="s-car" style={`--car:${g.color}`} aria-label={g.carName} data-collapsed={collapsed ? "true" : "false"}>
       <h2 class="s-car-head">
@@ -151,16 +179,25 @@ function CarSection({
         </button>
       </h2>
       <div id={id} hidden={collapsed}>
-        <ul class="s-list">
-          {g.entries.slice(0, shown).map((e) =>
-            e.kind === "setup" ? <SetupEntry key={e.key} e={e} customerId={customerId} /> : e.kind === "captures" ? <Captures key={e.key} e={e} customerId={customerId} /> : <FileEntry key={e.key} e={e} />,
-          )}
-        </ul>
-        {rest > 0 ? (
-          <button type="button" class="pill s-more" data-remaining={rest} onClick={onMore}>
-            Show {MORE_ROWS} more
-          </button>
-        ) : null}
+        {/* Past ten rows the section keeps its ten-row height and scrolls inside; the page takes over at the region's ends. */}
+        <div
+          class="s-scroll"
+          ref={region}
+          data-scroll={scrolls ? "true" : "false"}
+          style={scrolls && cap ? { maxHeight: `${cap}px` } : undefined}
+          {...(scrolls ? { role: "group", "aria-label": `${g.carName} setups`, tabIndex: 0 } : {})}
+        >
+          <ul class="s-list">
+            {g.entries.slice(0, shown).map((e) =>
+              e.kind === "setup" ? <SetupEntry key={e.key} e={e} customerId={customerId} /> : e.kind === "captures" ? <Captures key={e.key} e={e} customerId={customerId} /> : <FileEntry key={e.key} e={e} />,
+            )}
+          </ul>
+          {rest > 0 ? (
+            <button type="button" class="pill s-more" data-remaining={rest} onClick={onMore}>
+              Show {MORE_ROWS} more
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -205,12 +242,14 @@ function useSelection(customerId: number): [SetupSelection, (next: SetupSelectio
 }
 
 export default function SetupsPage({ customerId }: { customerId: number }) {
+  // `lab` only by `?library=lab` in the URL (#34): no control in the page.
+  const library = useLibraryChoice();
   const [sel, setSel] = useSelection(customerId);
-  const { cars, raced } = sel;
+  const raced = sel.raced;
   const text = sel.text;
   const q = useDebounced(text.trim(), 250);
   const options = useResource(paths.carsAndTracks(customerId), () => api.carsAndTracks(customerId));
-  const query = { q: q || undefined, limit: PAGE };
+  const query = { q: q || undefined, limit: PAGE, library };
   const key = paths.setups(customerId, query);
   const first = useResource(key, (signal) => api.setups(customerId, query, { signal }));
   const [more, setMore] = useState<{ setups: Setup[]; cursor: string | null; pages: number } | null>(null);
@@ -239,10 +278,23 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
     [options.data, setups],
   );
   const all = useMemo(() => groupLibrary(setups, files, colors), [setups, files, colors]);
+  // The Car dropdown offers the cars the setup library holds (the setups response, never the sessions' cars), and a name search
+  // does not shrink it: it keeps the list of the unsearched library for this driver and library.
+  const offeredCars = useRef<{ at: string; cars: ReturnType<typeof carsWithSetups> } | null>(null);
+  const here = `${customerId}|${library}`;
+  const present = carsWithSetups(all);
+  if (first.data && !q) offeredCars.current = { at: here, cars: present };
+  const offered = offeredCars.current?.at === here ? offeredCars.current.cars : present;
+  const carOptions = offered.map((c) => ({ key: c.carPath, label: c.carName, count: c.setups, mark: <Stripe color={c.color} /> }));
+  // A saved car the library no longer holds is not a filter: it could not be cleared from a list that does not show it.
+  const cars = useMemo(() => {
+    if (offered.length === 0) return sel.cars;
+    const known = new Set(offered.map((c) => c.carPath.toLowerCase()));
+    return sel.cars.filter((c) => known.has(c.toLowerCase()));
+  }, [sel.cars, offered]);
+  const effective: SetupSelection = { ...sel, cars };
   const groups = useMemo(() => groupLibrary(setups, files, colors, { cars: new Set(cars), raced }), [setups, files, colors, cars, raced]);
-  const carOptions = all.map((g) => ({ key: g.carPath, label: g.carName, count: g.setups, mark: <Stripe color={g.color} /> }));
-  const filtering = !isEmptySelection(sel);
-  const nameOf = (path: string) => all.find((g) => g.carPath === path)?.carName ?? path;
+  const filtering = !isEmptySelection(effective);
 
   // A car header sticks under the app bar, whatever height the bar wraps to.
   const root = useRef<HTMLDivElement>(null);
@@ -293,16 +345,8 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
           </>
         }
         controls={controls}
-        activeCount={activeCount(sel)}
-        onClear={() => setSel(emptySelection())}
-      >
-        {cars.length > 0
-          ? cars.map((c) => {
-              const color = colors.get(c.toLowerCase());
-              return <FilterChip key={c} label={nameOf(c)} color={color} mark={<Stripe color={color ?? "var(--color-text-muted)"} />} onRemove={() => setSel({ ...sel, cars: cars.filter((x) => x !== c) })} />;
-            })
-          : null}
-      </FilterBar>
+        activeCount={activeCount(effective)}
+      />
       {first.error && !first.data ? <ErrorLine error={first.error} /> : null}
       {first.error && first.data ? <Notice tone="warn">Could not refresh: {first.error.message}</Notice> : null}
       {!first.data && !first.error ? <Loading what="setups" /> : null}

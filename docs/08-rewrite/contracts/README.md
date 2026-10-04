@@ -35,6 +35,24 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 Each contract change adds one entry here in the same commit; review per the rule at the top.
 
+### 2026-10-04, R4: per-section clean-lap times (web round 3 task R4; additive optional field, no review needed; one new projection version)
+
+Reason: backlog #48 and #49 and `web-round-2-plan.md` "Round 3": Sections lists, per detected section, the three fastest and three slowest clean laps by that section's time around the section's median. The investigation view carried section times only for a comparison's two passes. Projection version 2 becomes 3 so stored analyses are re-projected (the server queues the projection on the first request for a stale view).
+
+- `api.openapi.yaml`: `InvestigationView.section_laps` (`SectionLaps`, `SectionLap`): per `race_investigation.sections.sections[]` entry, `clean_lap_count`, `median_s`, `fastest` and `slowest` (up to three each, never sharing a lap) with `lap`, `section_s`, `delta_s`. A lap's section time is the backend's own `race_inspection.section_elapsed`, ported line for line into `crates/coach-views/src/section_laps.rs`; clean is the backend's `race_investigation.laps[].eligible`. Optional: views projected before version 3 lack it.
+- `crate-api.md` section 5: `PROJECTION_VERSION` 3; the projected field.
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+- Proof: `cargo test -p coach-views` (`section_laps::tests`: 180 vectors from the Python function, withheld cases included, exact to 3 decimals; `tests/section_laps.rs`: ranking, the screen, few laps, no laps, bad bounds, schema validation).
+
+### 2026-10-04, R1: Sessions row figures for practice and qualifying (web round 3 task R1; additive optional fields, no review needed)
+
+Reason: backlog #33 and `web-round-2-plan.md` "Round 3": the practice cell shows its longest run without a reset to the pits or garage and the pace lost over it, the qualifying cell its first two timed laps.
+
+- `api.openapi.yaml`: `SessionOverview.longest_run_laps` (laps of the backend run with the most laps, from `race.json` `laps[].run_number`), `SessionOverview.longest_run_pace_loss_s` (last minus first `lap_time_s` of that run's green laps the backend's screen kept, `race_investigation.laps[].eligible`; null under three), `SessionOverview.timed_lap_1_s` and `timed_lap_2_s` (the first two complete laps with a time, under 1 s on pit road, neither pit-in nor pit-out). All four always sent, null without the evidence; read from the stored views, nothing screened again.
+- Server, no schema change: overviews stored without these keys gain them at start, in the background, from the projected views (`server/src/overview.rs`, the round-2 refresh widened).
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+- Proof: `cargo test -p coach-server` (`tests/round3_fields.rs`; unit tests in `src/overview.rs`, one on `test-data/race-investigation.json`), `pnpm -C web typecheck`.
+
 ### 2026-10-04, C2: server fields for web round 2 (web round 2 task C2; additive optional fields, no review needed)
 
 Reason: `web-round-2-plan.md` Sessions (green pace with its supported trend in each phase cell), Setups (`⚑ Raced N×`, Versions with the changed-parameter count and a unit per changed key) and the filter rule (several cars on the Setups page). The web read these as provisional fields; the server now sends them.

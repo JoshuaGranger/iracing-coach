@@ -5,27 +5,10 @@ import { createTraceData, lapProgressEnds, progressColors } from "../geometry/tr
 import { decodeCcol } from "../ccol";
 import { parseInvestigation, type Comparison } from "../investigation-model";
 import { runColor } from "../format";
-import {
-  brackets,
-  comparisonLaps,
-  comparisonName,
-  direction,
-  dotDomain,
-  groupMap,
-  groupRows,
-  lapRanges,
-  niceMax,
-  noResultLine,
-  pairedMetrics,
-  placeLabels,
-  rangesText,
-  screenedText,
-  sectionTone,
-} from "../ui/comparison-model";
+import { comparisonLaps, comparisonName, direction, groupMap, lapRanges, niceMax, noResultLine, pairedMetrics, rangesText, sectionTone } from "../ui/comparison-model";
 import { lapChipStatus } from "../ui/LapRail";
-import { chartLaps, lapLabel } from "../ui/RaceView";
-import { fitLabel, fitSegment, runCards, sparkPath } from "../ui/runs-model";
-import { PIT_UNEXTRACTED } from "../ui/PitPictogram";
+import { chartLaps, fitStatus, lapLabel } from "../ui/RaceView";
+import { fitLabel, fitSegment, runCards, sparkGeometry } from "../ui/runs-model";
 import type { TraceLapData } from "../types";
 
 const analysis = buildRound2Analysis();
@@ -49,47 +32,20 @@ describe("comparison names and brackets (round 2, #28d, #28e)", () => {
     expect(comparisonName(free)).toBe("L31–35 → L61–65");
   });
 
-  it("draws two labelled brackets, one piece per contiguous range, in the group's run colour", () => {
-    const [earlier, later] = brackets(byId(ROUND2_COMPARISONS.window));
-    expect(earlier).toMatchObject({ role: "earlier", label: "Earlier L61–62, 64–65", run: 3, pieces: [[61, 62], [64, 65]] });
-    expect(later).toMatchObject({ role: "later", label: "Later L77–81", pieces: [[77, 81]] });
-    expect(brackets(null)).toEqual([]);
+  it("marks each group's laps for the Traces rail", () => {
     expect(groupMap(byId(ROUND2_COMPARISONS.runs)).get(33)).toBe("earlier");
     expect(groupMap(byId(ROUND2_COMPARISONS.runs)).get(63)).toBe("later");
     expect(groupMap(byId(ROUND2_COMPARISONS.runs)).has(40)).toBe(false);
   });
 });
 
-describe("bracket labels on a narrow chart", () => {
-  it("stay inside the plot and drop to a second line instead of overlapping", () => {
-    expect(placeLabels([100, 400], [80, 80], 0, 500)).toEqual([{ x: 100, line: 0 }, { x: 400, line: 0 }]);
-    expect(placeLabels([300, 340], [150, 90], 0, 380)).toEqual([{ x: 300, line: 0 }, { x: 335, line: 1 }]);
-    expect(placeLabels([10], [100], 0, 300)).toEqual([{ x: 50, line: 0 }]);
-  });
-});
-
-describe("the comparison picture reads the backend, draws, and computes nothing", () => {
+describe("the Traces comparison strip reads the backend and computes nothing", () => {
   it("gives the backend's signed difference its direction; no pace result is one line", () => {
     expect(direction(byId(ROUND2_COMPARISONS.runs))).toBe("slower");
     expect(direction(byId(ROUND2_COMPARISONS.window))).toBe("faster");
     expect(direction(byId(ROUND2_COMPARISONS.none))).toBeNull();
     expect(noResultLine(byId(ROUND2_COMPARISONS.none))).toBe("No pace result · every lap screened · close traffic");
     expect(noResultLine(byId(ROUND2_COMPARISONS.none))).not.toMatch(/\./);
-  });
-
-  it("puts each group's laps on one lap-time scale with the backend's median and green/total counts", () => {
-    const rows = groupRows(byId(ROUND2_COMPARISONS.window), inv.laps);
-    expect(rows.map((row) => row.role)).toEqual(["earlier", "later"]);
-    expect(rows[0]!.dots.map((dot) => dot.lap)).toEqual([61, 62, 64, 65]);
-    expect(rows[1]!.dots.find((dot) => dot.lap === 79)).toMatchObject({ used: false, reasons: ["close_traffic"] });
-    expect(rows[1]!.dots.filter((dot) => dot.used).length).toBe(4);
-    expect(rows[1]!.green).toBe(5);
-    expect(rows[1]!.total).toBe(5);
-    const [lo, hi] = dotDomain(rows)!;
-    for (const row of rows) {
-      for (const dot of row.dots) expect(dot.lapTimeS).toBeGreaterThan(lo);
-      expect(row.cohort.medianLapS!).toBeLessThan(hi);
-    }
   });
 
   it("pairs starting fuel, throttle and close traffic, each on its own scale from zero", () => {
@@ -117,14 +73,14 @@ describe("the comparison picture reads the backend, draws, and computes nothing"
 describe("Not used in pace fit (round 2, #28a)", () => {
   it("names the fit and the backend's reason; never Excl", () => {
     const lap = inv.laps.find((item) => item.lap === 10)!;
-    expect(screenedText(lap)).toBe("Not used in Run 1 pace fit · close traffic");
-    expect(lapLabel(lap)).toContain("Not used in Run 1 pace fit · close traffic");
-    expect(screenedText(inv.laps.find((item) => item.lap === 12)!)).toBeNull();
+    expect(fitStatus(lap)).toBe("Not in pace fit · close traffic");
+    expect(lapLabel(lap)).toBe(`Lap 10 · ${lap.lapTimeS!.toFixed(3)} s · P4 · Run 1 · 10.0 green · Not in pace fit · close traffic`);
+    expect(fitStatus(inv.laps.find((item) => item.lap === 12)!)).toBeNull();
     const meta = (analysis.catalog.laps as TraceLapData[]).find((item) => item.lap === 10)!;
     expect(lapChipStatus(meta)).toEqual({ kind: "screened", text: "Not used in Run 1 pace fit · close traffic" });
     expect(lapChipStatus({ ...meta, complete: false })?.kind).toBe("partial");
     expect(lapChipStatus({ ...meta, comparison_eligible: true, exclusion_reasons: [] })).toBeNull();
-    for (const text of [screenedText(lap), lapLabel(lap), lapChipStatus(meta)!.text]) expect(text).not.toMatch(/excl/i);
+    for (const text of [fitStatus(lap)!, lapLabel(lap), lapChipStatus(meta)!.text]) expect(text).not.toMatch(/excl/i);
   });
 
   it("plots caution laps as their own dots and keeps them off the pace dots", () => {
@@ -161,7 +117,16 @@ describe("runs: the fit confined to its span, run cards (round 2, #28f)", () => 
     expect(cards[0]!.tireLaps).toBe("27");
     expect(cards[0]!.screened).toBeGreaterThanOrEqual(2);
     expect(runCards(inv, [])[0]).toMatchObject({ fuelBand: null, tireLaps: null });
-    expect(sparkPath(cards[0]!.trend, 96, 24)).toMatch(/^M/);
+    const spark = sparkGeometry(cards[0]!, 96, 24);
+    expect(spark.dots.length).toBe(cards[0]!.points.length);
+    expect(spark.fit).not.toBeNull();
+    for (const dot of spark.dots) {
+      expect(dot.cx).toBeGreaterThanOrEqual(0);
+      expect(dot.cx).toBeLessThanOrEqual(96);
+      expect(dot.cy).toBeGreaterThanOrEqual(0);
+      expect(dot.cy).toBeLessThanOrEqual(24);
+    }
+    expect(sparkGeometry(cards[2]!, 96, 24).fit).toBeNull();
   });
 
   it("colours runs from the ordered palette", () => {
@@ -190,11 +155,5 @@ describe("Traces: lap colour is race progress over the full phase (round 2, #28h
   it("shows the endpoints of the full phase", () => {
     const data = createTraceData(analysis.catalog, decodeCcol(analysis.ccol));
     expect(lapProgressEnds(data)).toEqual({ first: { lap: 1, color: data.colors.get(1) }, last: { lap: 82, color: data.colors.get(82) } });
-  });
-});
-
-describe("pit stops: unreported repair and penalty fields", () => {
-  it("say so once, in words", () => {
-    expect(PIT_UNEXTRACTED).toBe("Repairs and penalties: not extracted");
   });
 });

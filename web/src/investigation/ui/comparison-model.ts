@@ -1,11 +1,23 @@
 import { reasonsText, signedText } from "../format";
-import { hasPaceResult, type Cohort, type Comparison, type Corner, type Investigation, type InvestigationLap } from "../investigation-model";
+import { hasPaceResult, type Action, type Cohort, type Comparison, type Corner, type Investigation, type InvestigationLap } from "../investigation-model";
 
 /**
- * The comparison as a picture (web round 2, Investigation): names from the groups, brackets split around omitted laps, the lap
- * dots of each group, the paired input bars and the one-line no-result. Everything is read from the backend's comparison and laps;
- * nothing here recomputes a median, a delta or a screening.
+ * The backend's comparisons as Traces and Sections show them (round 3: the comparison machinery left the Race tab, #43 #45): names
+ * from the groups, the rail's group marks, the paired input bars and the one-line no-result. Everything is read from the backend's
+ * comparison and laps; nothing here recomputes a median, a delta or a screening.
  */
+
+/**
+ * The "Inspect section" entry that left the Race tab (#45), for the Sections tab to offer: the selected comparison's lead action
+ * (lowest priority number), labelled `Inspect section B` when it names a section, else `Open in Traces`; null without an action.
+ * The Race tab used to run it as: a section id selects that section on Sections; otherwise Traces opens the action's laps over
+ * `startPct`–`endPct` with its `signalKeys`.
+ */
+export function inspectSectionEntry(c: Comparison | null): { label: string; sectionId: string | null; action: Action } | null {
+  const lead = c?.actions.slice().sort((a, b) => a.priority - b.priority)[0] ?? null;
+  if (!lead) return null;
+  return { label: lead.sectionId ? `Inspect section ${lead.sectionId}` : "Open in Traces", sectionId: lead.sectionId, action: lead };
+}
 
 export type GroupRole = "earlier" | "later";
 
@@ -69,38 +81,6 @@ export function groupMap(c: Comparison | null): Map<number, GroupRole> {
   return out;
 }
 
-export interface Bracket {
-  role: GroupRole;
-  label: string;
-  run: number | null;
-  /** One piece per contiguous range: the bracket is split around omitted laps. */
-  pieces: [number, number][];
-}
-
-/** The two labelled brackets under the lap groups: `Earlier L61–65`, `Later L85–89`, each split around omitted laps. */
-export function brackets(c: Comparison | null): Bracket[] {
-  if (!c) return [];
-  return ([["earlier", c.baseline], ["later", c.compared]] as const)
-    .filter(([, cohort]) => cohort.lapNumbers.length > 0)
-    .map(([role, cohort]) => ({ role, label: `${role === "earlier" ? "Earlier" : "Later"} ${rangesText(cohort.lapNumbers)}`, run: cohort.runNumber, pieces: lapRanges(cohort.lapNumbers) }));
-}
-
-/**
- * Places bracket labels under a chart: each centred on its group, kept inside [left, right], and moved to a second line when it would
- * overlap the label before it (a narrow chart). `widths` are the labels' estimated widths in the same units.
- */
-export function placeLabels(centres: readonly number[], widths: readonly number[], left: number, right: number, gap = 8): { x: number; line: 0 | 1 }[] {
-  const out: { x: number; line: 0 | 1 }[] = [];
-  centres.forEach((centre, index) => {
-    const half = (widths[index] ?? 0) / 2;
-    const x = Math.min(Math.max(centre, left + half), Math.max(left + half, right - half));
-    const previous = out[index - 1];
-    const overlaps = previous !== undefined && previous.line === 0 && x - half < previous.x + (widths[index - 1] ?? 0) / 2 + gap;
-    out.push({ x, line: overlaps ? 1 : 0 });
-  });
-  return out;
-}
-
 /** `slower`, `faster` or `equal` for the later group, from the backend's signed difference; null without a pace result. */
 export function direction(c: Comparison): "slower" | "faster" | "equal" | null {
   if (!hasPaceResult(c)) return null;
@@ -117,50 +97,6 @@ export function noResultLine(c: Comparison): string {
 /** The signed difference as the picture prints it: `+0.104`. */
 export function deltaText(c: Comparison): string {
   return hasPaceResult(c) ? signedText(c.deltaS) : "—";
-}
-
-export interface GroupDot {
-  lap: number;
-  lapTimeS: number;
-  /** Used in the pace comparison (the backend's eligible laps of the group); a hollow dot otherwise. */
-  used: boolean;
-  reasons: string[];
-}
-
-export interface GroupRow {
-  role: GroupRole;
-  cohort: Cohort;
-  dots: GroupDot[];
-  green: number;
-  total: number;
-}
-
-/** Each group's laps as dots on the lap-time scale, with green over total counts; lap times are the backend's. */
-export function groupRows(c: Comparison, laps: readonly InvestigationLap[]): GroupRow[] {
-  const byLap = new Map(laps.map((lap) => [lap.lap, lap] as const));
-  return ([["earlier", c.baseline], ["later", c.compared]] as const).map(([role, cohort]) => {
-    const excluded = new Map(cohort.excludedLaps.map((lap) => [lap.lap, lap.reasons] as const));
-    const eligible = new Set(cohort.eligibleLapNumbers);
-    const dots: GroupDot[] = [];
-    let green = 0;
-    for (const number of cohort.lapNumbers) {
-      const lap = byLap.get(number);
-      if (lap?.flagState === "green") green += 1;
-      if (!lap || lap.lapTimeS === null || !(lap.lapTimeS > 0)) continue;
-      dots.push({ lap: number, lapTimeS: lap.lapTimeS, used: eligible.has(number), reasons: excluded.get(number) ?? (eligible.has(number) ? [] : lap.exclusionReasons) });
-    }
-    return { role, cohort, dots, green, total: cohort.lapCount };
-  });
-}
-
-/** One shared lap-time domain for both rows: every dot and both medians, padded. */
-export function dotDomain(rows: readonly GroupRow[]): [number, number] | null {
-  const values = rows.flatMap((row) => [...row.dots.map((dot) => dot.lapTimeS), ...(row.cohort.medianLapS !== null ? [row.cohort.medianLapS] : [])]);
-  if (values.length === 0) return null;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const pad = Math.max(0.02, (max - min) * 0.08);
-  return [min - pad, max + pad];
 }
 
 export interface PairedMetric {
@@ -200,16 +136,6 @@ export function pairedMetrics(c: Comparison): PairedMetric[] {
   const traffic = metric("traffic");
   if (traffic && (traffic.baseline !== null || traffic.compared !== null)) out.push({ key: "traffic", label: "Close traffic", short: "Traffic", unit: "%", earlier: traffic.baseline, later: traffic.compared, max: 100, digits: 0 });
   return out;
-}
-
-/**
- * Why a lap is not in its run's pace fit, naming the fit: `Not used in Run 1 pace fit · close traffic`. Null for a lap the fit used.
- */
-export function screenedText(lap: Pick<InvestigationLap, "eligible" | "exclusionReasons" | "runNumber">): string | null {
-  if (lap.eligible) return null;
-  const fit = lap.runNumber !== null ? `Run ${lap.runNumber} pace fit` : "pace fit";
-  const why = reasonsText(lap.exclusionReasons.filter((code) => code !== "partial"));
-  return `Not used in ${fit}${why ? ` · ${why}` : ""}`;
 }
 
 /** Gain or loss for a section's time against the selected comparison; neutral when the comparison has no pace result or the section too few passes. */

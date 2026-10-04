@@ -1,0 +1,67 @@
+
+Running 63 tests using 1 worker
+
+[1/63] [app] › e2e\app\setups.spec.ts:86:5 › desktop 1440x900 › a row is the name, a raced mark with its count only when the server gave one, and the last date
+[2/63] [app] › e2e\app\setups.spec.ts:116:5 › desktop 1440x900 › a raced setup the server gave no count for says Raced and no number
+[3/63] [app] › e2e\app\setups.spec.ts:125:5 › desktop 1440x900 › a car with more than ten setups shows ten rows and scrolls inside at that height; Show 10 more is at the bottom of the region and the page does not grow
+[4/63] [app] › e2e\app\setups.spec.ts:170:5 › desktop 1440x900 › the inner scroll is native: it moves with the pointer over it and hands scrolling to the page at its end
+[5/63] [app] › e2e\app\setups.spec.ts:195:5 › desktop 1440x900 › a car section collapses and stays collapsed on this device; the revealed rows survive the collapse
+[6/63] [app] › e2e\app\setups.spec.ts:225:5 › desktop 1440x900 › the car header sticks under the app bar while its section is on screen and leaves with the section
+[7/63] [app] › e2e\app\setups.spec.ts:255:5 › desktop 1440x900 › the toolbar is Car, Name and All, Raced, Not raced in the heading, Find a baseline stays, Progressive tuning is gone
+[8/63] [app] › e2e\app\setups.spec.ts:284:5 › desktop 1440x900 › filters by raced and by name through the toolbar, and the selection survives a visit to a setup and Back
+[9/63] [app] › e2e\app\setups.spec.ts:321:5 › desktop 1440x900 › the car filter is a searchable multi-select; the button carries the car and clears from inside its list; no chips
+[10/63] [app] › e2e\app\setups.spec.ts:357:5 › desktop 1440x900 › the heading does not move when a filter is set or cleared
+[11/63] [app] › e2e\app\setups.spec.ts:385:5 › desktop 1440x900 › the Car dropdown lists the cars that have setups, not cars that only have files, and a name search does not shrink it
+[12/63] [app] › e2e\app\setups.spec.ts:409:5 › desktop 1440x900 › no Library control; the lab library only by ?library=lab in the URL
+[13/63] [app] › e2e\app\setups.spec.ts:427:5 › desktop 1440x900 › detail: the name once, raced count and first seen, no source or file-name chip, the file lower down, one tuning entry
+[14/63] [app] › e2e\app\setups.spec.ts:455:5 › desktop 1440x900 › detail: a raced setup without a count says Raced alone; a setup with no decoded values says No values
+[15/63] [app] › e2e\app\setups.spec.ts:470:5 › desktop 1440x900 › detail: Versions is collapsed, lists versions by date with changed counts, and a version opens to its changed keys and runs
+[16/63] [app] › e2e\app\setups.spec.ts:519:5 › desktop 1440x900 › detail groups values, keeps readouts and run readings apart, and compares with changed and unknown first
+[17/63] [app] › e2e\app\setups.spec.ts:563:5 › desktop 1440x900 › compare offers only setups that compare, and gives the others a reason
+[18/63] [app] › e2e\app\setups.spec.ts:577:5 › desktop 1440x900 › a note on a setup is queued, saved, and listed
+[19/63] [app] › e2e\app\setups.spec.ts:593:5 › desktop 1440x900 › tune this setup opens tuning for the recording that used it
+[20/63] [app] › e2e\app\setups.spec.ts:605:5 › desktop 1440x900 › find a baseline: suggestions only, the car folder is sent, then a starting point with its cautions
+[21/63] [app] › e2e\app\setups.spec.ts:633:5 › desktop 1440x900 › find a baseline: no matching setup file is not a starting point
+[22/63] [app] › e2e\app\setups.spec.ts:86:5 › tablet 1024x768 › a row is the name, a raced mark with its count only when the server gave one, and the last date
+[23/63] [app] › e2e\app\setups.spec.ts:116:5 › tablet 1024x768 › a raced setup the server gave no count for says Raced and no number
+[24/63] [app] › e2e\app\setups.spec.ts:125:5 › tablet 1024x768 › a car with more than ten setups shows ten rows and scrolls inside at that height; Show 10 more is at the bottom of the region and the page does not grow
+[25/63] [app] › e2e\app\setups.spec.ts:170:5 › tablet 1024x768 › the inner scroll is native: it moves with the pointer over it and hands scrolling to the page at its end
+[26/63] [app] › e2e\app\setups.spec.ts:195:5 › tablet 1024x768 › a car section collapses and stays collapsed on this device; the revealed rows survive the collapse
+[27/63] [app] › e2e\app\setups.spec.ts:225:5 › tablet 1024x768 › the car header sticks under the app bar while its section is on screen and leaves with the section
+[28/63] [app] › e2e\app\setups.spec.ts:255:5 › tablet 1024x768 › the toolbar is Car, Name and All, Raced, Not raced in the heading, Find a baseline stays, Progressive tuning is gone
+[29/63] [app] › e2e\app\setups.spec.ts:284:5 › tablet 1024x768 › filters by raced and by name through the toolbar, and the selection survives a visit to a setup and Back
+[30/63] [app] › e2e\app\setups.spec.ts:321:5 › tablet 1024x768 › the car filter is a searchable multi-select; the button carries the car and clears from inside its list; no chips
+[31/63] [app] › e2e\app\setups.spec.ts:357:5 › tablet 1024x768 › the heading does not move when a filter is set or cleared
+[32/63] [app] › e2e\app\setups.spec.ts:385:5 › tablet 1024x768 › the Car dropdown lists the cars that have setups, not cars that only have files, and a name search does not shrink it
+[33/63] [app] › e2e\app\setups.spec.ts:409:5 › tablet 1024x768 › no Library control; the lab library only by ?library=lab in the URL
+[34/63] [app] › e2e\app\setups.spec.ts:427:5 › tablet 1024x768 › detail: the name once, raced count and first seen, no source or file-name chip, the file lower down, one tuning entry
+[35/63] [app] › e2e\app\setups.spec.ts:455:5 › tablet 1024x768 › detail: a raced setup without a count says Raced alone; a setup with no decoded values says No values
+[36/63] [app] › e2e\app\setups.spec.ts:470:5 › tablet 1024x768 › detail: Versions is collapsed, lists versions by date with changed counts, and a version opens to its changed keys and runs
+[37/63] [app] › e2e\app\setups.spec.ts:519:5 › tablet 1024x768 › detail groups values, keeps readouts and run readings apart, and compares with changed and unknown first
+[38/63] [app] › e2e\app\setups.spec.ts:563:5 › tablet 1024x768 › compare offers only setups that compare, and gives the others a reason
+[39/63] [app] › e2e\app\setups.spec.ts:577:5 › tablet 1024x768 › a note on a setup is queued, saved, and listed
+[40/63] [app] › e2e\app\setups.spec.ts:593:5 › tablet 1024x768 › tune this setup opens tuning for the recording that used it
+[41/63] [app] › e2e\app\setups.spec.ts:605:5 › tablet 1024x768 › find a baseline: suggestions only, the car folder is sent, then a starting point with its cautions
+[42/63] [app] › e2e\app\setups.spec.ts:633:5 › tablet 1024x768 › find a baseline: no matching setup file is not a starting point
+[43/63] [app] › e2e\app\setups.spec.ts:86:5 › phone 390x844 › a row is the name, a raced mark with its count only when the server gave one, and the last date
+[44/63] [app] › e2e\app\setups.spec.ts:116:5 › phone 390x844 › a raced setup the server gave no count for says Raced and no number
+[45/63] [app] › e2e\app\setups.spec.ts:125:5 › phone 390x844 › a car with more than ten setups shows ten rows and scrolls inside at that height; Show 10 more is at the bottom of the region and the page does not grow
+[46/63] [app] › e2e\app\setups.spec.ts:170:5 › phone 390x844 › the inner scroll is native: it moves with the pointer over it and hands scrolling to the page at its end
+[47/63] [app] › e2e\app\setups.spec.ts:195:5 › phone 390x844 › a car section collapses and stays collapsed on this device; the revealed rows survive the collapse
+[48/63] [app] › e2e\app\setups.spec.ts:225:5 › phone 390x844 › the car header sticks under the app bar while its section is on screen and leaves with the section
+[49/63] [app] › e2e\app\setups.spec.ts:255:5 › phone 390x844 › the toolbar is Car, Name and All, Raced, Not raced in the heading, Find a baseline stays, Progressive tuning is gone
+[50/63] [app] › e2e\app\setups.spec.ts:284:5 › phone 390x844 › filters by raced and by name through the toolbar, and the selection survives a visit to a setup and Back
+[51/63] [app] › e2e\app\setups.spec.ts:321:5 › phone 390x844 › the car filter is a searchable multi-select; the button carries the car and clears from inside its list; no chips
+[52/63] [app] › e2e\app\setups.spec.ts:357:5 › phone 390x844 › the heading does not move when a filter is set or cleared
+[53/63] [app] › e2e\app\setups.spec.ts:385:5 › phone 390x844 › the Car dropdown lists the cars that have setups, not cars that only have files, and a name search does not shrink it
+[54/63] [app] › e2e\app\setups.spec.ts:409:5 › phone 390x844 › no Library control; the lab library only by ?library=lab in the URL
+[55/63] [app] › e2e\app\setups.spec.ts:427:5 › phone 390x844 › detail: the name once, raced count and first seen, no source or file-name chip, the file lower down, one tuning entry
+[56/63] [app] › e2e\app\setups.spec.ts:455:5 › phone 390x844 › detail: a raced setup without a count says Raced alone; a setup with no decoded values says No values
+[57/63] [app] › e2e\app\setups.spec.ts:470:5 › phone 390x844 › detail: Versions is collapsed, lists versions by date with changed counts, and a version opens to its changed keys and runs
+[58/63] [app] › e2e\app\setups.spec.ts:519:5 › phone 390x844 › detail groups values, keeps readouts and run readings apart, and compares with changed and unknown first
+[59/63] [app] › e2e\app\setups.spec.ts:563:5 › phone 390x844 › compare offers only setups that compare, and gives the others a reason
+[60/63] [app] › e2e\app\setups.spec.ts:577:5 › phone 390x844 › a note on a setup is queued, saved, and listed
+[61/63] [app] › e2e\app\setups.spec.ts:593:5 › phone 390x844 › tune this setup opens tuning for the recording that used it
+[62/63] [app] › e2e\app\setups.spec.ts:605:5 › phone 390x844 › find a baseline: suggestions only, the car folder is sent, then a starting point with its cautions
+[63/63] [app] › e2e\app\setups.spec.ts:633:5 › phone 390x844 › find a baseline: no matching setup file is not a starting point
+  63 passed (41.1s)

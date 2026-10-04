@@ -44,7 +44,14 @@ function overviewFor(e, phase, state) {
     return { starting_position: start, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: 15.234 + e * 0.1, green_pace_median_s: 15.612 + e * 0.1, fuel_used_gal: 21.6 - e };
   }
   const qualify = phase === "Qualify";
+  const best = qualify ? 15.41 + e * 0.1 - (e === 3 ? 0.4 : 0) : 15.5 + e * 0.1;
+  // Round 3 (#33): practice's longest run without a reset and its first-to-last clean-lap difference (event 5's run kept fewer than
+  // three clean laps: null); qualifying's first two timed laps, lap 2 its best (event 4 recorded one timed lap).
+  const round3 = qualify
+    ? { longest_run_laps: 3, longest_run_pace_loss_s: null, timed_lap_1_s: 15.61 + e * 0.1, timed_lap_2_s: e === 4 ? null : best }
+    : { longest_run_laps: 9 + e, longest_run_pace_loss_s: e === 5 ? null : ([0.21, -0.08, 0.34, 0.05, 0.12][e] ?? 0.1), timed_lap_1_s: 16.02 + e * 0.1, timed_lap_2_s: 15.81 + e * 0.1 };
   return {
+    ...round3,
     final_position: qualify ? 2 + e : 5 + e,
     recorded_laps: 20 + e,
     green_laps_estimated: qualify ? 3 : 20 + e,
@@ -52,7 +59,7 @@ function overviewFor(e, phase, state) {
     pit_stops_detected: qualify ? 0 : 1,
     longest_green_run: qualify ? 3 : 14 + e,
     pace_slope_s_per_lap: qualify ? null : -0.041 + e * 0.02,
-    best_clean_lap_s: qualify ? 15.41 + e * 0.1 - (e === 3 ? 0.4 : 0) : 15.5 + e * 0.1,
+    best_clean_lap_s: best,
     // Median green-lap time: a field the contract does not carry yet (server gap); the Sessions pace slot reads it when it arrives.
     green_pace_median_s: qualify ? 15.52 + e * 0.1 : 15.71 + e * 0.1,
     fuel_used_gal: qualify ? 0.9 : 6.1,

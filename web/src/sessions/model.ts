@@ -347,7 +347,20 @@ export function resultBand(s: Session): ResultBand {
   return c === null || c.gained === 0 ? null : c.gained > 0 ? "gain" : "loss";
 }
 
-const FIGURE_FIELDS = ["green_laps_estimated", "caution_laps_estimated", "best_clean_lap_s", "pace_slope_s_per_lap", "pit_stops_detected", "longest_green_run", "fuel_used_gal", "final_position"] as const;
+const FIGURE_FIELDS = [
+  "green_laps_estimated",
+  "caution_laps_estimated",
+  "best_clean_lap_s",
+  "pace_slope_s_per_lap",
+  "pit_stops_detected",
+  "longest_green_run",
+  "fuel_used_gal",
+  "final_position",
+  "longest_run_laps",
+  "longest_run_pace_loss_s",
+  "timed_lap_1_s",
+  "timed_lap_2_s",
+] as const;
 
 /** Whether the library row has measured figures to show (a session that was never analyzed shows its lap count only). */
 export function hasFigures(s: Session): boolean {
@@ -409,8 +422,22 @@ export function eventPhaseOptions(sessionId: number, sessions: readonly Session[
 
 /* ---- the compact phase cell (web round 2, Sessions) -------------------------------- */
 
-/** The seven labelled slots of a phase cell, in reading order. */
-export type SlotKey = "pos" | "laps" | "best" | "pace" | "stops" | "fuel" | "run";
+/**
+ * The labelled slots of a phase cell, in reading order. A race has seven (`pos` to `run`); practice has position, best, its longest
+ * run and the pace lost over it (`loss`); qualifying has position and its first two timed laps (`lap1`, `lap2`).
+ */
+export type SlotKey = "pos" | "laps" | "best" | "pace" | "stops" | "fuel" | "run" | "loss" | "lap1" | "lap2";
+
+/**
+ * What a phase cell is (backlog #33): the race is the row's subject, practice and qualifying its preamble. A test or a warmup reads
+ * as practice.
+ */
+export type CellKind = "race" | "practice" | "qualify";
+
+export function cellKind(s: Session): CellKind {
+  const code = phaseOf(s.session_type).code;
+  return code === "R" ? "race" : code === "Q" ? "qualify" : "practice";
+}
 
 /**
  * Colour budget of the cell: gain or loss on a supported position change, caution on a caution count above zero, nothing else.
@@ -524,6 +551,56 @@ export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
   return out;
 }
 
+/** Signed seconds to 2 decimals with a true minus: `+0.21`, `−0.08`, `0.00`. */
+export function formatDelta(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return NONE;
+  const r = Math.round(seconds * 100) / 100;
+  if (r === 0) return "0.00";
+  const body = Math.abs(r).toFixed(2);
+  return r > 0 ? `+${body}` : `−${body}`;
+}
+
+function positionSlot(s: Session): Slot {
+  const final = s.overview.final_position;
+  return final == null ? missingSlot("pos", "Pos", "Classification") : { key: "pos", label: "Pos", title: `Classified P${final}`, parts: [{ text: formatPosition(final) }], missing: false };
+}
+
+/** A lap time slot; `eventBest` marks it by weight when it is the event's fastest lap. */
+function lapSlot(key: SlotKey, label: string, title: string, seconds: unknown, eventBest: number | null): Slot {
+  if (!finite(seconds) || seconds <= 0) return missingSlot(key, label, title);
+  const isEventBest = eventBest !== null && seconds === eventBest;
+  return { key, label, title: isEventBest ? `${title}, fastest of the event` : title, parts: [{ text: lapText(seconds) }], missing: false, eventBest: isEventBest || undefined };
+}
+
+/**
+ * Practice (backlog #33): position, fastest lap, the longest run without a reset to the pits or garage (laps) and the pace lost over
+ * it (the backend's last minus first clean lap of that run, `+0.21 s`). No colour: a pace loss is a plain signed figure.
+ */
+export function practiceSlots(s: Session, eventBest: number | null): Slot[] {
+  const o = s.overview;
+  const runLaps = count(o.longest_run_laps);
+  const loss = o.longest_run_pace_loss_s;
+  const lossTitle = "Pace lost over the longest run: its last clean lap minus its first, s";
+  return [
+    positionSlot(s),
+    lapSlot("best", "Best", "Fastest clean lap", bestLap(s), eventBest),
+    runLaps === null ? missingSlot("run", "Run", "Longest run without a reset, laps") : { key: "run", label: "Run", title: "Longest run without a reset, laps", parts: [{ text: String(runLaps) }, { text: "laps", tone: "unit" }], missing: false },
+    finite(loss) ? { key: "loss", label: "Fall-off", title: lossTitle, parts: [{ text: formatDelta(loss) }, { text: "s", tone: "unit" }], missing: false } : missingSlot("loss", "Fall-off", lossTitle),
+  ];
+}
+
+/** Qualifying (backlog #33): position and the first two timed laps. */
+export function qualifySlots(s: Session, eventBest: number | null): Slot[] {
+  const o = s.overview;
+  return [positionSlot(s), lapSlot("lap1", "Lap 1", "First timed lap", o.timed_lap_1_s, eventBest), lapSlot("lap2", "Lap 2", "Second timed lap", o.timed_lap_2_s, eventBest)];
+}
+
+/** The slots of one phase cell by its kind. */
+export function cellSlots(s: Session, eventBest: number | null): Slot[] {
+  const kind = cellKind(s);
+  return kind === "race" ? phaseSlots(s, eventBest) : kind === "qualify" ? qualifySlots(s, eventBest) : practiceSlots(s, eventBest);
+}
+
 /** Coloured figures in one cell: the budget is at most two (one position change, one caution count). */
 export function colouredFigures(slots: readonly Slot[]): number {
   return slots.reduce((n, s) => n + s.parts.filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "caution").length, 0);
@@ -550,8 +627,20 @@ export function phaseLayout(sessions: readonly Session[]): ColumnCode[] {
  * The grid column of each phase of one event under `layout`. An event whose phases are not distinct (two practices) follows running
  * order instead. Returns the columns and how many the row has.
  */
-export function phaseColumns(sessions: readonly Session[], layout: readonly ColumnCode[]): { columns: number[]; count: number } {
+export function phaseColumns(sessions: readonly Session[], layout: readonly ColumnCode[]): { columns: number[]; count: number; tracks: ColumnCode[] } {
   const codes = sessions.map(columnCode);
-  if (new Set(codes).size === codes.length && codes.every((c) => layout.includes(c))) return { columns: codes.map((c) => layout.indexOf(c)), count: Math.max(1, layout.length) };
-  return { columns: sessions.map((_, i) => i), count: Math.max(layout.length, sessions.length, 1) };
+  if (new Set(codes).size === codes.length && codes.every((c) => layout.includes(c))) return { columns: codes.map((c) => layout.indexOf(c)), count: Math.max(1, layout.length), tracks: layout.length ? [...layout] : codes };
+  const count = Math.max(layout.length, sessions.length, 1);
+  return { columns: sessions.map((_, i) => i), count, tracks: Array.from({ length: count }, (_, i) => codes[i] ?? layout[i] ?? "P") };
+}
+
+/**
+ * Relative width of a phase column: the race is the row's subject and takes the most room; practice is narrower, qualifying (three
+ * figures) narrower still. Fractions of the same container, so a phase keeps its column edge in every row.
+ */
+const TRACK_FR: Record<ColumnCode, number> = { P: 1, W: 1, Q: 0.7, R: 1.9 };
+
+/** The CSS grid template of a row's phase columns. */
+export function gridTemplate(tracks: readonly ColumnCode[]): string {
+  return (tracks.length ? tracks : (["R"] as const)).map((c) => `minmax(0, ${TRACK_FR[c]}fr)`).join(" ");
 }

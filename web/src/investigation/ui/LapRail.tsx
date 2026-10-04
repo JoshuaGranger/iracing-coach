@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "preact/hooks";
-import { lapTime, reasonsText, runColor, runDash } from "../format";
+import { lapTime, reasonsText, runDash } from "../format";
 import type { Comparison } from "../investigation-model";
 import type { GroupRole } from "./comparison-model";
 import {
@@ -17,6 +17,7 @@ import {
 import { isCleanLap, lapColor, lapProgressEnds, sectorCells, sectorStarts, type SectorCell, type TraceData } from "../geometry/trace-model";
 import type { TraceLapData } from "../types";
 import { durationText, PitCard, PitGlyph, pitLabel } from "./PitPictogram";
+import { identityColour, runIdentities } from "./runs-model";
 
 export { passesFilters } from "../geometry/rail-model";
 
@@ -89,7 +90,10 @@ export function LapRail(props: LapRailProps) {
   const stops = useMemo(() => new Map(props.pitStops.map((stop) => [stop.lap, stop] as const)), [props.pitStops]);
   const zeroMeta = props.zeroLap !== null ? data.lapMeta.get(props.zeroLap) : undefined;
   const ends = lapProgressEnds(data);
-  const groupColor = (role: GroupRole): string => runColor(role === "earlier" ? props.comparison?.baseline.runNumber : props.comparison?.compared.runNumber);
+  // Run identity by tire set, as on Race and Runs: same hue after a stop that changed no tires, a lighter shade.
+  // Every run of the phase, not only the filtered groups, so a filter never recolours a run.
+  const identities = useMemo(() => runIdentities(props.runs.map((run) => (run as { run_number?: unknown }).run_number).filter((run): run is number => typeof run === "number"), props.pitStops), [props.runs, props.pitStops]);
+  const groupColor = (role: GroupRole): string => identityColour(identities, role === "earlier" ? props.comparison?.baseline.runNumber : props.comparison?.compared.runNumber);
 
   // Arrow keys move between rows; any pointer use hides the focus ring until the keyboard is used again.
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -143,8 +147,8 @@ export function LapRail(props: LapRailProps) {
           const total = (group.green ?? 0) + (group.caution ?? 0);
           return (
             <section class="ri-lap-group" key={String(group.runNumber)} data-run={group.runNumber ?? ""}>
-              <header class="ri-run-head" style={group.runNumber !== null ? `--run:${runColor(group.runNumber)}` : undefined}>
-                {group.runNumber !== null && <svg class="ri-run-swatch" width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" stroke={runColor(group.runNumber)} stroke-width="3" stroke-dasharray={runDash(group.runNumber)} /></svg>}
+              <header class="ri-run-head" style={group.runNumber !== null ? `--run:${identityColour(identities, group.runNumber)}` : undefined} title={group.runNumber !== null ? identities.get(group.runNumber)?.name : undefined}>
+                {group.runNumber !== null && <svg class="ri-run-swatch" width="18" height="8" aria-hidden="true"><line x1="0" y1="4" x2="18" y2="4" stroke={identityColour(identities, group.runNumber)} stroke-width="3" stroke-dasharray={runDash(group.runNumber)} /></svg>}
                 <b>{group.runNumber !== null ? `Run ${group.runNumber}` : "Laps"}</b>
                 <span class="ri-run-range">L{group.firstLap}–{group.lastLap}</span>
                 {total > 0 && (

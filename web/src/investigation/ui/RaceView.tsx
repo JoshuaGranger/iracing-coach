@@ -1,13 +1,14 @@
+import type { ComponentChildren } from "preact";
 import { useMemo, useRef, useState } from "preact/hooks";
-import { exposureText, lapTime, n, PlotScale, runColor, runDash, ticks } from "../format";
-import { paceTone, type Comparison, type Investigation, type InvestigationLap, type TrendPoint } from "../investigation-model";
+import { exposureText, lapTime, n, PlotScale, reasonsText, ticks } from "../format";
+import type { Comparison, Investigation, InvestigationLap } from "../investigation-model";
 import { incidentPointsByLap, inRaceStops, pitStops, type PitStop } from "../geometry/rail-model";
 import { fastestCleanLap } from "../geometry/trace-model";
 import { asArray, asRecord, type RaceViewData, type TraceLapData } from "../types";
-import { brackets, comparisonLaps, comparisonName, deltaText, noResultLine, placeLabels, screenedText } from "./comparison-model";
-import { ComparisonPanel } from "./ComparisonPicture";
 import { useElementSize } from "./hooks";
 import { PitCard, PitGlyph, pitLabel } from "./PitPictogram";
+import { availableLayers, lapContexts, layersReadout, readLayers, writeLayers, type LapContext, type LayerKey } from "./race-layers";
+import { fitOnLaps, identityColour, paceFitText, runIdentities, runLine, smoothPath, type RunIdentity } from "./runs-model";
 import { scaleFor, useRemPx } from "./unit";
 
 /** `green` everywhere except Offline Testing, where laps are counted as clean (audit R7). */
@@ -15,22 +16,23 @@ export function exposureWord(sessionType: string | null | undefined): string {
   return sessionType && /offline|test/i.test(sessionType) ? "clean" : "green";
 }
 
-/** A lap's readout: `Lap 36 · 28.559 s · P7 · 36.0 green · Not used in Run 1 pace fit · close traffic`. */
+/** Why a lap is not in its run's pace fit, from the backend's reasons: `Not in pace fit · close traffic`. Null for a lap the fit used. */
+export function fitStatus(lap: Pick<InvestigationLap, "eligible" | "exclusionReasons">): string | null {
+  if (lap.eligible) return null;
+  const why = reasonsText(lap.exclusionReasons.filter((code) => code !== "partial"));
+  return `Not in pace fit${why ? ` · ${why}` : ""}`;
+}
+
+/** A lap's readout: `Lap 36 · 28.559 s · P7 · Run 2 · 36.0 green · Not in pace fit · close traffic`. */
 export function lapLabel(lap: InvestigationLap, word = "green"): string {
   const parts = [`Lap ${lap.lap}`, `${lapTime(lap.lapTimeS)} s`];
   if (lap.position !== null) parts.push(`P${lap.position}`);
   if (lap.flagState === "caution") parts.push("Caution");
-  const screened = screenedText(lap);
-  if (lap.runNumber !== null && !screened) parts.push(`Run ${lap.runNumber}`);
+  if (lap.runNumber !== null) parts.push(`Run ${lap.runNumber}`);
   if (lap.greenExposure !== null) parts.push(exposureText(lap.greenExposure, word));
-  if (screened && lap.flagState !== "caution") parts.push(screened);
+  const status = lap.flagState === "caution" ? null : fitStatus(lap);
+  if (status) parts.push(status);
   return parts.join(" · ");
-}
-
-export function trendPath(plot: PlotScale, segment: TrendPoint[], xOf: (point: TrendPoint) => number): string {
-  return segment
-    .map((point, index) => `${index === 0 ? "M" : "L"}${n(plot.x(xOf(point)))},${n(plot.y(Math.min(plot.yMax, Math.max(plot.yMin, point.y))))}`)
-    .join(" ");
 }
 
 /** Position axis ticks: 1, 2, 5 or 10 apart so at most six labels sit on the band, P1 side at the top (audit #1n). */
@@ -66,13 +68,14 @@ export function chartLaps(laps: readonly InvestigationLap[]): { pace: Investigat
 }
 
 /**
- * The pace plot's top margin: room for the pit and incident tags (30 px at the default size), and a further line when a tag would
- * sit under the `Lap time · s` title at the plot's top left (a narrow chart with an early stop or incident), so the title clears it.
+ * The pace plot's top margin: room for the pit and incident tags and their glow (38 px at the default size, so the pit tag's halo
+ * clears the chart's top edge, #41), and a further line when a tag would sit under the `Lap time · s` title at the plot's top left
+ * (a narrow chart with an early stop or incident), so the title clears it.
  */
 export function paceTopMargin(tagXs: readonly number[], left: number, k: number): number {
   const titleRight = left + 12 * 7.3 * k + 6 * k;
   const crowded = tagXs.some((x) => x - 14 * k < titleRight);
-  return Math.round((crowded ? 48 : 30) * k);
+  return Math.round((crowded ? 56 : 38) * k);
 }
 
 type Hover = { kind: "lap"; lap: InvestigationLap } | { kind: "position"; lap: InvestigationLap } | { kind: "pit"; stop: PitStop; x: number; y: number };
@@ -98,7 +101,31 @@ export function raceFastestLap(laps: readonly InvestigationLap[], race?: RaceVie
   return fastestCleanLap(source, race ? incidentPointsByLap(race) : new Map());
 }
 
-function ProgressChart({ inv, selected, stops, knownPitLaps, fastestLap, word }: { inv: Investigation; selected: Comparison | null; stops: readonly PitStop[]; knownPitLaps: ReadonlySet<number>; fastestLap: number | null; word: string }) {
+/** Contiguous runs of a per-lap series, broken at a missing lap, a run change or (for fuel) a refill: one polyline each. */
+export function seriesSegments<T extends { lap: number; value: number; run: number | null }>(points: readonly T[], breakOnRise = false): T[][] {
+  const out: T[][] = [];
+  for (const point of [...points].sort((a, b) => a.lap - b.lap)) {
+    const last = out[out.length - 1]?.[out[out.length - 1]!.length - 1];
+    const join = last && point.lap === last.lap + 1 && point.run === last.run && !(breakOnRise && point.value > last.value + 1e-9);
+    if (join) out[out.length - 1]!.push(point);
+    else out.push([point]);
+  }
+  return out;
+}
+
+interface ChartProps {
+  inv: Investigation;
+  stops: readonly PitStop[];
+  knownPitLaps: ReadonlySet<number>;
+  fastestLap: number | null;
+  word: string;
+  identities: ReadonlyMap<number, RunIdentity>;
+  contexts: ReadonlyMap<number, LapContext>;
+  layers: readonly LayerKey[];
+  header: ComponentChildren;
+}
+
+function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, layers, header }: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
   const k = scaleFor(useRemPx());
@@ -106,9 +133,11 @@ function ProgressChart({ inv, selected, stops, knownPitLaps, fastestLap, word }:
   const { pace: plotted, caution: cautionDots } = useMemo(() => chartLaps(inv.laps), [inv]);
   const incidents = useMemo(() => inv.timeline.filter((item) => item.kind === "incident"), [inv]);
   const timelinePits = useMemo(() => inv.timeline.filter((item) => item.kind === "pit_service" && !knownPitLaps.has(item.lap)), [inv, knownPitLaps]);
-  const groupBrackets = useMemo(() => brackets(selected), [selected]);
+  const fits = useMemo(() => inv.runs.map((run) => ({ run, points: fitOnLaps(run, inv.laps) })).filter((fit) => fit.points.length >= 2), [inv]);
+  const on = (key: LayerKey): boolean => layers.includes(key);
   const placed = inv.laps.filter((lap) => lap.position !== null && lap.position > 0);
   const hasPositions = placed.length >= 2;
+  const colour = (run: number | null): string => identityColour(identities, run);
   const body = (() => {
     if (inv.laps.length === 0) return <div class="ri-empty"><strong>No recorded laps</strong></div>;
     if (width < 40 || height < 40) return null;
@@ -119,16 +148,13 @@ function ProgressChart({ inv, selected, stops, knownPitLaps, fastestLap, word }:
     const max = times.length ? Math.max(...times) : 1;
     const pad = Math.max(0.08, (max - min) * 0.06);
     // Margins and label offsets are the default-size geometry times the root font size's factor; the axis text is --text-compact.
+    const temps = on("temp") ? inv.laps.map((lap) => ({ lap: lap.lap, value: contexts.get(lap.lap)?.trackTempF ?? null, run: lap.runNumber })).filter((p): p is { lap: number; value: number; run: number | null } => p.value !== null) : [];
     const left = Math.round(52 * k);
-    const right = Math.round(12 * k);
-    // Under the pace plot: the comparison's brackets and their labels, on a second line when a narrow chart would overlap them.
-    const charPx = 7.3 * k;
-    const labelWidths = groupBrackets.map((bracket) => bracket.label.length * charPx);
+    const right = Math.round((temps.length ? 48 : 12) * k);
     const draft = new PlotScale(left, 0, Math.max(60, width - left - right), 1, minLap - 0.5, Math.max(minLap + 1, maxLap) + 0.5, 0, 1);
     const top = paceTopMargin([...stops.map((stop) => draft.x(stop.lap)), ...incidents.map((item) => draft.x(item.lap))], left, k);
-    const labelPlaces = placeLabels(groupBrackets.map((bracket) => (draft.x(bracket.pieces[0]![0]) + draft.x(bracket.pieces[bracket.pieces.length - 1]![1])) / 2), labelWidths, draft.left, draft.right);
-    const labelLines = labelPlaces.some((place) => place.line === 1) ? 2 : 1;
-    const below = Math.round(groupBrackets.length ? (labelLines === 2 ? 56 : 40) * k : 12 * k);
+    const usageStrip = on("usage") ? Math.round(7 * k) : 0;
+    const below = Math.round(12 * k) + (usageStrip ? usageStrip + Math.round(4 * k) : 0);
     const axisBand = Math.round(26 * k);
     const drop = Math.round(5 * k);
     const bandHeight = hasPositions ? Math.min(150 * k, Math.max(60 * k, height * 0.26)) : 0;
@@ -147,10 +173,26 @@ function ProgressChart({ inv, selected, stops, knownPitLaps, fastestLap, word }:
     const bandBottom = posScale ? posScale.bottom : pace.bottom;
     const clampY = (value: number): number => pace.y(Math.min(pace.yMax, Math.max(pace.yMin, value)));
     const dotRadius = Math.max(2.4, Math.min(3.4, lapWidth * 0.34));
+    // Context layers, each on its own scale inside the pace plot: track temperature on the right axis, fuel load from zero.
+    const tempLo = temps.length ? Math.min(...temps.map((p) => p.value)) : 0;
+    const tempHi = temps.length ? Math.max(...temps.map((p) => p.value)) : 1;
+    const tempPad = Math.max(0.5, (tempHi - tempLo) * 0.1);
+    const tempScale = new PlotScale(pace.left, pace.top, pace.width, pace.height, pace.xMin, pace.xMax, tempLo - tempPad, tempHi + tempPad);
+    const fuels = on("fuel") ? inv.laps.map((lap) => ({ lap: lap.lap, value: contexts.get(lap.lap)?.fuelGal ?? null, run: lap.runNumber })).filter((p): p is { lap: number; value: number; run: number | null } => p.value !== null) : [];
+    const fuelScale = new PlotScale(pace.left, pace.top, pace.width, pace.height, pace.xMin, pace.xMax, 0, Math.max(1, ...fuels.map((p) => p.value)) * 1.05);
+    const line = (scale: PlotScale, segment: { lap: number; value: number }[]): string => segment.map((p, i) => `${i ? "L" : "M"}${n(scale.x(p.lap))},${n(scale.y(p.value))}`).join("");
+    const dotLaps = [...cautionDots, ...plotted];
+    const lapAt = new Map(dotLaps.map((lap) => [lap.lap, lap] as const));
+    const dotY = (lap: InvestigationLap): number => clampY(lap.lapTimeS as number);
+    const lapHover = (lap: InvestigationLap) => () => setHover({ kind: "lap", lap });
     return (
-      <svg class="ri-plot-svg" viewBox={`0 0 ${n(width)} ${n(height)}`} role="group" aria-label="Race progression: lap time, run trend, cautions, pit stops, incidents and position by lap" onPointerLeave={(event: PointerEvent) => { if (event.pointerType !== "touch") setHover(null); }}>
+      <svg class="ri-plot-svg" viewBox={`0 0 ${n(width)} ${n(height)}`} role="group" aria-label="Race progression: lap time, run pace fit, cautions, pit stops, incidents and position by lap" onPointerLeave={(event: PointerEvent) => { if (event.pointerType !== "touch") setHover(null); }}>
         {cautionLaps.map((lap) => (
           <rect key={`c${lap.lap}`} data-caution-lap={lap.lap} x={n(pace.x(lap.lap) - lapWidth / 2)} y={n(pace.top)} width={n(Math.max(1.5, lapWidth))} height={n(bandBottom - pace.top)} class="ri-caution-shade" />
+        ))}
+        {/* With a layer on, a lap's whole column answers the pointer, so a lap without a dot (a pit lap) still reads. */}
+        {layers.length > 0 && inv.laps.map((lap) => (
+          <rect key={`h${lap.lap}`} x={n(pace.x(lap.lap) - lapWidth / 2)} y={n(pace.top)} width={n(Math.max(2, lapWidth))} height={n(pace.height + below)} class="ri-hit" data-lap-column={lap.lap} onPointerEnter={lapHover(lap)} />
         ))}
         {ticks(pace.yMin, pace.yMax, 4).map((tick, index) => (
           <g key={`y${index}`}>
@@ -159,6 +201,34 @@ function ProgressChart({ inv, selected, stops, knownPitLaps, fastestLap, word }:
           </g>
         ))}
         <text x={n(pace.left)} y={n(Math.round(13 * k))} class="ri-axis-title">Lap time · s</text>
+        {temps.length > 0 && (
+          <g class="ri-layer-temp" data-layer="temp">
+            <text x={n(pace.right + right - 6)} y={n(Math.round(13 * k))} text-anchor="end" class="ri-axis-title">Track °F</text>
+            {ticks(tempScale.yMin, tempScale.yMax, 3).map((tick) => (
+              <text key={`tt${tick}`} x={n(pace.right + 6)} y={n(tempScale.y(tick) + drop)} class="ri-axis temp">{tick.toFixed(tempHi - tempLo < 3 ? 1 : 0)}</text>
+            ))}
+            {seriesSegments(temps).map((segment) => <path key={`tl${segment[0]!.lap}`} d={line(tempScale, segment)} class="ri-temp-line" />)}
+          </g>
+        )}
+        {fuels.length > 0 && (
+          <g class="ri-layer-fuel" data-layer="fuel">
+            {seriesSegments(fuels, true).map((segment) => (
+              <g key={`fl${segment[0]!.lap}`}>
+                <path d={line(fuelScale, segment)} class="ri-fuel-line" data-fuel-from={segment[0]!.lap} />
+                <text x={n(fuelScale.x(segment[0]!.lap) + 4)} y={n(fuelScale.y(segment[0]!.value) - 5)} class="ri-fuel-label">{`${segment[0]!.value.toFixed(1)} gal`}</text>
+              </g>
+            ))}
+          </g>
+        )}
+        {usageStrip > 0 && (
+          <g class="ri-layer-usage" data-layer="usage">
+            {inv.laps.map((lap) => {
+              const usage = contexts.get(lap.lap)?.usagePct ?? null;
+              if (usage === null) return null;
+              return <rect key={`u${lap.lap}`} x={n(pace.x(lap.lap) - lapWidth / 2)} y={n(pace.bottom + Math.round(5 * k))} width={n(Math.max(1.5, lapWidth))} height={n(usageStrip)} class="ri-usage-cell" style={`opacity:${n(0.15 + 0.85 * (usage / 100))}`} data-usage-lap={lap.lap} />;
+            })}
+          </g>
+        )}
         {stops.map((stop) => {
           const x = pace.x(stop.lap);
           return (
@@ -185,46 +255,52 @@ function ProgressChart({ inv, selected, stops, knownPitLaps, fastestLap, word }:
             </g>
           );
         })}
-        {/* The selected comparison's two groups: labelled brackets under the laps, split around omitted laps. */}
-        {groupBrackets.map((bracket, index) => {
-          const y0 = pace.bottom + 6 * k;
-          const y1 = pace.bottom + 11 * k;
-          const place = labelPlaces[index]!;
+        {/* The backend's screened fit per run: a smooth curve over the laps of its supported span; the dots are the observations. */}
+        {fits.map(({ run, points }) => {
+          const d = smoothPath(points.map((point) => [pace.x(point.lap), clampY(point.y)] as const));
           return (
-            <g key={bracket.role} class="ri-bracket-group" data-bracket={bracket.role} data-laps={bracket.pieces.map(([a, b]) => `${a}-${b}`).join(",")} style={`--grp:${runColor(bracket.run)}`}>
-              {bracket.pieces.map(([a, b]) => {
-                const start = pace.x(a) - Math.min(4, lapWidth * 0.45);
-                const end = pace.x(b) + Math.min(4, lapWidth * 0.45);
-                return <path key={a} d={`M${n(start)},${n(y0)}V${n(y1)}H${n(end)}V${n(y0)}`} class="ri-bracket" data-piece={`${a}-${b}`} />;
-              })}
-              <text x={n(place.x)} y={n(pace.bottom + (30 + place.line * 16) * k)} text-anchor="middle" class="ri-bracket-label">{bracket.label}</text>
+            <g key={`f${run.runNumber}`} class="ri-fit-group" data-fit-run={run.runNumber} data-fit-span={`${points[0]!.lap}-${points[points.length - 1]!.lap}`} style={`--run:${colour(run.runNumber)}`}>
+              <path d={d} class="ri-fit-halo" />
+              <path d={d} class="ri-fit" stroke-dasharray={identities.get(run.runNumber)?.dash || undefined} />
             </g>
           );
         })}
-        {inv.runs.map((run) => run.trend.segments.map((segment, index) => (
-          <path key={`t${run.runNumber}-${index}`} d={trendPath(pace, segment, (point) => point.lap)} class="ri-trend" stroke={runColor(run.runNumber)} stroke-dasharray={runDash(run.runNumber)} data-trend-run={run.runNumber} />
-        )))}
+        {on("traffic") && dotLaps.map((lap) => {
+          const traffic = contexts.get(lap.lap)?.traffic ?? null;
+          // A lap with no close traffic draws nothing; its readout still says 0 %.
+          if (traffic === null || traffic < 0.005) return null;
+          const y = dotY(lap) + dotRadius + 2;
+          return <line key={`tr${lap.lap}`} x1={n(pace.x(lap.lap))} x2={n(pace.x(lap.lap))} y1={n(y)} y2={n(y + 1 + traffic * 11 * k)} class="ri-traffic-tick" data-traffic-lap={lap.lap} />;
+        })}
+        {on("slip") && dotLaps.map((lap) => {
+          const slip = contexts.get(lap.lap)?.slip ?? null;
+          if (!slip || slip.spinS + slip.lockS <= 0) return null;
+          return <circle key={`sl${lap.lap}`} cx={n(pace.x(lap.lap))} cy={n(dotY(lap))} r={n(dotRadius + 3)} class="ri-slip-ring" data-slip-lap={lap.lap} />;
+        })}
         {cautionDots.map((lap) => {
           const off = (lap.lapTimeS as number) > pace.yMax;
           return (
-            <circle key={`cd${lap.lap}`} cx={n(pace.x(lap.lap))} cy={n(clampY(lap.lapTimeS as number))} r={n(dotRadius * 0.85)} class={`ri-dot caution${off ? " off" : ""}`} tabIndex={0} data-lap={lap.lap} data-caution-dot={lap.lap}
-              onPointerEnter={() => setHover({ kind: "lap", lap })} onFocus={() => setHover({ kind: "lap", lap })} onClick={() => setHover({ kind: "lap", lap })} aria-label={lapLabel(lap, word)}>
+            <circle key={`cd${lap.lap}`} cx={n(pace.x(lap.lap))} cy={n(dotY(lap))} r={n(dotRadius * 0.85)} class={`ri-dot caution${off ? " off" : ""}`} tabIndex={0} data-lap={lap.lap} data-caution-dot={lap.lap}
+              onPointerEnter={lapHover(lap)} onFocus={lapHover(lap)} onClick={lapHover(lap)} aria-label={lapLabel(lap, word)}>
               <title>{lapLabel(lap, word)}</title>
             </circle>
           );
         })}
         {plotted.map((lap) => {
-          const isFastest = fastestLap === lap.lap;
-          const color = isFastest ? "var(--ri-best)" : runColor(lap.runNumber);
+          const color = colour(lap.runNumber);
           return (
             <circle
-              key={lap.lap} cx={n(pace.x(lap.lap))} cy={n(clampY(lap.lapTimeS as number))} r={n(isFastest ? dotRadius + 1 : dotRadius)}
+              key={lap.lap} cx={n(pace.x(lap.lap))} cy={n(dotY(lap))} r={n(dotRadius)}
               fill={lap.eligible ? color : "var(--ri-card)"} stroke={color}
-              class={`ri-dot${lap.eligible ? "" : " excluded"}${isFastest ? " fastest" : ""}`} tabIndex={0} data-lap={lap.lap}
-              onPointerEnter={() => setHover({ kind: "lap", lap })} onFocus={() => setHover({ kind: "lap", lap })} onClick={() => setHover({ kind: "lap", lap })} aria-label={lapLabel(lap, word)}
+              class={`ri-dot${lap.eligible ? "" : " excluded"}`} tabIndex={0} data-lap={lap.lap}
+              onPointerEnter={lapHover(lap)} onFocus={lapHover(lap)} onClick={lapHover(lap)} aria-label={lapLabel(lap, word)}
             ><title>{lapLabel(lap, word)}</title></circle>
           );
         })}
+        {/* The fastest lap: a magenta ring around its dot. */}
+        {fastestLap !== null && lapAt.has(fastestLap) && (
+          <circle cx={n(pace.x(fastestLap))} cy={n(dotY(lapAt.get(fastestLap)!))} r={n(dotRadius + 2.6)} class="ri-best-ring" data-fastest={fastestLap} />
+        )}
         {posScale && (
           <g class="ri-position-band" data-position-band>
             <text x={n(posScale.left)} y={n(posScale.top - Math.round(8 * k))} class="ri-axis-title">Position</text>
@@ -256,23 +332,23 @@ function ProgressChart({ inv, selected, stops, knownPitLaps, fastestLap, word }:
       </svg>
     );
   })();
+  const lapReadout = (lap: InvestigationLap): string => {
+    const parts = [lapLabel(lap, word)];
+    if (lap.lap === fastestLap) parts.push("Fastest");
+    parts.push(...layersReadout(layers, contexts.get(lap.lap)));
+    return parts.join(" · ");
+  };
   const readout = hover?.kind === "position"
     ? `Lap ${hover.lap.lap} · P${hover.lap.position}`
     : hover?.kind === "lap"
-      ? lapLabel(hover.lap, word)
+      ? lapReadout(hover.lap)
       : hover?.kind === "pit"
         ? pitLabel(hover.stop)
-        : selected ? `${comparisonName(selected)} · ${deltaText(selected) === "—" ? "No pace result" : `${deltaText(selected)} s`}` : "";
+        : "";
   return (
     <div class="ri-progress" data-ri-progress>
       <div class="ri-chart-head">
-        <span class="ri-card-title">Race progression</span>
-        <div class="ri-legend">
-          <span><i class="ld" />Lap</span><span data-legend="screened"><i class="ld hollow" />Not used in pace fit</span><span><i class="ld best" />Fastest</span>
-          <span><i class="lb" />Caution</span><span class="pit-word">Pit</span><span><em class="ri-inc-chip p2 small">x2</em>Incident</span>
-          {inv.runs.slice(0, 8).map((run) => <span key={run.runNumber}><svg width="20" height="8" aria-hidden="true"><line x1="0" y1="4" x2="20" y2="4" stroke={runColor(run.runNumber)} stroke-width="2.5" stroke-dasharray={runDash(run.runNumber)} /></svg>Run {run.runNumber}</span>)}
-          {hasPositions && <span><i class="lg gain" /><i class="lg loss" />Position</span>}
-        </div>
+        {header}
         <output class="ri-readout" aria-live="polite" data-race-readout>{readout}</output>
       </div>
       <div class="ri-plot" ref={host}>
@@ -314,53 +390,85 @@ export function changes(c: Comparison, basis: Investigation["steeringBasis"]): C
     .slice(0, 5);
 }
 
-export interface RaceViewProps {
-  inv: Investigation;
-  selected: Comparison | null;
-  race?: RaceViewData;
-  runs?: readonly unknown[];
-  sessionType?: string | null;
-  onSelectComparison(id: string): void;
-  onInspect(action: Comparison["actions"][number]): void;
-}
-
-/** The Comparisons list: the one comparison selector, rows named by their groups, the backend's signed difference at the right. */
-export function ComparisonList({ inv, selected, onSelect }: { inv: Investigation; selected: Comparison | null; onSelect(id: string): void }) {
+/** The run's swatch: its identity colour and line style. */
+export function RunSwatch({ identity, width = 20 }: { identity: RunIdentity | undefined; width?: number }) {
   return (
-    <nav class="ri-card ri-comparisons" aria-label="Comparisons">
-      <div class="ri-card-label"><span class="ri-card-title">Comparisons</span><span>Later − earlier · s</span></div>
-      {inv.comparisons.map((choice) => {
-        const isSelected = choice.id === selected?.id;
-        const laps = comparisonLaps(choice);
-        return (
-          <button type="button" key={choice.id} class={`ri-comparison${isSelected ? " selected" : ""}`} aria-pressed={isSelected} data-comparison={choice.id}
-            title={deltaText(choice) === "—" ? noResultLine(choice) : undefined} onClick={() => onSelect(choice.id)}>
-            <span class="ri-comparison-title">{comparisonName(choice)}</span>
-            {laps && <span class="ri-comparison-laps">{laps}</span>}
-            <strong class={paceTone(choice)}>{deltaText(choice)}</strong>
-          </button>
-        );
-      })}
-      {inv.comparisons.length === 0 && <p class="ri-muted ri-pad">No comparisons</p>}
-    </nav>
+    <svg width={width} height="8" aria-hidden="true">
+      <line x1="0" y1="4" x2={width} y2="4" stroke={identity?.color ?? "var(--color-text-muted)"} stroke-width="2.5" stroke-dasharray={identity?.dash || undefined} />
+    </svg>
   );
 }
 
-export function RaceView({ inv, selected, race, runs, sessionType, onSelectComparison, onInspect }: RaceViewProps) {
-  const lead = selected?.actions.slice().sort((a, b) => a.priority - b.priority)[0] ?? null;
+/** The device's context layers: off by default, remembered in this browser. */
+function useLayers(): [LayerKey[], (key: LayerKey) => void] {
+  const storage = (): Storage | null => {
+    try {
+      return typeof localStorage === "undefined" ? null : localStorage;
+    } catch {
+      return null;
+    }
+  };
+  const [layers, setLayers] = useState<LayerKey[]>(() => readLayers(storage()));
+  const toggle = (key: LayerKey): void => {
+    setLayers((current) => {
+      const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+      writeLayers(storage(), next);
+      return next;
+    });
+  };
+  return [layers, toggle];
+}
+
+export interface RaceViewProps {
+  inv: Investigation;
+  race?: RaceViewData;
+  runs?: readonly unknown[];
+  sessionType?: string | null;
+}
+
+export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
   const allStops = useMemo(() => (race ? pitStops(race, { runs: runs ?? [] }, null) : []), [race, runs]);
   const stops = useMemo(() => inRaceStops(allStops), [allStops]);
   const knownPitLaps = useMemo(() => new Set(allStops.map((stop) => stop.lap)), [allStops]);
   const fastestLap = useMemo(() => raceFastestLap(inv.laps, race), [inv, race]);
+  const identities = useMemo(() => runIdentities(inv.runs.map((run) => run.runNumber), allStops), [inv, allStops]);
+  const contexts = useMemo(() => lapContexts(race), [race]);
+  const offered = useMemo(() => availableLayers(contexts), [contexts]);
+  const [stored, toggleLayer] = useLayers();
+  const layers = stored.filter((key) => offered.some((layer) => layer.key === key));
   const word = exposureWord(sessionType);
+  const fitText = paceFitText(inv, chartLaps(inv.laps).pace.length);
+  const header = (
+    <>
+      <span class="ri-card-title">Race progression</span>
+      {fitText && <span class="ri-fit-count" data-pace-fit>{fitText}</span>}
+      <div class="ri-legend" data-legend="runs">
+        {inv.runs.map((run) => {
+          const identity = identities.get(run.runNumber);
+          return <span key={run.runNumber} class="ri-run-key" data-legend-run={run.runNumber}><RunSwatch identity={identity} />{identity?.name ?? `Run ${run.runNumber}`}</span>;
+        })}
+      </div>
+      {offered.length > 0 && (
+        <div class="ri-layer-toggles" role="group" aria-label="Context layers">
+          {offered.map((layer) => (
+            <button type="button" key={layer.key} class="ri-pill-toggle ri-layer-toggle" aria-pressed={layers.includes(layer.key)} data-layer-toggle={layer.key} title={`${layer.label} · ${layer.evidence}`} onClick={() => toggleLayer(layer.key)}>
+              {layer.label}<small>{layer.evidence}</small>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
   return (
     <div class="ri-race-view" data-ri-view="race">
-      <div class="ri-card ri-fill"><ProgressChart inv={inv} selected={selected} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} /></div>
-      <div class="ri-race-bottom">
-        <ComparisonList inv={inv} selected={selected} onSelect={onSelectComparison} />
-        {selected && (
-          <ComparisonPanel inv={inv} comparison={selected}
-            action={lead ? { label: lead.sectionId ? `Inspect section ${lead.sectionId}` : "Open in Traces", run: () => onInspect(lead) } : null} />
+      <div class="ri-card ri-fill">
+        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} layers={layers} header={header} />
+        {inv.runs.length > 0 && (
+          <ul class="ri-run-lines" aria-label="Runs">
+            {inv.runs.map((run) => (
+              <li key={run.runNumber} data-run-line={run.runNumber} style={`--run:${identityColour(identities, run.runNumber)}`}>{runLine(run, identities.get(run.runNumber), runs ?? [])}</li>
+            ))}
+          </ul>
         )}
       </div>
     </div>

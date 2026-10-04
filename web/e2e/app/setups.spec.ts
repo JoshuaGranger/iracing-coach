@@ -4,14 +4,14 @@ import { ROUND2_DEVICES } from "./round2-shared";
 
 const CAR = "NASCAR Xfinity Toyota Supra";
 const MX5 = "Global Mazda MX-5 Cup";
-/** Screenshots of the round's record: web/target/round2/A2/<name>-<viewport width>.png. */
-const SHOTS = "target/round2/A2";
+/** Screenshots of the round's record: web/target/round3/R2/<name>-<viewport width>.png. */
+const SHOTS = "target/round3/R2";
 
 /**
  * A second car with 25 setups added to the mock's answer: the car has more than ten, odd numbers raced (row eleven is raced twice),
  * the rest never. Newest first, so row N is setup N.
  */
-async function withManySetups(page: Page, { count = 25, racedCount = true }: { count?: number; racedCount?: boolean } = {}) {
+async function withManySetups(page: Page, { count = 25, racedCount = true, extraFiles = [] }: { count?: number; racedCount?: boolean; extraFiles?: unknown[] } = {}) {
   await page.route(/\/api\/v1\/drivers\/\d+\/setups(\?.*)?$/, async (route) => {
     const res = await route.fetch();
     const body = await res.json();
@@ -33,11 +33,12 @@ async function withManySetups(page: Page, { count = 25, racedCount = true }: { c
         last_seen_at: at,
       });
     }
+    if (extraFiles.length > 0) body.unlinked_files = [...(body.unlinked_files ?? []), ...extraFiles];
     await route.fulfill({ response: res, json: body });
   });
 }
 
-/** The scrollable elements below the page itself: the page is the one scroll region. */
+/** The scrollable elements below the page itself. */
 async function innerScrollRegions(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const out: string[] = [];
@@ -49,9 +50,11 @@ async function innerScrollRegions(page: Page): Promise<string[]> {
   });
 }
 
-/** One scrollbar: the page scrolls and nothing inside it does. */
-async function expectOneScrollbar(page: Page) {
-  expect(await innerScrollRegions(page), "an inner scroll region").toEqual([]);
+/** The only inner scroll regions are car sections past ten rows; the page scrolls as well. */
+async function expectInnerScrollOnlyInCarSections(page: Page) {
+  const regions = await innerScrollRegions(page);
+  expect(regions.length, "a car section scrolls inside").toBeGreaterThan(0);
+  expect(regions.filter((r) => !/\bs-scroll\b/.test(r)), "an inner scroll region that is not a car section").toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight + 1), "the page scrolls").toBe(true);
 }
 
@@ -119,31 +122,74 @@ for (const device of ROUND2_DEVICES) {
       await expect(car.getByText("0×")).toHaveCount(0);
     });
 
-    test("a car with more than ten setups shows ten, Show 10 more reveals row eleven, and only the page scrolls", async ({ page }) => {
+    test("a car with more than ten setups shows ten rows and scrolls inside at that height; Show 10 more is at the bottom of the region and the page does not grow", async ({ page }) => {
       await withManySetups(page);
       await page.goto(hash(`/d/${DRIVER}/setups`));
       const car = section(page, MX5);
       await expect(car).toContainText("25 setups · 13 raced");
       await expect(rows(car)).toHaveCount(10);
-      const more = car.getByRole("button", { name: "Show 10 more" });
-      await expect(more).toBeVisible();
+      const region = car.locator(".s-scroll");
+      await expect(region).toHaveAttribute("data-scroll", "true");
       await expect(rows(car).filter({ hasText: "Lime Rock 11.sto" })).toHaveCount(0);
+      // The ten-row height: the region is as tall as its first ten rows, and holds the button below them.
+      const tenRows = () => region.evaluate((el) => [...el.querySelectorAll(":scope > .s-list > .s-entry")].slice(0, 10).reduce((n, r) => n + r.getBoundingClientRect().height, 0));
+      const height = async () => (await region.boundingBox())!.height;
+      await expect.poll(async () => Math.abs((await height()) - (await tenRows()))).toBeLessThanOrEqual(2);
+      const more = region.getByRole("button", { name: "Show 10 more" });
+      await expect(more).toHaveCount(1);
+      expect(await region.evaluate((el) => el.scrollHeight > el.clientHeight + 1), "the button is below the ten rows, inside the region").toBe(true);
+      await region.evaluate((el) => void (el.scrollTop = el.scrollHeight));
       await more.scrollIntoViewIfNeeded();
+      await expect(more).toBeVisible();
+      const pageHeight = await page.evaluate(() => document.documentElement.scrollHeight);
       await more.click();
       await expect(rows(car)).toHaveCount(20);
-      // row eleven is a raced setup, with its count
+      // The page did not grow and the region kept its height.
+      expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(pageHeight);
+      expect(Math.abs((await height()) - (await tenRows()))).toBeLessThanOrEqual(2);
+      // Row eleven is a raced setup, with its count.
       const eleven = rows(car).nth(10);
       await eleven.scrollIntoViewIfNeeded();
-      await expect(eleven).toBeVisible();
       await expect(eleven).toContainText("Lime Rock 11.sto");
       await expect(eleven.locator(".raced")).toHaveText(/Raced 2×/);
-      await expectOneScrollbar(page);
-      await shot(page, "setups-row-11");
-      await car.getByRole("button", { name: "Show 10 more" }).click();
+      await expectInnerScrollOnlyInCarSections(page);
+      await shot(page, "setups-inner-scroll");
+      await region.evaluate((el) => void (el.scrollTop = el.scrollHeight));
+      await region.getByRole("button", { name: "Show 10 more" }).click();
       await expect(rows(car)).toHaveCount(25);
       await expect(car.getByRole("button", { name: "Show 10 more" })).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(pageHeight);
+      // A car with ten rows or fewer does not scroll.
+      const small = section(page, CAR).locator(".s-scroll");
+      await expect(small).toHaveAttribute("data-scroll", "false");
+      expect(await small.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
       await expectNoHorizontalScroll(page);
       if (phone) await expectTouchTargets(page);
+    });
+
+    test("the inner scroll is native: it moves with the pointer over it and hands scrolling to the page at its end", async ({ page }) => {
+      await withManySetups(page);
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      const car = section(page, MX5);
+      const region = car.locator(".s-scroll");
+      await expect(region).toBeVisible();
+      await page.evaluate(() => void ((document.querySelector(".setups-page") as HTMLElement).style.paddingBottom = "1500px"));
+      expect(await region.evaluate((el) => getComputedStyle(el).overscrollBehaviorY), "no overscroll containment").toBe("auto");
+      expect(await region.evaluate((el) => getComputedStyle(el).overflowY)).toBe("auto");
+      await region.evaluate((el) => el.scrollIntoView({ block: "center" }));
+      const box = (await region.boundingBox())!;
+      const x = Math.min(box.x + box.width / 2, d.viewport.width - 8);
+      const y = Math.max(box.y, 0) + Math.min(box.height, d.viewport.height - Math.max(box.y, 0)) / 2;
+      await page.mouse.move(x, y);
+      // Over the region, mid-way: the region moves, the page stays.
+      const page0 = await page.evaluate(() => window.scrollY);
+      await page.mouse.wheel(0, 120);
+      await expect.poll(() => region.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      expect(await page.evaluate(() => window.scrollY)).toBe(page0);
+      // At the region's end the same gesture moves the page.
+      await region.evaluate((el) => void (el.scrollTop = el.scrollHeight));
+      await page.mouse.wheel(0, 300);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(page0);
     });
 
     test("a car section collapses and stays collapsed on this device; the revealed rows survive the collapse", async ({ page }) => {
@@ -188,7 +234,7 @@ for (const device of ROUND2_DEVICES) {
       // mid-section: the header is pinned at the bar
       await page.evaluate(() => {
         const s = [...document.querySelectorAll<HTMLElement>(".s-car")].find((x) => x.getAttribute("aria-label") === "Global Mazda MX-5 Cup")!;
-        window.scrollTo(0, s.getBoundingClientRect().top + window.scrollY + 500);
+        window.scrollTo(0, s.getBoundingClientRect().top + window.scrollY + 250);
       });
       await expect.poll(async () => Math.round((await head.boundingBox())!.y), { message: "header pinned under the bar" }).toBeGreaterThanOrEqual(Math.floor(bar) - 1);
       const pinned = (await head.boundingBox())!;
@@ -244,7 +290,8 @@ for (const device of ROUND2_DEVICES) {
       await expect(rows(car)).toHaveCount(2);
       await expect(car.locator("[data-entry=file]")).toHaveCount(0);
       await expect(car).toContainText("2 setups · 2 raced");
-      await expect(page.getByRole("button", { name: "Filters · 1" }).or(page.locator(".fb-controls .filter-clear"))).toBeVisible();
+      if ((await page.locator(".fb").getAttribute("data-layout")) === "collapsed") await expect(page.getByRole("button", { name: "Filters · 1" })).toBeVisible();
+      await expect(page.locator(".fb-row").getByRole("button", { name: "Clear" })).toHaveCount(0);
       // the selection survives going to a setup and coming Back
       await car.getByRole("link", { name: "Bristol race v3.sto" }).click();
       await expect(page.getByRole("heading", { name: "Bristol race v3.sto" })).toBeVisible();
@@ -262,15 +309,16 @@ for (const device of ROUND2_DEVICES) {
       await closeFilters(page);
       await expect(rows(car)).toHaveCount(1);
       await expect(car).toContainText("Bristol race v2.sto");
-      // Clear lives with the controls
+      // The name field clears itself; there is no Clear button beside the controls.
       surface = await filterSurface(page);
-      await surface.getByRole("button", { name: "Clear" }).click();
+      await surface.getByPlaceholder("Name").fill("");
+      await expect(page.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0);
       await closeFilters(page);
       await expect(rows(car)).toHaveCount(6);
       await expectNoHorizontalScroll(page);
     });
 
-    test("the car filter is a searchable multi-select with removable chips", async ({ page }) => {
+    test("the car filter is a searchable multi-select; the button carries the car and clears from inside its list; no chips", async ({ page }) => {
       await withManySetups(page, { count: 3 });
       await page.goto(hash(`/d/${DRIVER}/setups`));
       await expect(section(page, MX5)).toBeVisible();
@@ -278,7 +326,7 @@ for (const device of ROUND2_DEVICES) {
       // colour is the car's: two sections, two stripe colours
       const colours = await page.locator(".s-car").evaluateAll((els) => els.map((e) => getComputedStyle(e).getPropertyValue("--car").trim()));
       expect(new Set(colours).size).toBe(2);
-      const surface = await filterSurface(page);
+      let surface = await filterSurface(page);
       await surface.getByRole("button", { name: /^Car/ }).click();
       const panel = page.getByRole("group", { name: "Car filter" });
       await expect(panel.getByRole("combobox", { name: "Search car" })).toBeFocused();
@@ -290,11 +338,90 @@ for (const device of ROUND2_DEVICES) {
       await expect(section(page, CAR)).toHaveCount(0);
       await page.keyboard.press("Escape");
       await expect(panel).toHaveCount(0);
+      await expect(surface.getByRole("button", { name: `Car · ${MX5}` })).toBeVisible();
       await closeFilters(page);
-      await page.getByRole("button", { name: `Remove ${MX5}` }).click();
+      await expect(page.locator(".filter-chip, .fb-chips")).toHaveCount(0);
+      await expect(page.locator(".fb-row").getByRole("button", { name: "Clear" })).toHaveCount(0);
+      // Clear is the first row of the dropdown.
+      surface = await filterSurface(page);
+      await surface.getByRole("button", { name: /^Car/ }).click();
+      await page.getByRole("group", { name: "Car filter" }).getByRole("button", { name: "Clear" }).click();
+      await page.keyboard.press("Escape");
+      await closeFilters(page);
       await expect(section(page, CAR)).toBeVisible();
+      await expect(section(page, MX5)).toBeVisible();
       await expectNoHorizontalScroll(page);
       if (phone) await expectTouchTargets(page);
+    });
+
+    test("the heading does not move when a filter is set or cleared", async ({ page }) => {
+      await withManySetups(page, { count: 3 });
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      await expect(section(page, MX5)).toBeVisible();
+      const boxes = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll(".fb-row h1, .fb-row a, .fb-row .fb-controls > *, .fb-row .fb-trigger")].map((e) => {
+            const r = e.getBoundingClientRect();
+            return [r.x, r.y, r.width, r.height].map((n) => Math.round(n * 10) / 10);
+          }),
+        );
+      const before = await boxes();
+      let surface = await filterSurface(page);
+      await surface.getByRole("button", { name: /^Car/ }).click();
+      await page.getByRole("option", { name: /Global Mazda/ }).click();
+      await page.keyboard.press("Escape");
+      await surface.getByRole("group", { name: "Raced" }).getByRole("button", { name: "Raced", exact: true }).click();
+      await closeFilters(page);
+      expect(await boxes()).toEqual(before);
+      surface = await filterSurface(page);
+      await surface.getByRole("button", { name: /^Car/ }).click();
+      await page.getByRole("group", { name: "Car filter" }).getByRole("button", { name: "Clear" }).click();
+      await page.keyboard.press("Escape");
+      await surface.getByRole("group", { name: "Raced" }).getByRole("button", { name: "All", exact: true }).click();
+      await closeFilters(page);
+      expect(await boxes()).toEqual(before);
+    });
+
+    test("the Car dropdown lists the cars that have setups, not cars that only have files, and a name search does not shrink it", async ({ page }) => {
+      await withManySetups(page, {
+        count: 3,
+        extraFiles: [{ sha256: "c".repeat(64), car_folder: "dallarair18", relative_path: "dallarair18/Loose.sto", format: "sto", present: true, linked_setup_id: null }],
+      });
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      await expect(section(page, MX5)).toBeVisible();
+      await expect(section(page, "dallarair18")).toBeVisible();
+      const surface = await filterSurface(page);
+      await surface.getByRole("button", { name: /^Car/ }).click();
+      const panel = page.getByRole("group", { name: "Car filter" });
+      await expect(panel.getByRole("option")).toHaveCount(2);
+      await expect(panel.getByRole("option", { name: /dallarair18/ })).toHaveCount(0);
+      await expect(panel.getByRole("option", { name: new RegExp(MX5) })).toContainText("3");
+      await expect(panel).toContainText("0 of 2 cars");
+      await page.keyboard.press("Escape");
+      // A name that only one car has leaves the other sections out but not the other cars' entries in the dropdown.
+      await surface.getByPlaceholder("Name").fill("Lime Rock");
+      await expect(section(page, CAR)).toHaveCount(0);
+      await expect(section(page, MX5)).toBeVisible();
+      await surface.getByRole("button", { name: /^Car/ }).click();
+      await expect(page.getByRole("group", { name: "Car filter" }).getByRole("option")).toHaveCount(2);
+    });
+
+    test("no Library control; the lab library only by ?library=lab in the URL", async ({ page }) => {
+      const asked: string[] = [];
+      page.on("request", (r) => {
+        if (/\/api\/v1\/drivers\/\d+\/setups(\?|$)/.test(r.url())) asked.push(new URL(r.url()).searchParams.get("library") ?? "(none)");
+      });
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      await expect(section(page, CAR)).toBeVisible();
+      await expect(page.getByText("Library")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Lab" })).toHaveCount(0);
+      expect([...new Set(asked)]).toEqual(["(none)"]);
+      await page.goto(hash(`/d/${DRIVER}/setups?library=lab`));
+      await expect(page.getByText("bot sweep.sto")).toBeVisible();
+      expect(asked).toContain("lab");
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      await expect(section(page, CAR)).toBeVisible();
+      await expect(page.getByText("bot sweep.sto")).toHaveCount(0);
     });
 
     test("detail: the name once, raced count and first seen, no source or file-name chip, the file lower down, one tuning entry", async ({ page }) => {

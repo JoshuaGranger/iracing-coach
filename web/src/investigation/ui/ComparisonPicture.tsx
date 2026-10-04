@@ -1,52 +1,12 @@
-import { lapTime, n, numberText, reasonsText, runColor } from "../format";
-import { hasPaceResult, paceTone, type Comparison, type Investigation } from "../investigation-model";
-import { comparisonLaps, comparisonName, deltaText, direction, dotDomain, groupRows, noResultLine, pairedMetrics, rangesText, type GroupRow, type PairedMetric } from "./comparison-model";
+import { n, numberText, runColor } from "../format";
+import { hasPaceResult, paceTone, type Comparison } from "../investigation-model";
+import { comparisonName, deltaText, direction, noResultLine, pairedMetrics, type PairedMetric } from "./comparison-model";
 
 /**
- * The selected comparison drawn (web round 2): Earlier and Later as two rows of lap dots on one lap-time scale with the backend's
- * median marks, the backend's signed difference large with its direction, green/total counts, and paired bars for starting fuel,
- * average throttle and close-traffic exposure, each on its own scale from zero. No sentence; with no pace result, one line.
+ * The selected comparison in Traces (round 3: it left the Race tab, #43 #45): the name, the backend's signed difference with its
+ * direction, and paired bars for starting fuel, average throttle and close-traffic exposure, each on its own scale from zero. No
+ * sentence; with no pace result, one line.
  */
-
-const pct = (value: number, lo: number, hi: number): number => ((value - lo) / Math.max(1e-9, hi - lo)) * 100;
-
-function DotRows({ rows }: { rows: GroupRow[] }) {
-  const domain = dotDomain(rows);
-  if (!domain) return null;
-  const [lo, hi] = domain;
-  const mid = (lo + hi) / 2;
-  return (
-    <div class="ri-dotrows" role="group" aria-label="Lap times by group">
-      {rows.map((row) => {
-        const median = row.cohort.medianLapS;
-        const color = runColor(row.cohort.runNumber);
-        return (
-          <div class="ri-dotrow" key={row.role} data-group={row.role} style={`--grp:${color}`}>
-            <span class="ri-dotrow-name"><b>{row.role === "earlier" ? "Earlier" : "Later"}</b><small>{rangesText(row.cohort.lapNumbers)}</small></span>
-            <svg class="ri-dotrow-track" aria-hidden="true">
-              <line x1="0" x2="100%" y1="50%" y2="50%" class="ri-dotrow-rule" />
-              {row.dots.map((dot) => (
-                <circle key={dot.lap} cx={`${n(pct(dot.lapTimeS, lo, hi))}%`} cy="50%" r="5" class={`ri-gdot${dot.used ? "" : " hollow"}`} data-lap={dot.lap}>
-                  <title>{`L${dot.lap} · ${lapTime(dot.lapTimeS)} s${dot.used ? "" : ` · Not used${dot.reasons.length ? ` · ${reasonsText(dot.reasons)}` : ""}`}`}</title>
-                </circle>
-              ))}
-              {median !== null && <line class="ri-median-mark" data-median={median} x1={`${n(pct(median, lo, hi))}%`} x2={`${n(pct(median, lo, hi))}%`} y1="8%" y2="92%" />}
-            </svg>
-            <span class="ri-dotrow-fig">
-              <b data-median-text>{lapTime(median)}</b>
-              <small data-counts>{row.green}/{row.total} green</small>
-            </span>
-          </div>
-        );
-      })}
-      <div class="ri-dotrow-axis" aria-hidden="true">
-        <span style="left:0">{lo.toFixed(2)}</span>
-        <span style="left:50%" class="mid">{mid.toFixed(2)} s</span>
-        <span style="left:100%" class="end">{hi.toFixed(2)}</span>
-      </div>
-    </div>
-  );
-}
 
 export function PairedBars({ metric, compact = false }: { metric: PairedMetric; compact?: boolean }) {
   const width = (value: number | null): string => (value === null ? "0" : n(Math.max(0, Math.min(100, (value / metric.max) * 100))));
@@ -69,43 +29,6 @@ function Delta({ comparison, compact = false }: { comparison: Comparison; compac
       <b>{deltaText(comparison)}</b><small>s</small>
       {dir && <span class="ri-direction">{dir === "slower" ? "▲ Later slower" : dir === "faster" ? "▼ Later faster" : "Equal"}</span>}
     </span>
-  );
-}
-
-export interface ComparisonPanelProps {
-  inv: Investigation;
-  comparison: Comparison;
-  action?: { label: string; run(): void } | null;
-}
-
-export function ComparisonPanel({ inv, comparison, action }: ComparisonPanelProps) {
-  const laps = comparisonLaps(comparison);
-  if (!hasPaceResult(comparison)) {
-    return (
-      <section class="ri-card ri-detail" data-selected-comparison={comparison.id}>
-        <header><h2>{comparisonName(comparison)}</h2></header>
-        <p class="ri-noresult" data-pace-unusable>{noResultLine(comparison)}</p>
-      </section>
-    );
-  }
-  const rows = groupRows(comparison, inv.laps);
-  const metrics = pairedMetrics(comparison);
-  return (
-    <section class="ri-card ri-detail" data-selected-comparison={comparison.id}>
-      <header>
-        <h2>{comparisonName(comparison)}{laps && <small>{laps}</small>}</h2>
-        <Delta comparison={comparison} />
-      </header>
-      <div class="ri-picture">
-        <DotRows rows={rows} />
-        {metrics.length > 0 && <div class="ri-pbars">{metrics.map((metric) => <PairedBars key={metric.key} metric={metric} />)}</div>}
-      </div>
-      {action && (
-        <div class="ri-action">
-          <button type="button" class="ri-pill-button primary" onClick={action.run}>{action.label}</button>
-        </div>
-      )}
-    </section>
   );
 }
 

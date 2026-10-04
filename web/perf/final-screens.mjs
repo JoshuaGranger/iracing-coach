@@ -21,7 +21,7 @@ const PAGES = {
   sessions: { source: "mock", hash: `/d/${DRIVER}/sessions`, ready: "li.session-row" },
   race: { source: "shell", view: "race", ready: ".ri-dot" },
   runs: { source: "shell", view: "runs", ready: ".ri-dot" },
-  sections: { source: "shell", view: "sections", ready: "[data-ri-chart]" },
+  sections: { source: "shell", view: "sections", ready: ".ri-sl-tabs" },
   traces: { source: "shell", view: "traces", ready: "[data-analysis-trace-path]", cursor: 0.38 },
   setups: { source: "mock", hash: `/d/${DRIVER}/setups`, ready: ".s-car a.s-name" },
   "setup-detail": { source: "mock", hash: `/d/${DRIVER}/setups/1`, ready: "main h1" },

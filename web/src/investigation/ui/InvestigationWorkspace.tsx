@@ -12,7 +12,7 @@ import { useViewportFit } from "./fit";
 import { useAsync } from "./hooks";
 import { RaceView } from "./RaceView";
 import { RunsView } from "./RunsView";
-import { SectionsView } from "./SectionsView";
+import { SectionsView, type SectionsOpenRequest } from "./SectionsView";
 import { PhaseSelector, type PhaseOption } from "./PhaseSelector";
 import type { LayoutCommandRequest } from "./TraceToolbox";
 import { TracesView, type TraceFocus } from "./TracesView";
@@ -163,6 +163,19 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
     setFocus(request);
     select({ view: "traces" });
   };
+  // Sections › Open in Traces starts the Traces cursor at the section start (the focus region alone centres it).
+  const pendingCursor = useRef<number | null>(null);
+  const openSectionInTraces = (request: SectionsOpenRequest): void => {
+    pendingCursor.current = request.cursorPct;
+    openTraces({ laps: request.laps, startPct: request.startPct, endPct: request.endPct, signalKeys: request.signalKeys });
+  };
+  const traceCursor = (cursor: TelemetryCursor | null): void => {
+    if (cursor && pendingCursor.current !== null) {
+      cursor.setFraction(pendingCursor.current);
+      pendingCursor.current = null;
+    }
+    props.onCursor?.(cursor);
+  };
 
   let body: ComponentChildren;
   if (overview.state.status === "loading") {
@@ -183,7 +196,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
           key={props.analysisId} data={data} map={map} race={ov.race} runs={ov.runs.runs as unknown[]}
           layoutSet={layoutSet} onLayoutChange={editLayout} onLayoutCommand={layoutCommand}
           ensureSignals={(ids) => handle.ensureSignals(ids)} focus={focus} onClearFocus={() => setFocus(null)}
-          analysisKey={props.analysisId} reducedMotion={props.reducedMotion ?? false} onCursor={props.onCursor} comparison={comparison}
+          analysisKey={props.analysisId} reducedMotion={props.reducedMotion ?? false} onCursor={traceCursor} comparison={comparison}
         />
       );
     }
@@ -196,22 +209,20 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
     );
   } else if (view === "race") {
     body = (
-      <RaceView
-        inv={inv} selected={comparison} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)}
-        onSelectComparison={(id) => select({ comparisonId: id })}
-        onInspect={(action) => {
-          if (action.sectionId) select({ view: "sections", comparisonId: comparison?.id ?? null, sectionId: action.sectionId });
-          else openTraces({ laps: action.lapNumbers, startPct: action.startPct, endPct: action.endPct, signalKeys: action.signalKeys });
-        }}
-      />
+      <RaceView inv={inv} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)} />
     );
   } else if (view === "runs") {
-    body = <RunsView inv={inv} selected={comparison} sessionType={sessionTypeOf(overview.state.value.race)} runs={overview.state.value.runs.runs as unknown[]} />;
+    body = (
+      <RunsView
+        inv={inv} race={overview.state.value.race} sessionType={sessionTypeOf(overview.state.value.race)} runs={overview.state.value.runs.runs as unknown[]}
+        analysisKey={props.analysisId}
+      />
+    );
   } else {
     body = (
       <SectionsView
-        inv={inv} comparison={comparison} section={section} map={map} onSelectSection={(id) => select({ view: "sections", sectionId: id })}
-        onOpenTraces={(request) => openTraces({ laps: request.laps, startPct: request.startPct, endPct: request.endPct, signalKeys: request.signalKeys })}
+        inv={inv} section={section} map={map} sectionLaps={overview.state.value.sectionLaps ?? null} onSelectSection={(id) => select({ view: "sections", sectionId: id })}
+        onOpenTraces={openSectionInTraces}
       />
     );
   }

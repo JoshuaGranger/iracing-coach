@@ -170,7 +170,8 @@ export interface RunView {
   lastLap: number;
   fitUnavailableReason: string | null;
   trend: { method: string | null; coveredLapCount: number; segments: TrendPoint[][]; gaps: { afterLap: number; beforeLap: number; reason: string }[] };
-  fit: { method: string | null; eligibleCount: number; slopeSPerGreenLap: number | null; domain: [number, number] | null; points: { x: number; y: number }[] } | null;
+  /** The screened fit; `laps` are the eligible laps the backend fitted (empty when it did not list them). */
+  fit: { method: string | null; eligibleCount: number; slopeSPerGreenLap: number | null; domain: [number, number] | null; points: { x: number; y: number }[]; laps: number[] } | null;
 }
 
 export interface Section {
@@ -359,6 +360,7 @@ function run(raw: unknown): RunView {
           slopeSPerGreenLap: required<number>(fit, "slope_s_per_green_lap", `run ${num(r.run_number) ?? "?"} fit`),
           domain: domain.length === 2 ? [domain[0]!, domain[1]!] : null,
           points: asArray(fit.points).map((p) => ({ x: num(asRecord(p).x) ?? 0, y: num(asRecord(p).y) ?? 0 })),
+          laps: numbers(fit.laps),
         }
       : null,
   };

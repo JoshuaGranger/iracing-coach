@@ -2,8 +2,9 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 /**
- * The filter of every library page (design README, Components: Filters): a searchable multi-select dropdown and the removable
- * chips of what is chosen. Sessions (Car, Track, Series, Session, Setup) and Setups (Car) use the same component and look.
+ * The filter of every library page (design README, Components: Filters): a searchable multi-select dropdown. Sessions (Car,
+ * Track, Series, Session, Setup) and Setups (Car) use the same component and look. The dropdown button carries its own
+ * selection and clears it from inside its list; there are no chips and no Clear beside the heading (round 3 #35/#36).
  */
 export interface Option {
   key: string;
@@ -27,6 +28,16 @@ export function Highlight({ text, query }: { text: string; query: string }) {
   );
 }
 
+/**
+ * What the dropdown button reads: the label alone while nothing is chosen, `Car · Supra` for one value, `Car · 2` for several.
+ * Only values the options still offer count.
+ */
+export function pillText(label: string, options: readonly Option[], selected: readonly string[]): string {
+  const chosen = options.filter((o) => selected.includes(o.key));
+  if (chosen.length === 0) return label;
+  return chosen.length === 1 ? `${label} · ${chosen[0]!.label}` : `${label} · ${chosen.length}`;
+}
+
 export function matches(options: readonly Option[], query: string): Option[] {
   const q = query.trim().toLowerCase();
   return q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options.slice();
@@ -35,9 +46,10 @@ export function matches(options: readonly Option[], query: string): Option[] {
 let uid = 0;
 
 /**
- * A searchable multi-select. The trigger shows how many are chosen; the panel opens on a focused search field, lists checkbox
- * options with their identity mark and count, and applies each choice at once; the footer reads `n of m` with Clear.
- * Up/Down move, Enter chooses, Escape closes and returns focus to the trigger.
+ * A searchable multi-select. The trigger shows what is chosen (`pillText`) at a fixed width; the panel opens on a focused search
+ * field, then a Clear row, then checkbox options with their identity mark and count; each choice applies at once and the footer
+ * reads `n of m`. The Clear row is always there (disabled while nothing is chosen), so the options never shift when the first
+ * one is chosen. Up/Down move, Enter chooses, Escape closes and returns focus to the trigger.
  */
 export function MultiSelect({ label, noun, options, selected, onChange }: { label: string; noun: string; options: readonly Option[]; selected: readonly string[]; onChange(next: string[]): void }) {
   const [open, setOpen] = useState(false);
@@ -94,30 +106,48 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
       e.preventDefault();
       e.stopPropagation();
       close(true);
-    } else if (e.key === "Tab") {
+    } else if (e.key === "Tab" && (e.shiftKey || chosen === 0)) {
+      // Forward Tab goes on to the Clear row while there is something to clear; focus leaving the control closes the panel.
       close(false);
     }
   }
 
   return (
-    <span class="ms" ref={wrap}>
+    <span
+      class="ms"
+      ref={wrap}
+      onFocusOut={(e) => {
+        const next = (e as FocusEvent).relatedTarget as Node | null;
+        if (open && next && wrap.current && !wrap.current.contains(next)) close(false);
+      }}
+    >
       <button
         type="button"
         ref={trigger}
-        class={open ? "ms-pill open" : "ms-pill"}
+        class={(open ? "ms-pill open" : "ms-pill") + (chosen > 0 ? " has" : "")}
+        title={chosen > 1 ? pillText(label, options, selected) : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => (open ? close(false) : setOpen(true))}
       >
-        {label}
-        {chosen > 0 ? <span class="ms-count">{chosen}</span> : null}
+        <span class="ms-pill-text">{pillText(label, options, selected)}</span>
         <svg class="ms-chev" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
       {open ? (
-        <div class="ms-panel" id={id} role="group" aria-label={`${label} filter`}>
+        <div
+          class="ms-panel"
+          id={id}
+          role="group"
+          aria-label={`${label} filter`}
+          // Pressing on an option, the Clear row or the footer keeps focus on the search field: focus moving to a surrounding
+          // dialog would count as leaving the control and close it before the click lands.
+          onMouseDown={(e) => {
+            if ((e.target as HTMLElement).tagName !== "INPUT") e.preventDefault();
+          }}
+        >
           <div class="ms-search">
             <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
               <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6" />
@@ -139,6 +169,20 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
               onKeyDown={onKey}
             />
           </div>
+          <button
+            type="button"
+            class="ms-clear-row"
+            disabled={chosen === 0}
+            onClick={() => {
+              onChange([]);
+              search.current?.focus();
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            </svg>
+            Clear
+          </button>
           <div class="ms-opts" id={`${id}-list`} role="listbox" aria-label={label} aria-multiselectable="true">
             {shown.map((o, i) => {
               const on = selected.includes(o.key);
@@ -179,39 +223,9 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
             <span>
               {chosen} of {options.length} {noun}
             </span>
-            <button type="button" class="ms-clear" disabled={chosen === 0} onClick={() => onChange([])}>
-              Clear
-            </button>
           </div>
         </div>
       ) : null}
     </span>
-  );
-}
-
-/** A chosen filter value: the whole pill removes it. `color` is the car colour of a car value. */
-export function FilterChip({ label, color, mark, onRemove }: { label: string; color?: string; mark?: ComponentChildren; onRemove(): void }) {
-  return (
-    <button type="button" class="filter-chip" style={color ? { "--car": color } : undefined} aria-label={`Remove ${label}`} onClick={onRemove}>
-      {mark}
-      {label}
-      <svg class="filter-x" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-        <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-      </svg>
-    </button>
-  );
-}
-
-/** The chips after a divider, then Clear (the whole selection). Nothing when nothing is chosen. */
-export function FilterChips({ children, count, onClear }: { children: ComponentChildren; count: number; onClear(): void }) {
-  if (count === 0) return null;
-  return (
-    <>
-      <span class="filter-sep" aria-hidden="true" />
-      {children}
-      <button type="button" class="filter-clear" onClick={onClear}>
-        Clear
-      </button>
-    </>
   );
 }

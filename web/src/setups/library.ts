@@ -213,6 +213,23 @@ export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile
   return out.sort((a, b) => newest(b) - newest(a) || a.carName.localeCompare(b.carName));
 }
 
+/** A car the library holds setups for, as the Car dropdown offers it. */
+export interface CarChoice {
+  carPath: string;
+  carName: string;
+  color: string;
+  /** Setups of the car, versions and captures counted one each. */
+  setups: number;
+}
+
+/**
+ * The cars that have setups, in the library's order. A car with only unlinked files (no values, no setup) is not offered: the
+ * filter lists values that exist among the setups it filters (#38).
+ */
+export function carsWithSetups(groups: readonly CarGroup[]): CarChoice[] {
+  return groups.filter((g) => g.setups > 0).map((g) => ({ carPath: g.carPath, carName: g.carName, color: g.color, setups: g.setups }));
+}
+
 function carNameOf(setups: readonly Setup[], carPath: string): string | null {
   return setups.find((s) => lower(s.car_path) === lower(carPath))?.car_name ?? null;
 }

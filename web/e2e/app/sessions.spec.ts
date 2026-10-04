@@ -10,6 +10,8 @@ const bristol = (page: Page) => page.getByRole("region", { name: BRISTOL }).firs
 const cell = (page: Page, sessionId: number) => page.locator(`li.session-row[data-session="${sessionId}"]`);
 const slot = (c: Locator, key: string) => c.locator(`.sx-slot[data-slot="${key}"]`);
 const value = (c: Locator, key: string) => slot(c, key).locator(".sx-v");
+/** A practice or qualifying figure: the quieter preamble type (round 3, #33). */
+const quiet = (c: Locator, key: string) => slot(c, key).locator(".sx-qv");
 const bar = (page: Page) => page.locator(".fb");
 
 // Token colours as the browser resolves them (config/theme.dark.json).
@@ -92,6 +94,12 @@ async function paint(page: Page) {
       const l = (mx + mn) / 2;
       return mx === mn ? 0 : (mx - mn) / (1 - Math.abs(2 * l - 1));
     };
+    const chroma = (css: string) => {
+      const m = css.match(/rgba?\((\d+), (\d+), (\d+)/);
+      if (!m) return 0;
+      const v = [Number(m[1]), Number(m[2]), Number(m[3])];
+      return (Math.max(...v) - Math.min(...v)) / 255;
+    };
     const glow: string[] = [];
     const fills: string[] = [];
     for (const el of root.querySelectorAll<HTMLElement>("*")) {
@@ -103,7 +111,8 @@ async function paint(page: Page) {
       }
       if (cs.textShadow !== "none") glow.push(`${el.className}: text-shadow ${cs.textShadow}`);
       const bg = cs.backgroundColor;
-      if (bg !== "rgba(0, 0, 0, 0)" && sat(bg) > 0.3) fills.push(`${el.tagName.toLowerCase()}.${el.className}: ${bg}`);
+      // A fill is saturated when it carries real chroma: the dark neutral surfaces read high on HSL saturation alone.
+      if (bg !== "rgba(0, 0, 0, 0)" && sat(bg) > 0.3 && chroma(bg) > 0.12) fills.push(`${el.tagName.toLowerCase()}.${el.className}: ${bg}`);
     }
     return { glow, fills };
   });
@@ -114,7 +123,7 @@ for (const device of ROUND2_DEVICES) {
     const phone = d.viewport.width < 700;
     const wide = d.viewport.width >= 1400;
 
-    test("one compact row per event: identity, then the phases in running order, nothing behind a disclosure", async ({ page }) => {
+    test("one row per event in three blocks: identity behind a divider, each phase its own panel, the race widest", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const row = bristol(page);
       await expect(row.getByRole("heading", { name: "Bristol Motor Speedway" })).toBeVisible();
@@ -123,34 +132,54 @@ for (const device of ROUND2_DEVICES) {
       await expect(row.locator(".sx-car")).toContainText("NASCAR Xfinity Toyota Supra");
       await expect(row.locator(".sx-phase")).toHaveText(["Practice", "Qualifying", "Race"]);
       await expect(row.locator(".sx-head .sx-l")).toHaveText(["1:00 pm", "1:30 pm", "2:00 pm · 2 rec"]);
+      expect(await row.locator("li.session-row").evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")))).toEqual(["practice", "qualify", "race"]);
       await expect(page.locator(".sx-events details, .sx-events [aria-expanded]")).toHaveCount(0);
 
       const id = (await row.locator(".sx-id").boundingBox())!;
       const cells = await Promise.all((await row.locator("li.session-row").all()).map(async (c) => (await c.boundingBox())!));
       expect(cells).toHaveLength(3);
+      // Each phase is a panel: its own border all round and rounded corners.
+      for (const c of await row.locator("li.session-row").all()) {
+        const st = await c.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { sides: [cs.borderTopWidth, cs.borderLeftWidth, cs.borderRightWidth, cs.borderBottomWidth], radius: parseFloat(cs.borderTopLeftRadius) };
+        });
+        expect(st.sides).toEqual(["1px", "1px", "1px", "1px"]);
+        expect(st.radius).toBeGreaterThan(0);
+      }
+      // The identity block's divider: a visible rule at its right (wide) or under it (tablet, phone).
+      const divider = await row.locator(".sx-id").evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { right: cs.borderRightWidth, bottom: cs.borderBottomWidth };
+      });
       if (phone) {
-        // Stacked phase rows: one column, in order, each as wide as the row.
+        // Stacked phase panels: one column, in order, each as wide as the row, with a gutter between them.
         for (let i = 1; i < 3; i++) {
-          expect(cells[i]!.y).toBeGreaterThan(cells[i - 1]!.y + cells[i - 1]!.height - 2);
+          expect(cells[i]!.y).toBeGreaterThanOrEqual(cells[i - 1]!.y + cells[i - 1]!.height + 6);
           expect(Math.abs(cells[i]!.x - cells[0]!.x)).toBeLessThan(2);
           expect(Math.abs(cells[i]!.width - cells[0]!.width)).toBeLessThan(2);
         }
+        expect(divider.bottom).toBe("1px");
       } else {
-        // Equal inline cells on one line.
+        // Inline panels on one line with a real gutter; the race is the widest, qualifying the narrowest.
         for (let i = 1; i < 3; i++) {
           expect(Math.abs(cells[i]!.y - cells[0]!.y)).toBeLessThan(2);
-          expect(Math.abs(cells[i]!.width - cells[0]!.width)).toBeLessThan(2);
-          expect(cells[i]!.x).toBeGreaterThan(cells[i - 1]!.x + cells[i - 1]!.width - 2);
+          expect(cells[i]!.x).toBeGreaterThanOrEqual(cells[i - 1]!.x + cells[i - 1]!.width + 10);
         }
+        const [p, q, r] = cells as [typeof id, typeof id, typeof id];
+        expect(r.width).toBeGreaterThan(p.width * 1.5);
+        expect(p.width).toBeGreaterThan(q.width);
         if (wide) {
-          // Identity at the left of the cells; the row is about 5.5 rem.
-          expect(id.x + id.width).toBeLessThanOrEqual(cells[0]!.x + 2);
+          // Identity at the left, then the divider, then a gutter before the first panel; the row is about 5.5 rem.
+          expect(divider.right).toBe("1px");
+          expect(cells[0]!.x).toBeGreaterThanOrEqual(id.x + id.width + 10);
           const box = (await row.locator(".sx-row").boundingBox())!;
           expect(box.height).toBeGreaterThanOrEqual(80);
-          expect(box.height).toBeLessThanOrEqual(130);
+          expect(box.height).toBeLessThanOrEqual(140);
         } else {
-          // Tablet: identity on its own line above the cells.
-          expect(id.y + id.height).toBeLessThanOrEqual(cells[0]!.y + 2);
+          // Tablet: identity on its own line above the panels, the divider under it.
+          expect(divider.bottom).toBe("1px");
+          expect(cells[0]!.y).toBeGreaterThanOrEqual(id.y + id.height + 6);
         }
       }
       await expectNoHorizontalScroll(page);
@@ -170,16 +199,52 @@ for (const device of ROUND2_DEVICES) {
       await expect(value(race, "run")).toHaveText("41");
       await expect(slot(race, "laps")).toHaveAttribute("title", "Green · caution laps");
       await expect(slot(race, "pos")).toHaveAttribute("title", "Finished P4, started P12");
-      // Practice and qualifying say `Pos`; qualifying has no trend, so its pace is the green pace alone.
-      await expect(slot(cell(page, 101), "pos").locator(".sx-l")).toHaveText("Pos");
-      await expect(value(cell(page, 102), "pace")).toHaveText("15.520");
-      await expect(value(cell(page, 101), "laps")).toHaveText("20·0");
 
       await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { recorded_laps: 82, final_position: 4 } } : r)));
       await page.reload();
       const bare = cell(page, 103);
       await expect(value(bare, "pos")).toHaveText("P4");
       for (const key of ["laps", "best", "pace", "stops", "fuel", "run"]) await expect(value(bare, key)).toHaveText("—");
+    });
+
+    test("practice: position, fastest lap, longest run without a reset and its pace loss; qualifying: position, lap 1, lap 2", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const practice = cell(page, 101);
+      await expect(practice.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Pos", "Best", "Run", "Fall-off"]);
+      await expect(quiet(practice, "pos")).toHaveText("P5");
+      await expect(quiet(practice, "best")).toHaveText("15.500");
+      await expect(quiet(practice, "run")).toHaveText("9laps");
+      await expect(quiet(practice, "loss")).toHaveText("+0.21s");
+      await expect(slot(practice, "run")).toHaveAttribute("title", "Longest run without a reset, laps");
+      const qualify = cell(page, 102);
+      await expect(qualify.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Pos", "Lap 1", "Lap 2"]);
+      await expect(quiet(qualify, "pos")).toHaveText("P2");
+      await expect(quiet(qualify, "lap1")).toHaveText("15.610");
+      await expect(quiet(qualify, "lap2")).toHaveText("15.410");
+      // No fuel, stops, cautions or pace trend in the preamble.
+      for (const c of [practice, qualify]) for (const key of ["fuel", "stops", "laps", "pace"]) await expect(slot(c, key)).toHaveCount(0);
+      // A faster end is a true minus; a run with too few clean laps and a missing second lap are dashes.
+      await expect(quiet(cell(page, 104), "loss")).toHaveText("−0.08s");
+      await expect(quiet(page.getByRole("region", { name: "Indianapolis Raceway Park - Oval" }).nth(1).locator("li.session-row").first(), "loss")).toHaveText("—");
+      await expect(quiet(cell(page, 112), "lap2")).toHaveText("—");
+      await expect(quiet(cell(page, 112), "lap1")).not.toHaveText("—");
+      await expectNoHorizontalScroll(page);
+    });
+
+    test("practice and qualifying are quieter than the race: 14 px secondary figures against the race's 15 px primary", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const style = (l: Locator) => l.evaluate((el) => ({ size: getComputedStyle(el).fontSize, color: getComputedStyle(el).color }));
+      const race = await style(value(cell(page, 103), "best").locator(".sx-p").first());
+      const prac = await style(quiet(cell(page, 101), "best").locator(".sx-qp").first());
+      const qual = await style(quiet(cell(page, 102), "lap1").locator(".sx-qp").first());
+      expect(race.size).toBe("15px");
+      expect(prac.size).toBe("14px");
+      expect(qual.size).toBe("14px");
+      expect(prac.color).not.toBe(race.color);
+      expect(qual.color).toBe(prac.color);
+      // The phase names follow: the race's at the figure size, the preamble's at the secondary size.
+      expect((await style(cell(page, 103).locator(".sx-phase"))).size).toBe("15px");
+      expect((await style(cell(page, 101).locator(".sx-phase"))).size).toBe("14px");
     });
 
     test("two events compare on stint length, pace and fuel without opening either", async ({ page }) => {
@@ -245,10 +310,12 @@ for (const device of ROUND2_DEVICES) {
       // A win is a plain number, no flag.
       await expect(value(cell(page, 110), "pos")).toHaveText("P1▲2");
       await expect(cell(page, 110).locator(".sx-flag, .sx-win")).toHaveCount(0);
-      // The fastest lap is not coloured across phases: qualifying holds NH's event best, same colour as the race lap.
-      await expect(value(cell(page, 109), "best")).toHaveAttribute("data-event-best", "true");
+      // The fastest lap is not coloured across phases: qualifying's lap 2 holds NH's event best, marked by weight in the plain
+      // secondary colour of every preamble figure.
+      await expect(quiet(cell(page, 109), "lap2")).toHaveAttribute("data-event-best", "true");
       await expect(value(cell(page, 110), "best")).not.toHaveAttribute("data-event-best", "true");
-      expect(await colour(value(cell(page, 109), "best").locator(".sx-p"))).toBe(await colour(value(cell(page, 110), "best").locator(".sx-p")));
+      expect(await colour(quiet(cell(page, 109), "lap2").locator(".sx-qp"))).toBe(await colour(quiet(cell(page, 109), "lap1").locator(".sx-qp")));
+      expect(await quiet(cell(page, 109), "lap2").evaluate((el) => getComputedStyle(el).fontWeight)).toBe("700");
       // At most two coloured figures in any phase cell.
       const counts = await page.locator("li.session-row").evaluateAll((cells, [g, l, c]) => cells.map((el) => [...el.querySelectorAll(".sx-p")].filter((p) => [g, l, c].includes(getComputedStyle(p).color)).length), [GAIN, LOSS, CAUTION]);
       expect(Math.max(...counts)).toBeLessThanOrEqual(2);
@@ -336,7 +403,7 @@ for (const device of ROUND2_DEVICES) {
       await expect(page.locator("li.session-row[data-state=ready]").first()).toBeVisible();
     });
 
-    test("the filters sit in the heading at 1440 and collapse to one button below that; Library is inside the surface", async ({ page }) => {
+    test("the filters sit in the heading at 1440 and collapse to one button below that; no Library control, no Clear beside the heading", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       await expect(bristol(page)).toBeVisible();
       await expect(page.locator(".filter-bar.fb-chips")).toHaveCount(0);
@@ -349,8 +416,6 @@ for (const device of ROUND2_DEVICES) {
           expect(b.x, `${name} is right of the title`).toBeGreaterThan(h1.x + h1.width);
           expect(b.y + b.height, `${name} is on the heading row`).toBeLessThanOrEqual(head.y + head.height + 1);
         }
-        const lib = (await bar(page).locator(".lib-ctl").boundingBox())!;
-        expect(head.x + head.width - (lib.x + lib.width)).toBeLessThan(40);
         await expect(page.getByRole("button", { name: /^Filters/ })).toHaveCount(0);
       } else {
         await expect(bar(page)).toHaveAttribute("data-layout", "collapsed");
@@ -360,14 +425,14 @@ for (const device of ROUND2_DEVICES) {
         const surface = page.getByRole("dialog", { name: "Filters" });
         await expect(surface).toHaveClass(d.touch ? /fb-sheet/ : /fb-pop/);
         for (const name of ["Car", "Track", "Series", "Session", "Setup"]) await expect(surface.getByRole("button", { name: new RegExp(`^${name}`) })).toBeVisible();
-        await expect(surface.getByRole("button", { name: "Joshua" })).toHaveAttribute("aria-pressed", "true");
-        await expect(surface.getByRole("button", { name: "Lab", exact: true })).toBeVisible();
-        await expect(surface.getByRole("button", { name: "Clear" })).toBeDisabled();
       }
+      await expect(page.locator(".lib-ctl")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Lab", exact: true })).toHaveCount(0);
+      await expect(page.locator(".filter-clear")).toHaveCount(0);
       await expectNoHorizontalScroll(page);
     });
 
-    test("searchable multi-select filters, chips that remove, Clear inside the surface", async ({ page }) => {
+    test("searchable multi-select filters; the button carries the choice and clears from inside its list", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       await expect(bristol(page)).toBeVisible();
       await expect(page.getByRole("button", { name: "Tests" })).toHaveCount(0);
@@ -384,22 +449,17 @@ for (const device of ROUND2_DEVICES) {
       await expect(page.locator(".ms-foot")).toContainText("1 of 2 cars");
       await page.keyboard.press("Escape");
       await closeFilters(page);
-      await expect(page.getByRole("button", { name: "Remove Global Mazda MX-5 Cup" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
       await expect(page.locator("section.sx-event")).toHaveCount(1);
       await expect(page.getByRole("region", { name: "Lime Rock Park - Grand Prix" })).toBeVisible();
       if (!phone && !wide) await expect(page.getByRole("button", { name: "Filters · 1" })).toBeVisible();
 
-      await page.getByRole("button", { name: "Remove Global Mazda MX-5 Cup" }).click();
-      await expect(page.locator("section.sx-event").nth(1)).toBeVisible();
-      await expect(page.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
-
-      // Clear lives inside the surface and resets every choice.
-      await choose(page, "Car", /Global Mazda/);
-      await expect(page.locator("section.sx-event")).toHaveCount(1);
+      // Clear lives inside the list.
       const again = await openFilters(page);
-      await again.getByRole("button", { name: "Clear", exact: true }).click();
+      await again.getByRole("button", { name: /^Car · Global Mazda/ }).click();
+      await page.locator(".ms-clear-row").click();
+      await page.keyboard.press("Escape");
       await closeFilters(page);
-      await expect(page.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
       expect(await page.locator("section.sx-event").count()).toBeGreaterThan(3);
       await expectNoHorizontalScroll(page);
       if (d.touch) await expectTouchTargets(page);
@@ -419,10 +479,13 @@ for (const device of ROUND2_DEVICES) {
       await closeFilters(page);
       await expect(page.locator("li.session-row")).toHaveCount(4);
       await expect(page.locator("li.session-row .sx-phase")).toHaveText(["Race", "Race", "Race", "Race"]);
-      // Races only: one column, the race cell as wide as the phases area.
+      // Races only: one column, the race panel as wide as the phases area inside its gutter.
       const only = (await page.locator("li.session-row").first().boundingBox())!;
-      const phases = (await page.locator(".sx-cells").first().boundingBox())!;
-      expect(Math.abs(only.width - phases.width)).toBeLessThan(2);
+      const inner = await page.locator(".sx-cells").first().evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      });
+      expect(Math.abs(only.width - inner)).toBeLessThan(2);
 
       await choose(page, "Setup", /Fixed/);
       await expect(page.locator("li.session-row")).toHaveCount(2);
@@ -431,7 +494,6 @@ for (const device of ROUND2_DEVICES) {
       await choose(page, "Series", /Global Mazda/);
       await expect(page.getByRole("heading", { name: "No matching sessions" })).toBeVisible();
       await page.getByRole("button", { name: "Clear filters" }).click();
-      await expect(page.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
       expect(await page.locator("section.sx-event").count()).toBeGreaterThan(3);
       surface = await openFilters(page);
       await closeFilters(page);
@@ -444,11 +506,12 @@ for (const device of ROUND2_DEVICES) {
       // The device's own copy is only a hint for the first paint: without it the prefs still restore the chips.
       await page.evaluate((c) => localStorage.removeItem(`coach.sessions.filters.${c}`), DRIVER);
       await page.reload();
-      await expect(page.getByRole("button", { name: "Remove Global Mazda MX-5 Cup" })).toBeVisible();
       await expect(page.locator("section.sx-event")).toHaveCount(1);
+      const surface = await openFilters(page);
+      await expect(surface.getByRole("button", { name: /^Car · Global Mazda MX-5 Cup/ })).toBeVisible();
     });
 
-    test("Library: Joshua by default, Lab inside the surface lists the bot sessions, never saved", async ({ page }) => {
+    test("Library: the driver's own by default; the lab only by ?library=lab in the URL, never saved", async ({ page }) => {
       const requested: string[] = [];
       page.on("request", (r) => {
         if (/\/api\/v1\/drivers\/\d+\/sessions(\?|$)/.test(r.url())) requested.push(new URL(r.url()).searchParams.get("library") ?? "(none)");
@@ -456,31 +519,15 @@ for (const device of ROUND2_DEVICES) {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       await expect(bristol(page)).toBeVisible();
       await expect(cell(page, 900)).toHaveCount(0);
-      await expect(cell(page, 901)).toHaveCount(0);
-      // Joshua's list asks for no library at all (the contract's default is main); only Lab sends library=lab.
       expect([...new Set(requested)]).toEqual(["(none)"]);
-      let surface = await openFilters(page);
-      await expect(surface.getByRole("button", { name: "Joshua" })).toHaveAttribute("aria-pressed", "true");
-      await surface.getByRole("button", { name: "Lab", exact: true }).click();
-      await closeFilters(page);
+      await page.goto(hash(`/d/${DRIVER}/sessions?library=lab`));
       await expect(cell(page, 900)).toBeVisible();
       await expect(cell(page, 901)).toBeVisible();
       expect(requested).toContain("lab");
-      expect(requested.filter((v) => v !== "(none)" && v !== "lab")).toEqual([]);
       await expect(page.getByRole("region", { name: BRISTOL })).toHaveCount(0);
-      await expect(page.locator("section.sx-event")).toHaveCount(2);
-      if (!wide) await expect(page.getByRole("button", { name: "Filters · 1" })).toBeVisible();
-      surface = await openFilters(page);
-      await surface.getByRole("button", { name: "Clear", exact: true }).click();
-      await closeFilters(page);
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      await expect(bristol(page)).toBeVisible();
       await expect(cell(page, 900)).toHaveCount(0);
-      await expect(bristol(page)).toBeVisible();
-      // Per visit: a reload is back on Joshua's library and nothing about it is stored.
-      surface = await openFilters(page);
-      await surface.getByRole("button", { name: "Lab", exact: true }).click();
-      await closeFilters(page);
-      await page.reload();
-      await expect(bristol(page)).toBeVisible();
       expect(await page.evaluate(() => JSON.stringify({ ...localStorage }).toLowerCase())).not.toContain("lab");
     });
 
@@ -558,10 +605,10 @@ for (const device of ROUND2_DEVICES) {
   });
 }
 
-// Round 2 acceptance screenshots (web/target/round2/A1): the list at the three viewports, and each filter surface open.
+// Acceptance screenshots (round 3 R1: web/target/round3/R1): the list at the three viewports, one event's three blocks, the exceptions.
 const dir = process.env.COACH_SCREENS_DIR;
 test.describe("screenshots", () => {
-  test.skip(!dir, "set COACH_SCREENS_DIR to write the round 2 screenshots");
+  test.skip(!dir, "set COACH_SCREENS_DIR to write the screenshots");
   for (const device of ROUND2_DEVICES) {
     appTest(device, (d) => {
       const wide = d.viewport.width >= 1400;
@@ -574,26 +621,13 @@ test.describe("screenshots", () => {
         await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}.png` });
         if (phone) await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}-full.png`, fullPage: true });
 
-        const surface = await openFilters(page);
-        if (wide) {
-          await surface.getByRole("button", { name: /^Car/ }).click();
-          await page.getByRole("option", { name: /NASCAR Xfinity/ }).click();
-        }
-        await page.waitForTimeout(150);
-        await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}-filters.png` });
-        await page.keyboard.press("Escape");
-        await closeFilters(page);
-        if (wide) await page.getByRole("button", { name: "Remove NASCAR Xfinity Toyota Supra" }).click();
+        // One event close up: the three blocks.
+        await bristol(page).screenshot({ path: `${dir}/sessions-${d.viewport.width}-row.png` });
 
-        // The not-ready phases (Not analyzed, Failed, Deferred) and the Lab library.
+        // The not-ready phases (Not analyzed, Failed, Deferred).
         await cell(page, 108).scrollIntoViewIfNeeded();
         await page.waitForTimeout(150);
         await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}-exceptions.png` });
-        const lab = await openFilters(page);
-        await lab.getByRole("button", { name: "Lab", exact: true }).click();
-        await closeFilters(page);
-        await expect(cell(page, 900)).toBeVisible();
-        await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}-lab.png` });
       });
     });
   }

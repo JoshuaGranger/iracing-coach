@@ -2,12 +2,16 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 /**
- * The page heading with its filters (web round 2, "Filters by width"). Same rule on every page.
+ * The page heading with its filters (web round 2, "Filters by width"; round 3 #35/#36). Same rule on every page.
  *
- * The filter controls sit at the heading's right when the title and the complete set of controls fit at their minimum
+ * The filter controls sit at the heading's right when the title and the complete set of controls fit at their fixed
  * widths. When they do not, the heading shows one `Filters · N` button; it opens a popover on pointer devices and a bottom
- * sheet on touch screens. Clear lives inside whichever surface shows the controls. The decision is a measurement of the row
- * (ResizeObserver), never a device-class test: a wide tablet shows the controls inline, a narrow desktop window collapses.
+ * sheet on touch screens. The decision is a measurement of the row (ResizeObserver), never a device-class test: a wide
+ * tablet shows the controls inline, a narrow desktop window collapses.
+ *
+ * Nothing in the heading appears, disappears or changes width when a filter is set or cleared: there is no Clear button and
+ * no chip row; each dropdown button carries its own selection (`Car · Supra`, `Car · 2`) at a fixed width and clears from
+ * inside its list, and the collapsed button has a fixed width too.
  *
  * The bar is stateless about selections. The page owns them and saves them per page through the driver's prefs
  * (`session_filters`, `setup_filters`), so they survive navigation and Back; the popover only shows them.
@@ -17,39 +21,34 @@ export interface FilterControl {
   id: string;
   /** Name of the control, shown above it in the popover or sheet (the inline control carries its own label). */
   label: string;
-  /** The control: a `MultiSelect`, a `Segmented`, a `LibraryControl`, a text field. */
+  /** The control: a `MultiSelect`, a `Segmented`, a text field. */
   node: ComponentChildren;
-  /** Minimum inline width in rem. Defaults to `DEFAULT_CONTROL_REM`; set it when the control is wider (a search field). */
+  /** Inline width in rem. Defaults to `DEFAULT_CONTROL_REM`; set it when the control is wider (a search field). */
   minRem?: number;
 }
 
-/** A multi-select pill (label, count, chevron) at its narrowest. */
-export const DEFAULT_CONTROL_REM = 7.5;
+/** A multi-select pill: a fixed width, whatever it carries (`.ms-pill`). */
+export const DEFAULT_CONTROL_REM = 10;
 /** Space between the title and the controls, and between controls (`--space-4`, `--space-2`). */
 export const TITLE_GAP_REM = 1;
 export const CONTROL_GAP_REM = 0.5;
-/** The inline Clear button. */
-export const CLEAR_REM = 4.5;
 
 export interface FitInput {
   /** Width of the heading row in px. */
   rowWidth: number;
   /** Natural width of the title node in px. */
   titleWidth: number;
-  /** Minimum inline width of each control, in rem. */
+  /** Inline width of each control, in rem. */
   controlRems: readonly number[];
-  /** True when Clear shows inline (something is chosen). */
-  clear: boolean;
   /** Pixels per rem (the root font size). */
   rootPx: number;
 }
 
-/** True when the title and every control, at their minimum widths with their gaps, fit in the row. An unmeasured row never fits. */
-export function fitsInline({ rowWidth, titleWidth, controlRems, clear, rootPx }: FitInput): boolean {
+/** True when the title and every control, at their widths with their gaps, fit in the row. An unmeasured row never fits. */
+export function fitsInline({ rowWidth, titleWidth, controlRems, rootPx }: FitInput): boolean {
   if (controlRems.length === 0) return true;
   if (!(rowWidth > 0)) return false;
-  const items = clear ? [...controlRems, CLEAR_REM] : [...controlRems];
-  const controls = items.reduce((sum, r) => sum + r, 0) + (items.length - 1) * CONTROL_GAP_REM;
+  const controls = controlRems.reduce((sum, r) => sum + r, 0) + (controlRems.length - 1) * CONTROL_GAP_REM;
   return titleWidth + (TITLE_GAP_REM + controls) * rootPx <= rowWidth;
 }
 
@@ -80,17 +79,12 @@ export function FilterBar({
   title,
   controls,
   activeCount,
-  onClear,
-  children,
 }: {
   /** The page title. A string becomes the `h1`; pass a node (an `h1` with a Live now link beside it) for more. */
   title: ComponentChildren;
   controls: readonly FilterControl[];
-  /** How many choices are in force (selected values, a non-default library). 0 disables Clear. */
+  /** How many choices are in force; the collapsed button reads `Filters · N`. */
   activeCount: number;
-  onClear(): void;
-  /** Rendered under the heading in both layouts: the removable chips of what is chosen. */
-  children?: ComponentChildren;
 }) {
   const row = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -120,7 +114,6 @@ export function FilterBar({
     rowWidth: size.row,
     titleWidth: size.title,
     controlRems: controls.map((c) => c.minRem ?? DEFAULT_CONTROL_REM),
-    clear: activeCount > 0,
     rootPx: size.root,
   });
 
@@ -164,9 +157,6 @@ export function FilterBar({
         </section>
       ))}
       <div class="fb-foot">
-        <button type="button" class="filter-clear" disabled={activeCount === 0} onClick={onClear}>
-          Clear
-        </button>
         <button type="button" class="btn fb-done" onClick={close}>
           Done
         </button>
@@ -187,11 +177,6 @@ export function FilterBar({
                 {c.node}
               </span>
             ))}
-            {activeCount > 0 ? (
-              <button type="button" class="filter-clear" onClick={onClear}>
-                Clear
-              </button>
-            ) : null}
           </div>
         ) : (
           <div class="fb-anchor">
@@ -204,7 +189,7 @@ export function FilterBar({
               aria-controls={open ? id : undefined}
               onClick={() => setOpen((o) => !o)}
             >
-              {filtersLabel(activeCount)}
+              <span class="ms-pill-text">{filtersLabel(activeCount)}</span>
               <svg class="ms-chev" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
@@ -226,7 +211,6 @@ export function FilterBar({
           </div>
         </>
       ) : null}
-      {children ? <div class="filter-bar fb-chips">{children}</div> : null}
     </div>
   );
 }
