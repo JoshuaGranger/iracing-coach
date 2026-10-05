@@ -45,3 +45,12 @@ node_modules/
 /web/dist/
 /web/playwright-report/
 /web/test-results/
+
+# Web build and test scratch: only the round screenshots and their measurements are kept.
+/web/target/*
+!/web/target/round*/
+/web/target/round*/*
+!/web/target/round*/*/
+/web/target/round*/*/*
+!/web/target/round*/*/*.png
+!/web/target/round*/*/*.json

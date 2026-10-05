@@ -1,1 +1,0 @@
-var e=e=>e&&typeof e==`object`&&!Array.isArray(e)?e:{},t=e=>typeof e==`string`?e:``,n=e=>typeof e==`number`&&Number.isFinite(e)?e:null,r=e=>Array.isArray(e)?e:[],i=e=>r(e).filter(e=>typeof e==`string`&&e.length>0),a=(e,t)=>t.split(`.`).reduce((e,t)=>e&&typeof e==`object`?e[t]:void 0,e);export{t as a,e as i,a as n,i as o,n as r,r as t};
