@@ -31,3 +31,7 @@ Commit `d608ad8` (complaints #33–#49, spec in `../web-round-2-plan.md` "Round 
 - The projection moved to version 3 (per-lap section times); a stored analysis re-projects on its first request and its overview then carries the round-3 fields (`longest_run_laps`, `longest_run_pace_loss_s`, `timed_lap_1_s`, `timed_lap_2_s`). Every analysis of Joshua's 51 sessions was requested once after the release to re-project them up front; the first request answers `409 projection_pending` and the next one `200`.
 - Seen on the live site by page text: Sessions rows as race / practice (Pos, Best, Run, Fall-off) / qualifying (Pos, Lap 1, Lap 2) blocks; no Library control; filters without Clear.
 - Known: races whose analysis is deferred (`exceeds_memory_budget`, backlog #13) show `—` for best and pace, as before.
+
+# Round 4 release (2026-10-04, late)
+
+Commits `b0b539e` (complaints #50–#66) and `47eb540` (only round screenshots stay tracked under `web/target`), released as `iracing-coach:47eb540…`, healthy. Analysis profile `post-race-foundations-v24` (track geometry rule `clean-racing-laps-v1`): every stored analysis is older than the worker's profile, so Joshua's 51 sessions were queued for re-analysis first (`POST /api/v1/sessions/{id}/analysis`, 51 × 202); the Lab sessions follow through `POST /api/v1/admin/reanalyze` once his are done. Until a session is re-analysed its map is the old outline.
