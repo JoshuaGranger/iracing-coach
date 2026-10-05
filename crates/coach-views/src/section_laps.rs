@@ -164,10 +164,13 @@ pub(crate) fn build(investigation: &Obj, traces: &[RawTrace]) -> Value {
             ),
             None => (Vec::new(), Vec::new()),
         };
+        // The lap the grey median trace follows: the lower-middle lap of the sorted times.
+        let median_lap = (!timed.is_empty()).then(|| timed[(timed.len() - 1) / 2].1);
         out.push(json!({
             "section_id": id,
             "clean_lap_count": timed.len(),
             "median_s": middle,
+            "median_lap": median_lap,
             "fastest": fastest,
             "slowest": slowest,
         }));

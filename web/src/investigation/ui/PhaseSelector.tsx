@@ -29,6 +29,15 @@ export function phaseLetter(type: string | null | undefined): PhaseLetter {
 const ORDER: Record<PhaseLetter, number> = { P: 0, W: 1, Q: 2, R: 3, T: 4 };
 const WORD: Record<PhaseLetter, string> = { P: "Practice", Q: "Qualifying", R: "Race", W: "Warmup", T: "Test" };
 
+/** The phase hue tokens the Sessions cells use (backlog #52): a warmup or test reads as practice. */
+export const PHASE_HUE: Record<PhaseLetter, string> = {
+  P: "var(--phase-practice-hue)",
+  Q: "var(--phase-qualify-hue)",
+  R: "var(--phase-race-hue)",
+  W: "var(--phase-practice-hue)",
+  T: "var(--phase-practice-hue)",
+};
+
 function stateText(option: PhaseOption): string | null {
   const state = option.state ?? "ready";
   if (state === "ready") return null;
@@ -77,7 +86,7 @@ export function PhaseSelector({ phases, currentSessionId, onSelect }: { phases: 
             <button
               type="button" class={`ri-pqr-seg ${letter.toLowerCase()}${current ? " on" : ""}`} aria-pressed={current}
               aria-label={blocked ? `${WORD[letter]} · ${blocked}` : WORD[letter]} title={blocked ? `${WORD[letter]} · ${blocked}` : WORD[letter]}
-              disabled={!current && blocked !== null} data-phase={letter} data-session={option.sessionId}
+              disabled={!current && blocked !== null} data-phase={letter} data-session={option.sessionId} style={{ "--b": PHASE_HUE[letter] }}
               onClick={() => { if (!current) onSelect(option.sessionId); }}
             >{letter}</button>
           </Fragment>

@@ -2367,6 +2367,14 @@ export interface components {
             timed_lap_1_s?: number | null;
             /** @description The second such lap; null when the phase has fewer than two. Always sent. */
             timed_lap_2_s?: number | null;
+            /** @description Cars in the session's official results (`SessionInfo.Sessions[].ResultsPositions`, one per `CarIdx`), read from a recording of a later session of the same event, the only place the sim has written them final. Sent with `results_position`; null without such a recording (the last session of an event, offline sessions). Always sent. */
+            field_size?: number | null;
+            /** @description The driver's overall place in those results, counted by `Position` (never `ClassPosition`). It can differ from `final_position`, the last recorded position, when the session went on after the recording ended (a lone qualifying run). Null exactly when `field_size` is. Always sent. */
+            results_position?: number | null;
+            /** @description Races only: the official starting position, the driver's overall place in the grid (`QualifyResultsInfo.Results`) of a recording of this race or a later session; without one, the backend's position at the green flag (`starting_position`). A finish change is measured against it. Null for other sessions. Always sent. */
+            start_position?: number | null;
+            /** @description Burn per green lap, US gallons: the backend's `strategy.measured_green_fuel_gal_per_lap` (the median of its runs' green-lap burn over laps with fuel readings), never recomputed. Null when the backend measured none. Always sent. */
+            fuel_per_lap_gal?: number | null;
             pace_consistency_percent?: number | null;
             best_clean_lap_s?: number | null;
             fuel_used_gal?: number | null;
@@ -2707,7 +2715,7 @@ export interface components {
             a: components["schemas"]["TrackPoint"];
             b: components["schemas"]["TrackPoint"];
         };
-        /** @description Maps recorded GPS into the geometry's space: x = (longitude - source_bounds.minimum_x) / normalization_scale, y = (source_bounds.maximum_y - latitude) / normalization_scale (race_foundations.py:226-247; C# AnalysisGeometryTransform.TryNormalize). */
+        /** @description Maps recorded GPS into the geometry's space: x = (longitude * longitude_scale - source_bounds.minimum_x) / normalization_scale, y = (source_bounds.maximum_y - latitude) / normalization_scale (race_foundations._normalize_geometry; longitude_scale is 1 when absent). */
         GeometryTransform: {
             source_bounds: {
                 minimum_x: number;
@@ -2716,6 +2724,8 @@ export interface components {
                 maximum_y: number;
             };
             normalization_scale: number;
+            /** @description cos(latitude) of the track's GPS centre (analysis profile v24, centreline rule clean-racing-laps-v1): the geometry's x is longitude times this factor, so the outline keeps its real proportions. Absent on older geometry, whose x is longitude. */
+            longitude_scale?: number;
         };
         /** @description Backend track_geometry copied in its own coordinate space (no reprojection). Served only when the backend geometry has a main path; otherwise 404 and the browser uses the lap-distance strip. */
         TrackGeometry: components["schemas"]["ViewEnvelope"] & {

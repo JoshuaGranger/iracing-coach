@@ -1,0 +1,588 @@
+{
+  "tag": "run",
+  "dist": "target/round4/S1/app-dist",
+  "results": [
+    {
+      "viewport": "1440x900",
+      "page": "sessions",
+      "shot": "run-1440x900-sessions.png",
+      "groups": {
+        "body": {
+          "count": 7,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 132,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 26,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 15,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 40,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 157,
+          "examples": [
+            "span \"Oval · Mon Sep 28\"",
+            "span \"NASCAR Xfinity Toyota \"",
+            "span.sx-badge \"P\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 29,
+          "examples": [
+            "a.btn.btn-accent \"Live now\"",
+            "b.sx-v.sx-phase \"Race\"",
+            "span.sx-p \"P4\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 15,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 34,
+          "count": 1,
+          "examples": [
+            "h1 \"Sessions\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 900,
+        "innerHeight": 900,
+        "scrollWidth": 1440,
+        "innerWidth": 1440
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1440x900",
+      "page": "race",
+      "shot": "run-1440x900-race.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 15,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 0,
+          "minPx": null,
+          "medianPx": null,
+          "maxPx": null,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 9,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 36,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 16,
+          "examples": [
+            "span.ri-run-key \"Run 1\"",
+            "span.ri-run-key \"Run 2\"",
+            "text.ri-axis \"28.5\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 20,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 20,
+          "count": 1,
+          "examples": [
+            "span.ri-card-title \"Race progression\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 900,
+        "innerHeight": 900,
+        "scrollWidth": 1440,
+        "innerWidth": 1440
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1024x768",
+      "page": "sessions",
+      "shot": "run-1024x768-sessions.png",
+      "groups": {
+        "body": {
+          "count": 7,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 132,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 26,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 15,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 40,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 157,
+          "examples": [
+            "span \"Oval · Mon Sep 28\"",
+            "span \"NASCAR Xfinity Toyota \"",
+            "span.sx-badge \"P\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 29,
+          "examples": [
+            "a.btn.btn-accent \"Live now\"",
+            "b.sx-v.sx-phase \"Race\"",
+            "span.sx-p \"P4\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 11,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 34,
+          "count": 1,
+          "examples": [
+            "h1 \"Sessions\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 1118,
+        "innerHeight": 768,
+        "scrollWidth": 1024,
+        "innerWidth": 1024
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1024x768",
+      "page": "race",
+      "shot": "run-1024x768-race.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 15,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 0,
+          "minPx": null,
+          "medianPx": null,
+          "maxPx": null,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 9,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 36,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 16,
+          "examples": [
+            "span.ri-run-key \"Run 1\"",
+            "span.ri-run-key \"Run 2\"",
+            "text.ri-axis \"28.5\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 20,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 20,
+          "count": 1,
+          "examples": [
+            "span.ri-card-title \"Race progression\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 768,
+        "innerHeight": 768,
+        "scrollWidth": 1024,
+        "innerWidth": 1024
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "390x844",
+      "page": "sessions",
+      "shot": "run-390x844-sessions.png",
+      "groups": {
+        "body": {
+          "count": 7,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 131,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 14,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 26,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 15,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": 44,
+          "medianHeight": 44,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 157,
+          "examples": [
+            "span \"Oval · Mon Sep 28\"",
+            "span \"NASCAR Xfinity Toyota \"",
+            "span.sx-badge \"P\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 29,
+          "examples": [
+            "a.btn.btn-accent \"Live now\"",
+            "b.sx-v.sx-phase \"Race\"",
+            "span.sx-p \"P4\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 10,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 26,
+          "count": 1,
+          "examples": [
+            "h1 \"Sessions\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 2357,
+        "innerHeight": 844,
+        "scrollWidth": 390,
+        "innerWidth": 390
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "390x844",
+      "page": "race",
+      "shot": "run-390x844-race.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 14,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 14,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 0,
+          "minPx": null,
+          "medianPx": null,
+          "maxPx": null,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 9,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 44,
+          "medianHeight": 44,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 16,
+          "examples": [
+            "span.ri-run-key \"Run 1\"",
+            "span.ri-run-key \"Run 2\"",
+            "text.ri-axis \"28.5\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 20,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 3,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 1,
+          "examples": [
+            "a.brand \"iRacing Coach\""
+          ]
+        },
+        {
+          "px": 20,
+          "count": 1,
+          "examples": [
+            "span.ri-card-title \"Race progression\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 857,
+        "innerHeight": 844,
+        "scrollWidth": 390,
+        "innerWidth": 390
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    }
+  ]
+}

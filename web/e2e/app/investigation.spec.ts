@@ -4,7 +4,7 @@ import path from "node:path";
 import { raceProgressColour } from "../../src/core/palette";
 import { routeSynthetic } from "../../src/investigation/fixtures/api";
 import { ROUND2_COMPARISONS } from "../../src/investigation/fixtures/round2";
-import { buildRound3Analysis, ROUND3_SLIP_LAPS, ROUND3_TRAFFIC_LAPS } from "../../src/investigation/fixtures/round3";
+import { buildRound4Analysis, ROUND4_NO_FUEL_LAP, ROUND4_SERVICE_LAP } from "../../src/investigation/fixtures/round4";
 import { DEVICES, DRIVER, appTest, expectNoHorizontalScroll, hash, mockState } from "./helpers";
 import { ROUND2_DEVICES } from "./round2-shared";
 
@@ -80,11 +80,24 @@ for (const device of DEVICES) {
   });
 }
 
-// Web rounds 2 and 3, Investigation (web-round-2-plan.md): the acceptance lines at 1440, 1024 and 390, on the synthetic race served
-// in place of session 103's analysis (the round-2 race plus round 3's per-lap context and a no-tire stop).
-const ANALYSIS = buildRound3Analysis("an-103");
-// RI_SHOTS names another release record's folder (relative to web/); the default is round 3's R3.
-const SHOTS = path.resolve(process.cwd(), process.env.RI_SHOTS ?? path.join("target", "round3", "R3"));
+// Web rounds 2 to 4, Investigation (web-round-2-plan.md): the acceptance lines at 1440, 1024 and 390, on the synthetic race served
+// in place of session 103's analysis (the round-2 race, round 3's per-lap context and no-tire stop, round 4's Vegas-shaped stop,
+// one absent fuel reading and a fit under half its run's green laps).
+const ANALYSIS = buildRound4Analysis("an-103");
+// RI_SHOTS names another release record's folder (relative to web/); the default is round 4's S2.
+const SHOTS = path.resolve(process.cwd(), process.env.RI_SHOTS ?? path.join("target", "round4", "S2"));
+
+type RawLap = { lap: number; lap_time_s: number | null; run_number: number | null; plot_pace: boolean };
+/** The run line read straight off the fixture's lap rows: the run's last green lap time less its first, over the laps between. */
+function expectedRunLine(run: number, name: string, burn: string): string {
+  const laps = (ANALYSIS.investigation as unknown as { race_investigation: { laps: RawLap[] } }).race_investigation.laps
+    .filter((lap) => lap.run_number === run && lap.plot_pace && (lap.lap_time_s ?? 0) > 0).sort((a, b) => a.lap - b.lap);
+  const [first, last] = [laps[0]!, laps[laps.length - 1]!];
+  const rate = ((last.lap_time_s as number) - (first.lap_time_s as number)) / (last.lap - first.lap);
+  const text = Math.abs(rate).toFixed(2);
+  const sign = Number(text) === 0 ? "" : rate > 0 ? "+" : "\u2212";
+  return `${name} · L${first.lap}–${last.lap} · fall-off ${sign}${text} s/lap · ${burn} gal/lap`;
+}
 
 async function serveRound2(page: Page): Promise<void> {
   await page.route("**/api/v1/analyses/an-103/**", async (route: Route) => {
@@ -114,9 +127,10 @@ for (const device of ROUND2_DEVICES) {
       await open(page, "race");
       await expect(page.locator(".ri-dot[data-lap='10']")).toHaveCount(1);
       await expect(page.locator(".ri-workspace")).not.toContainText(/excl/i);
-      // #40: the hollow/filled rule is not a legend item; the header says once how many laps the fit used.
+      // #40: the hollow/filled rule is not a legend item; #59a: no "Pace fit" header.
       await expect(page.locator("[data-legend=screened]")).toHaveCount(0);
-      await expect(page.locator("[data-pace-fit]")).toHaveText(/^Pace fit: 39 of \d+ laps$/);
+      await expect(page.locator("[data-pace-fit]")).toHaveCount(0);
+      await expect(page.locator(".ri-chart-head")).not.toContainText(/pace fit/i);
       await point(page, ".ri-dot[data-lap='10']");
       await expect(page.locator("[data-race-readout]")).toContainText("Not in pace fit · close traffic");
       await page.locator(".ri-dot[data-lap='11']").focus();
@@ -152,11 +166,13 @@ for (const device of ROUND2_DEVICES) {
         expect(Math.abs(card.height - view.height), "the chart's card fills the tab").toBeLessThanOrEqual(1);
       }
       const lines = page.locator("[data-run-line]");
-      await expect(lines).toHaveText([
-        `Run 1 · L3–24 · +0.033 s/lap · ${(60 / 3.785411784).toFixed(1)} gal`,
-        `Run 2 · L31–52 · +0.029 s/lap · ${(59.2 / 3.785411784).toFixed(1)} gal`,
-        `Run 3 · same tires · L57–82 · ${(52.1 / 3.785411784).toFixed(1)} gal`,
-      ]);
+      // #59a: the observed fall-off over the run's green laps and the green burn per lap; no screened slope.
+      await expect(lines).toHaveText([expectedRunLine(1, "Run 1", "0.42"), expectedRunLine(2, "Run 2", "0.42"), expectedRunLine(3, "Run 3 · same tires", "0.43")]);
+      await expect(lines.first()).not.toContainText("+0.033");
+      // Its hover (tap on touch) labels the fall-off observed, with the two laps it reads.
+      await expect(lines.first().locator("[data-part=falloff]")).toHaveAttribute("title", /^observed · L\d+ \d+\.\d{3} s → L\d+ \d+\.\d{3} s$/);
+      await point(page, "[data-run-line='1']");
+      await expect(page.locator("[data-race-readout]")).toHaveText(/^Run 1 · fall-off [+\u2212]?\d\.\d\d s\/lap · observed · L\d+ .* · 0\.42 gal\/lap$/);
       await expect(lines.nth(0)).toHaveAttribute("style", /--run:\s*var\(--run-1\)/);
       await expect(lines.nth(2)).toHaveAttribute("style", /--run:\s*color-mix\(in srgb, var\(--run-2\)/);
       expect(await lines.nth(0).evaluate((el) => getComputedStyle(el).color)).toBe(await page.evaluate(() => {
@@ -178,10 +194,11 @@ for (const device of ROUND2_DEVICES) {
       await expect(legend).not.toContainText(/caution|pit|incident|fastest|position|lap|fit/i);
       // No polyline through the laps and no observed-trend line; the fit is the only line, confined to its span.
       await expect(page.locator("[data-trend-run], .ri-trend, polyline")).toHaveCount(0);
-      await expect(page.locator("[data-fit-run]")).toHaveCount(2);
+      // #59a: run 2's fit covers 9 of its green laps, under half: no line, and nothing says why.
+      await expect(page.locator("[data-fit-run]")).toHaveCount(1);
       await expect(page.locator("[data-fit-run='1']")).toHaveAttribute("data-fit-span", "3-24");
-      await expect(page.locator("[data-fit-run='2']")).toHaveAttribute("data-fit-span", "31-52");
-      await expect(page.locator("[data-fit-run='3']")).toHaveCount(0);
+      await expect(page.locator("[data-fit-run='2'], [data-fit-run='3']")).toHaveCount(0);
+      await expect(page.locator(".ri-race-view")).not.toContainText(/insufficient|coverage|no fit/i);
       expect(await page.locator("[data-fit-run='1'] path.ri-fit").getAttribute("d")).toMatch(/^M[\d.]+,[\d.]+C/);
       // Run 3 shares run 2's tires: run 2's hue, lighter; run 1 and run 2 have their own.
       await expect(page.locator(".ri-dot[data-lap='12']")).toHaveAttribute("stroke", "var(--run-1)");
@@ -221,37 +238,48 @@ for (const device of ROUND2_DEVICES) {
       await page.screenshot({ path: path.join(SHOTS, `race-top-edge-${width}.png`), clip: await page.locator(".ri-progress").boundingBox().then((b) => ({ x: b!.x, y: b!.y, width: b!.width, height: Math.min(140, b!.height) })) });
     });
 
-    test("Race (#46): context layers are off by default, one mark per lap, read out with their evidence, remembered on the device", async ({ page }) => {
+    test("Race (#46, #60–#63): layers are names only, evidence in the readout; no traffic or slip; the fuel line steps at a stop", async ({ page }) => {
       const requests: string[] = [];
       await open(page, "race");
       await expect(page.locator(".ri-dot").first()).toBeVisible();
-      const toggles = page.getByRole("group", { name: "Context layers" }).getByRole("button");
-      // Track usage has no series in this recording: not offered.
-      await expect(toggles).toHaveText(["Track tempmeasured", "Trafficderived", "Wheel slipproxy", "Fuelmeasured"]);
+      const group = page.getByRole("group", { name: "Context layers" });
+      const toggles = group.getByRole("button");
+      // Track usage has no series in this recording; traffic and slip are gone (#61, #62); a toggle is its name (#60).
+      await expect(toggles).toHaveText(["Track temp", "Fuel"]);
+      await expect(group).not.toContainText(/measured|derived|proxy/i);
+      await expect(page.locator("[data-layer-toggle=traffic], [data-layer-toggle=slip], [data-layer-toggle=gaps]")).toHaveCount(0);
       for (const toggle of await toggles.all()) await expect(toggle).toHaveAttribute("aria-pressed", "false");
-      await expect(page.locator("[data-layer], .ri-traffic-tick, .ri-slip-ring, [data-lap-column]")).toHaveCount(0);
-      for (const key of ["temp", "traffic", "slip", "fuel"]) await page.locator(`[data-layer-toggle=${key}]`).click();
-      await expect(page.locator("[data-layer=temp] .ri-temp-line")).toHaveCount(3);
+      await expect(page.locator("[data-layer], [data-lap-column]")).toHaveCount(0);
+      for (const key of ["temp", "fuel"]) await page.locator(`[data-layer-toggle=${key}]`).click();
+      await expect(page.locator(".ri-traffic-tick, .ri-slip-ring, [data-traffic-lap], [data-slip-lap]")).toHaveCount(0);
       await expect(page.locator("[data-layer=temp]")).toContainText("Track °F");
-      await expect(page.locator("[data-layer=fuel] .ri-fuel-line")).toHaveCount(3);
-      await expect(page.locator("[data-layer=fuel] .ri-fuel-label").first()).toHaveText(`${(60 / 3.785411784).toFixed(1)} gal`);
-      // Traffic: a tick under each lap with close traffic, its length the share of the lap; a lap with none draws nothing.
-      const tick = async (lap: number) => page.locator(`[data-traffic-lap='${lap}']`).evaluate((el) => Number(el.getAttribute("y2")) - Number(el.getAttribute("y1")));
-      expect(await tick(ROUND3_TRAFFIC_LAPS[0])).toBeGreaterThan(await tick(12));
-      await expect(page.locator("[data-traffic-lap='9']")).toHaveCount(0);
-      const ticks = await page.locator(".ri-traffic-tick").count();
-      expect(ticks).toBeGreaterThan(40);
-      await expect(page.locator(".ri-slip-ring")).toHaveCount(ROUND3_SLIP_LAPS.length);
+      await expect(page.locator("[data-layer=temp] .ri-temp-line")).toHaveCount(1);
+      // #63: one fuel line through every lap with a reading, the service lap included; the only break is the absent reading.
+      const fuel = page.locator("[data-layer=fuel] .ri-fuel-line");
+      await expect(fuel).toHaveCount(2);
+      await expect(fuel.nth(0)).toHaveAttribute("data-fuel-from", "1");
+      await expect(fuel.nth(0)).toHaveAttribute("data-fuel-to", String(ROUND4_NO_FUEL_LAP - 1));
+      await expect(fuel.nth(1)).toHaveAttribute("data-fuel-from", String(ROUND4_NO_FUEL_LAP + 1));
+      // A stop is a step up: a vertical segment at the lap boundary, labelled with the refilled level.
+      const steps = async (index: number) => fuel.nth(index).evaluate((el) => [...(el.getAttribute("d") ?? "").matchAll(/L([\d.]+),([\d.]+)(?=L([\d.]+),([\d.]+))/g)].filter((m) => m[1] === m[3] && Number(m[4]) < Number(m[2])).length);
+      expect(await steps(0), "refill steps in the first fuel line").toBe(1);
+      expect(await steps(1), "refill steps in the second fuel line").toBe(1);
+      await expect(page.locator("[data-fuel-label='29']")).toHaveText(/^\d+\.\d gal$/);
+      await expect(page.locator("[data-fuel-label='57']")).toHaveText(/^\d+\.\d gal$/);
       // Never a second chart.
       await expect(page.locator(".ri-race-view .ri-plot-svg")).toHaveCount(1);
-      // One readout per lap, each figure with its evidence label.
-      await point(page, `.ri-dot[data-lap='${ROUND3_TRAFFIC_LAPS[0]}']`);
+      // The evidence is a short tag in the readout; the absent reading reads `no reading`.
       const readout = page.locator("[data-race-readout]");
-      await expect(readout).toContainText("Traffic 62 % derived");
-      await expect(readout).toContainText(/Track \d+\.\d °F measured/);
-      await expect(readout).toContainText(/Fuel \d+\.\d gal measured/);
-      await point(page, `.ri-dot[data-lap='${ROUND3_SLIP_LAPS[0]}']`);
-      await expect(readout).toContainText("Spin 0.4 s · lock 0.1 s proxy");
+      await point(page, ".ri-dot[data-lap='12']");
+      await expect(readout).toContainText(/Track \d+\.\d °F · measured/);
+      await expect(readout).toContainText(/Fuel \d+\.\d gal · measured/);
+      await expect(readout).not.toContainText(/derived|proxy|Traffic|Spin/);
+      await point(page, `[data-lap-column='${ROUND4_NO_FUEL_LAP}']`);
+      await expect(readout).toContainText(`Lap ${ROUND4_NO_FUEL_LAP}`);
+      await expect(readout).toContainText("Fuel no reading");
+      // A lap after the service lap reads the refilled tank.
+      await point(page, `[data-lap-column='${ROUND4_SERVICE_LAP + 5}']`);
+      await expect(readout).toContainText(/Fuel \d+\.\d gal · measured/);
       // Pointer movement over the chart with every layer on makes no request.
       page.on("request", (request) => requests.push(request.url()));
       if (!touch) {
@@ -259,44 +287,33 @@ for (const device of ROUND2_DEVICES) {
         for (let i = 0; i <= 40; i++) await page.mouse.move(box.x + (box.width * i) / 40, box.y + box.height * 0.35);
       }
       expect(requests, "requests under pointer movement").toEqual([]);
-      // Remembered on this device.
+      // Remembered on this device; a device that remembered traffic or slip keeps only what is left.
+      await page.evaluate(() => localStorage.setItem("coach.race-layers", JSON.stringify(["traffic", "slip", "fuel"])));
       await page.reload();
-      await expect(page.locator("[data-layer-toggle=traffic]")).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator(".ri-traffic-tick")).toHaveCount(ticks);
-      await page.locator("[data-layer-toggle=traffic]").click();
-      await expect(page.locator(".ri-traffic-tick")).toHaveCount(0);
-      expect(await page.evaluate(() => localStorage.getItem("coach.race-layers"))).toBe(JSON.stringify(["temp", "slip", "fuel"]));
+      await expect(page.locator("[data-layer-toggle=fuel]")).toHaveAttribute("aria-pressed", "true");
+      await expect(page.locator("[data-layer-toggle=temp]")).toHaveAttribute("aria-pressed", "false");
+      await expect(page.locator("[data-layer=fuel] .ri-fuel-line")).toHaveCount(2);
+      await page.locator("[data-layer-toggle=fuel]").click();
+      await expect(page.locator("[data-layer=fuel]")).toHaveCount(0);
+      expect(await page.evaluate(() => localStorage.getItem("coach.race-layers"))).toBe("[]");
       await expectNoHorizontalScroll(page);
     });
 
-    test("a comparison in the route still marks its exact groups on the Traces rail (it left the Race tab, #43)", async ({ page }) => {
-      await open(page, "traces", `?comparison=${ROUND2_COMPARISONS.window}`);
-      await expect(page.locator(".ri-lap-row[data-lap='61']")).toHaveAttribute("data-group", "earlier");
-      await expect(page.locator(".ri-lap-row[data-lap='63']")).not.toHaveAttribute("data-group", /./);
-      await expect(page.locator(".ri-lap-row[data-lap='79']")).toHaveAttribute("data-group", "later");
-      await expect(page.locator(".ri-lap-row[data-lap='33']")).not.toHaveAttribute("data-group", /./);
-      await expect(page.locator(`[data-comparison-strip=${ROUND2_COMPARISONS.window}]`)).toContainText("Run 3: L61–62, 64–65 → L77–81");
-    });
-
-    test("Traces: the comparison strip shows the faster group and the unequal exposure with the cursor and inputs still visible", async ({ page }) => {
-      await open(page, "traces");
-      const strip = page.locator(`[data-comparison-strip=${ROUND2_COMPARISONS.runs}]`);
-      await expect(strip.locator("[data-direction]")).toHaveAttribute("data-direction", "slower");
-      await expect(strip.locator("[data-metric=traffic] [data-side=later]")).toHaveText("22");
+    test("Traces (#66): no comparison strip and no earlier/later marks, with or without a comparison in the route", async ({ page }) => {
+      for (const query of [`?comparison=${ROUND2_COMPARISONS.window}`, "", `?comparison=${ROUND2_COMPARISONS.none}`]) {
+        await open(page, "traces", query);
+        await expect(page.locator("[data-analysis-trace-path]").first()).toBeAttached();
+        await expect(page.locator("[data-comparison-strip], .ri-cmp-strip, .ri-pbar, .ri-delta, .ri-grp-mark, [data-group]")).toHaveCount(0);
+        await expect(page.locator(".ri-workspace")).not.toContainText(/earlier|later|→/i);
+      }
+      // The rail, the chart, the map and the cursor readouts stay.
       const surface = page.locator(".ri-chart-surface");
+      await surface.scrollIntoViewIfNeeded();
       await expect(surface).toBeVisible();
-      await strip.scrollIntoViewIfNeeded();
-      const s = (await strip.boundingBox())!;
-      const c = (await surface.boundingBox())!;
-      expect(s.y, "strip in view").toBeGreaterThanOrEqual(0);
-      expect(c.y + 100, "chart rows in view under the strip").toBeLessThanOrEqual(device.viewport.height);
-      await page.mouse.move(c.x + c.width * 0.4, c.y + 40);
+      const box = (await surface.boundingBox())!;
+      await page.mouse.move(box.x + box.width * 0.4, box.y + 40);
       await expect(page.locator(".ri-track-panel [data-field=speed]")).not.toHaveText(/^—?$/);
-      // With no pace result: one line and nothing else.
-      await open(page, "traces", `?comparison=${ROUND2_COMPARISONS.none}`);
-      const none = page.locator(`[data-comparison-strip=${ROUND2_COMPARISONS.none}]`);
-      await expect(none.locator("[data-pace-unusable]")).toHaveText("No pace result · every lap screened · close traffic");
-      await expect(none.locator(".ri-pbar, .ri-delta, button")).toHaveCount(0);
+      await expect(page.locator(".ri-lap-rail")).toBeVisible();
     });
 
     test("the lap rail scrolls without a jump: pixel 0 of scrolling moves nothing", async ({ page }) => {
@@ -343,7 +360,7 @@ for (const device of ROUND2_DEVICES) {
       expect(await green.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(pressed);
     });
 
-    test("Traces: race-progress lap colour that no filter changes, screening on the lap chip, fuel figures only, endpoints in the rail", async ({ page }) => {
+    test("Traces: race-progress lap colour that no filter changes, plain lap numbers with screening in the hover, fuel figures only, endpoints in the rail", async ({ page }) => {
       await open(page, "traces");
       const lap = (n: number) => page.locator(`.ri-lap-row[data-lap='${n}']`);
       await expect(lap(1)).toHaveAttribute("style", new RegExp(`--lap:\\s*${raceProgressColour(0, 2)}`, "i"));
@@ -354,7 +371,19 @@ for (const device of ROUND2_DEVICES) {
       await page.locator(".ri-lap-rail").getByRole("button", { name: "Green" }).click();
       await expect(lap(41)).toHaveCount(0);
       expect(await lap(12).getAttribute("style")).toBe(colour12);
-      await expect(lap(10).locator("[data-lap-chip=screened]")).toHaveAttribute("title", "Not used in Run 1 pace fit · close traffic");
+      // #58: no box on any lap number; a screened lap shows the chart's hollow dot in the flag column and its reason in the row's hover.
+      await expect(lap(10)).toHaveAttribute("title", "Not used in Run 1 pace fit · close traffic");
+      await expect(lap(10).locator(".ri-fl [data-screened]")).toHaveAttribute("title", "Not used in Run 1 pace fit · close traffic");
+      await expect(lap(12).locator("[data-screened]")).toHaveCount(0);
+      await expect(page.locator("[data-lap-chip]")).toHaveCount(0);
+      await lap(12).click();
+      await page.getByRole("combobox", { name: "Spotlight lap" }).selectOption("12");
+      const boxed = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".ri-lap-row .ri-n")].filter((el) => {
+        const style = getComputedStyle(el);
+        const clear = (colour: string) => colour === "rgba(0, 0, 0, 0)" || colour === "transparent";
+        return (parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== "none") || !clear(style.backgroundColor) || style.outlineStyle !== "none" || style.boxShadow !== "none";
+      }).map((el) => el.textContent));
+      expect(boxed, "lap numbers with a box, ring or badge").toEqual([]);
       await expect(page.locator(".ri-lap-rail")).not.toContainText(/excl/i);
       for (const text of await page.locator(".ri-lap-row .ri-fu").allTextContents()) expect(text).toMatch(/^(\d+\.\d{3}|—)$/);
       await expect(page.locator(".ri-run-head").first()).toHaveAttribute("style", /--run:\s*var\(--run-1\)/);
@@ -387,13 +416,17 @@ for (const device of ROUND2_DEVICES) {
       await expect(page.locator(".ri-runs [data-legend=runs] .ri-run-key")).toHaveText(["Run 1", "Run 2", "Run 3 · same tires"]);
       await expect(page.locator("[data-fit-run='1']")).toHaveAttribute("data-fit-span", "3-24");
       await expect(page.locator("[data-fit-run='1'] [data-fit-label]")).toHaveText("+0.033 s/lap · 18 laps");
-      await expect(page.locator("[data-fit-run='2'] [data-fit-label]")).toHaveText("+0.029 s/lap · 21 laps");
-      await expect(page.locator("[data-fit-run='3']")).toHaveCount(0);
+      // #59a: a fit under half its run's green laps is not drawn; no "Pace fit" header.
+      await expect(page.locator("[data-fit-run='2'], [data-fit-run='3']")).toHaveCount(0);
+      await expect(page.locator("[data-pace-fit]")).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Screened fit" })).toHaveCount(0);
       const cards = page.locator("[data-run-card]");
       await expect(cards).toHaveCount(3);
       await expect(cards.nth(0).locator("[data-run-slope]")).toHaveText("+0.033 s/lap · 18 laps");
-      await expect(cards.nth(2).locator("[data-run-slope]")).toHaveText("No fit");
+      await expect(cards.nth(1).locator("[data-run-slope]")).toHaveText("—");
+      await expect(cards.nth(2).locator("[data-run-slope]")).toHaveText("—");
+      for (const card of await cards.all()) await expect(card.locator("[data-run-falloff]")).toHaveText(/^[+\u2212]?\d\.\d\d s\/lap$/);
+      await expect(page.locator(".ri-runs-view")).not.toContainText(/no fit|insufficient/i);
       await expect(cards.nth(0)).toContainText("15.9 → 3.8 gal");
       await expect(cards.nth(1)).toContainText("25–52");
       await expect(cards.nth(2)).toContainText("Run 3 · same tires");
@@ -442,8 +475,8 @@ for (const device of ROUND2_DEVICES) {
       // Race with every context layer on and a lap read out; Runs with run 1 hidden.
       await open(page, "race");
       await page.locator(".ri-dot").first().waitFor();
-      for (const key of ["temp", "traffic", "slip", "fuel"]) await page.locator(`[data-layer-toggle=${key}]`).click();
-      await point(page, `.ri-dot[data-lap='${ROUND3_SLIP_LAPS[1]}']`);
+      for (const key of ["temp", "fuel"]) await page.locator(`[data-layer-toggle=${key}]`).click();
+      await point(page, `[data-lap-column='${ROUND4_NO_FUEL_LAP}']`);
       await page.waitForTimeout(200);
       await page.screenshot({ path: path.join(SHOTS, `race-layers-${width}.png`), fullPage: width < 700 });
       await open(page, "runs");

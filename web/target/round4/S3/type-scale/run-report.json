@@ -1,0 +1,1026 @@
+{
+  "tag": "run",
+  "dist": "target/round4/S3/app-dist",
+  "results": [
+    {
+      "viewport": "1920x1080",
+      "page": "sections",
+      "shot": "run-1920x1080-sections.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 5,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 18.738995709196892,
+          "maxPx": 18.738995709196892,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 12,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 36,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 4,
+          "examples": [
+            "small \"77.0–86.5\"",
+            "small \"% lap\"",
+            "span \"Median\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 11,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 5,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 3,
+          "examples": [
+            "span.ri-card-title \"Track\"",
+            "h2 \"Section\"",
+            "h2 \"D\""
+          ]
+        },
+        {
+          "px": 18.7,
+          "count": 4,
+          "examples": [
+            "text \"A\"",
+            "text \"B\"",
+            "text \"C\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 1080,
+        "innerHeight": 1080,
+        "scrollWidth": 1920,
+        "innerWidth": 1920
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1920x1080",
+      "page": "traces",
+      "shot": "run-1920x1080-traces.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 22,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 339,
+          "minPx": 15,
+          "medianPx": 17,
+          "maxPx": 28,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 14,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 42,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 40,
+          "examples": [
+            "span.ri-count-chip \"3\"",
+            "span.ri-count-chip \"selected\"",
+            "span \"L\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 203,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 17,
+          "count": 83,
+          "examples": [
+            "span.ri-n \"1\"",
+            "span.ri-n \"2\"",
+            "span.ri-n \"3\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 84,
+          "examples": [
+            "a.brand \"iRacing Coach\"",
+            "span.ri-tm \"29.506\"",
+            "span.ri-tm \"28.503\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 1080,
+        "innerHeight": 1080,
+        "scrollWidth": 1920,
+        "innerWidth": 1920
+      },
+      "canvasFonts": [
+        "15px \"Cascadia Mono\", Consolas, monospace"
+      ],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1536x864",
+      "page": "sections",
+      "shot": "run-1536x864-sections.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 5,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 18.74823753238342,
+          "maxPx": 18.74823753238342,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 12,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 36,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 4,
+          "examples": [
+            "small \"77.0–86.5\"",
+            "small \"% lap\"",
+            "span \"Median\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 11,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 5,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 3,
+          "examples": [
+            "span.ri-card-title \"Track\"",
+            "h2 \"Section\"",
+            "h2 \"D\""
+          ]
+        },
+        {
+          "px": 18.7,
+          "count": 4,
+          "examples": [
+            "text \"A\"",
+            "text \"B\"",
+            "text \"C\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 864,
+        "innerHeight": 864,
+        "scrollWidth": 1536,
+        "innerWidth": 1536
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1536x864",
+      "page": "traces",
+      "shot": "run-1536x864-traces.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 22,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 339,
+          "minPx": 15,
+          "medianPx": 17,
+          "maxPx": 28,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 14,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 42,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 40,
+          "examples": [
+            "span.ri-count-chip \"3\"",
+            "span.ri-count-chip \"selected\"",
+            "span \"L\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 203,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 17,
+          "count": 83,
+          "examples": [
+            "span.ri-n \"1\"",
+            "span.ri-n \"2\"",
+            "span.ri-n \"3\""
+          ]
+        },
+        {
+          "px": 19,
+          "count": 84,
+          "examples": [
+            "a.brand \"iRacing Coach\"",
+            "span.ri-tm \"29.506\"",
+            "span.ri-tm \"28.503\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 864,
+        "innerHeight": 864,
+        "scrollWidth": 1536,
+        "innerWidth": 1536
+      },
+      "canvasFonts": [
+        "15px \"Cascadia Mono\", Consolas, monospace"
+      ],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1440x900",
+      "page": "sections",
+      "shot": "run-1440x900-sections.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 5,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 18.74386981865285,
+          "maxPx": 18.74386981865285,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 12,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 36,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 4,
+          "examples": [
+            "small \"77.0–86.5\"",
+            "small \"% lap\"",
+            "span \"Median\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 11,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 5,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 3,
+          "examples": [
+            "span.ri-card-title \"Track\"",
+            "h2 \"Section\"",
+            "h2 \"D\""
+          ]
+        },
+        {
+          "px": 18.7,
+          "count": 4,
+          "examples": [
+            "text \"A\"",
+            "text \"B\"",
+            "text \"C\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 900,
+        "innerHeight": 900,
+        "scrollWidth": 1440,
+        "innerWidth": 1440
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1440x900",
+      "page": "traces",
+      "shot": "run-1440x900-traces.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 22,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 339,
+          "minPx": 15,
+          "medianPx": 17,
+          "maxPx": 19,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 14,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 42,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 40,
+          "examples": [
+            "span.ri-count-chip \"3\"",
+            "span.ri-count-chip \"selected\"",
+            "span \"L\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 203,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 17,
+          "count": 83,
+          "examples": [
+            "span.ri-n \"1\"",
+            "span.ri-n \"2\"",
+            "span.ri-n \"3\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 4,
+          "examples": [
+            "strong \"120.4\"",
+            "strong \"100\"",
+            "strong \"0\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 900,
+        "innerHeight": 900,
+        "scrollWidth": 1440,
+        "innerWidth": 1440
+      },
+      "canvasFonts": [
+        "15px \"Cascadia Mono\", Consolas, monospace"
+      ],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1024x768",
+      "page": "sections",
+      "shot": "run-1024x768-sections.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 5,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 18.75169162888601,
+          "maxPx": 18.75169162888601,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 12,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 36,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 4,
+          "examples": [
+            "small \"77.0–86.5\"",
+            "small \"% lap\"",
+            "span \"Median\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 11,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 5,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 3,
+          "examples": [
+            "span.ri-card-title \"Track\"",
+            "h2 \"Section\"",
+            "h2 \"D\""
+          ]
+        },
+        {
+          "px": 18.8,
+          "count": 4,
+          "examples": [
+            "text \"A\"",
+            "text \"B\"",
+            "text \"C\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 768,
+        "innerHeight": 768,
+        "scrollWidth": 1024,
+        "innerWidth": 1024
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "1024x768",
+      "page": "traces",
+      "shot": "run-1024x768-traces.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 19,
+          "minPx": 13.999776410880454,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 256,
+          "minPx": 15,
+          "medianPx": 17,
+          "maxPx": 19,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 14,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 36,
+          "medianHeight": 42,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 37,
+          "examples": [
+            "span.ri-count-chip \"3\"",
+            "span.ri-count-chip \"selected\"",
+            "span \"L\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 119,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 17,
+          "count": 83,
+          "examples": [
+            "span.ri-n \"1\"",
+            "span.ri-n \"2\"",
+            "span.ri-n \"3\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 4,
+          "examples": [
+            "strong \"121.7\"",
+            "strong \"100\"",
+            "strong \"0\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 768,
+        "innerHeight": 768,
+        "scrollWidth": 1024,
+        "innerWidth": 1024
+      },
+      "canvasFonts": [
+        "15px \"Cascadia Mono\", Consolas, monospace"
+      ],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "390x844",
+      "page": "sections",
+      "shot": "run-390x844-sections.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 4,
+          "minPx": 14,
+          "medianPx": 14,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 6,
+          "minPx": 15,
+          "medianPx": 18.752849740932643,
+          "maxPx": 18.752849740932643,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 12,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 44,
+          "medianHeight": 44,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 4,
+          "examples": [
+            "small \"77.0–86.5\"",
+            "small \"% lap\"",
+            "span \"Median\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 11,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 4,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 3,
+          "examples": [
+            "span.ri-card-title \"Track\"",
+            "h2 \"Section\"",
+            "h2 \"D\""
+          ]
+        },
+        {
+          "px": 18.8,
+          "count": 4,
+          "examples": [
+            "text \"A\"",
+            "text \"B\"",
+            "text \"C\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 844,
+        "innerHeight": 844,
+        "scrollWidth": 390,
+        "innerWidth": 390
+      },
+      "canvasFonts": [],
+      "errors": [],
+      "verdicts": []
+    },
+    {
+      "viewport": "390x844",
+      "page": "traces",
+      "shot": "run-390x844-traces.png",
+      "groups": {
+        "body": {
+          "count": 1,
+          "minPx": 16,
+          "medianPx": 16,
+          "maxPx": 16,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "secondary": {
+          "count": 18,
+          "minPx": 13.999637972558672,
+          "medianPx": 14,
+          "maxPx": 14,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "numbers": {
+          "count": 256,
+          "minPx": 15,
+          "medianPx": 17,
+          "maxPx": 19,
+          "minHeight": null,
+          "medianHeight": null,
+          "offenders": []
+        },
+        "controls": {
+          "count": 14,
+          "minPx": 15,
+          "medianPx": 15,
+          "maxPx": 16,
+          "minHeight": 44,
+          "medianHeight": 44,
+          "offenders": []
+        }
+      },
+      "smallest": [
+        {
+          "px": 14,
+          "count": 37,
+          "examples": [
+            "span.ri-count-chip \"3\"",
+            "span.ri-count-chip \"selected\"",
+            "span \"L\""
+          ]
+        },
+        {
+          "px": 15,
+          "count": 119,
+          "examples": [
+            "button.ri-tab \"Race\"",
+            "button.ri-tab \"Runs\"",
+            "button.ri-tab \"Sections\""
+          ]
+        },
+        {
+          "px": 16,
+          "count": 3,
+          "examples": [
+            "a.nav-link.active \"Sessions\"",
+            "a.nav-link \"Setups\"",
+            "a.nav-link \"Live\""
+          ]
+        },
+        {
+          "px": 17,
+          "count": 83,
+          "examples": [
+            "span.ri-n \"1\"",
+            "span.ri-n \"2\"",
+            "span.ri-n \"3\""
+          ]
+        },
+        {
+          "px": 18,
+          "count": 4,
+          "examples": [
+            "strong \"83.1\"",
+            "strong \"93\"",
+            "strong \"0\""
+          ]
+        }
+      ],
+      "root": 16,
+      "body": 16,
+      "fit": {
+        "scrollHeight": 1690,
+        "innerHeight": 844,
+        "scrollWidth": 390,
+        "innerWidth": 390
+      },
+      "canvasFonts": [
+        "15px \"Cascadia Mono\", Consolas, monospace"
+      ],
+      "errors": [],
+      "verdicts": []
+    }
+  ]
+}

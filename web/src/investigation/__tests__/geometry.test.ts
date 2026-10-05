@@ -222,4 +222,20 @@ describe("map geometry", () => {
     expect(ribbon[0]!.color).toMatch(/^rgb\(/);
     expect(metricRibbon(data, map, "stress", [1]).length).toBe(160);
   });
+
+  it("multiplies a recorded longitude by the geometry's longitude scale before the transform", () => {
+    const t = analysis.track.transform!;
+    const k = 0.8;
+    // The backend's x is longitude * k: a fix at x = 0.5 sits at longitude (min_x + 0.5 * scale) / k.
+    const scaled = buildMapGeometry({ ...analysis.track, transform: { ...t, longitude_scale: k } })!;
+    const latitude = t.source_bounds.maximum_y - 0.5 * t.normalization_scale;
+    const longitude = (t.source_bounds.minimum_x + 0.5 * t.normalization_scale) / k;
+    const viaScale = scaled.projectGps(latitude, longitude)!;
+    const expected = scaled.project(0.5, 0.5);
+    expect(viaScale.x).toBeCloseTo(expected.x, 9);
+    expect(viaScale.y).toBeCloseTo(expected.y, 9);
+    // Without the field (older geometry) longitude is used as recorded.
+    const legacy = map.projectGps(latitude, t.source_bounds.minimum_x + 0.5 * t.normalization_scale)!;
+    expect(legacy.x).toBeCloseTo(map.project(0.5, 0.5).x, 9);
+  });
 });

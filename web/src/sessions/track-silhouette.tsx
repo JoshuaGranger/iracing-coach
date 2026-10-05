@@ -6,9 +6,11 @@ import { type Silhouette, silhouetteOf } from "./silhouette";
 /**
  * A silhouette belongs to a track layout, not to an event, so it is fetched once per layout (from any ready analysis there) and kept:
  * in memory for the page load, and in the device's storage so the next visit asks for nothing. A layout without usable geometry
- * is asked for once per page load and then drawn without.
+ * is asked for once per page load and then drawn without. Only the current centreline (geometry with `transform.longitude_scale`,
+ * analysis profile v24) is kept in storage: an older outline is drawn for the page load and asked for again on the next, so a
+ * re-analysed layout replaces it. Version 2 of the key drops the outlines stored before.
  */
-const STORE = "coach.silhouette.1.";
+const STORE = "coach.silhouette.2.";
 const memory = new Map<string, Silhouette | null>();
 const inflight = new Map<string, Promise<Silhouette | null>>();
 const waiting: (() => void)[] = [];
@@ -35,6 +37,12 @@ function stored(trackKey: string): Silhouette | null {
   return v && typeof v.d === "string" && Array.isArray(v.tick) ? v : null;
 }
 
+/** Geometry built by the current centreline rule: its transform carries the longitude scale. */
+export function isCurrentCentreline(geometry: Pick<Schemas["TrackGeometry"], "transform">): boolean {
+  const k = geometry.transform?.longitude_scale;
+  return typeof k === "number" && k > 0;
+}
+
 export function silhouetteFor(trackKey: string, analysisId: string): Promise<Silhouette | null> {
   if (memory.has(trackKey)) return Promise.resolve(memory.get(trackKey) ?? null);
   const hit = stored(trackKey);
@@ -50,7 +58,7 @@ export function silhouetteFor(trackKey: string, analysisId: string): Promise<Sil
       const geometry = await getJson<Schemas["TrackGeometry"]>(paths.track(analysisId));
       const sil = geometry.status === "usable" ? silhouetteOf(geometry.main_path?.x, geometry.main_path?.y) : null;
       memory.set(trackKey, sil);
-      if (sil) writeJson(STORE + trackKey, sil);
+      if (sil && isCurrentCentreline(geometry)) writeJson(STORE + trackKey, sil);
       return sil;
     } catch {
       memory.set(trackKey, null);

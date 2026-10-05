@@ -205,6 +205,8 @@ export function buildMapGeometry(track: TrackGeometryData | null): MapGeometry |
   const commitment = track.pit_commitment_line && isPlausibleOverlayLine(main, track.pit_commitment_line) ? lineOf(track.pit_commitment_line) : null;
   const merge = track.pit_merge_line && isPlausibleOverlayLine(main, track.pit_merge_line) ? lineOf(track.pit_merge_line) : null;
   const transform = track.transform ?? null;
+  // The backend's x is longitude times this factor (profile v24); older geometry has none and x is longitude.
+  const longitudeScale = transform?.longitude_scale !== undefined && transform.longitude_scale > 0 ? transform.longitude_scale : 1;
   return {
     points,
     viewBox: `${fixed(minX)} ${fixed(minY)} ${fixed(width)} ${fixed(height)}`,
@@ -217,7 +219,7 @@ export function buildMapGeometry(track: TrackGeometryData | null): MapGeometry |
     sectionsReady: track.status.toLowerCase() === "usable" && main.every((point) => typeof point.pct === "number" && Number.isFinite(point.pct)),
     projectGps(latitude, longitude) {
       if (!transform) return null;
-      const nx = (longitude - transform.source_bounds.minimum_x) / transform.normalization_scale;
+      const nx = (longitude * longitudeScale - transform.source_bounds.minimum_x) / transform.normalization_scale;
       const ny = (transform.source_bounds.maximum_y - latitude) / transform.normalization_scale;
       return isPlausibleNormalizedPoint(main, nx, ny) ? project(nx, ny) : null;
     },

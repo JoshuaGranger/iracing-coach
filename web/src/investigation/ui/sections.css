@@ -1,5 +1,5 @@
-/* Sections (backlog #48, #49): the map on top with the chosen section's six clean laps as strands; bottom left the section tabs and
-   the six laps in the Traces rail's row style; bottom right the section's median and Open in Traces. Colour carries data only: three
+/* Sections (backlog #48, #49, #64): left, the map with the chosen section's six clean laps as strands and under it the section tabs
+   and the six laps in the Traces rail's row style; right, the section's median, its telemetry and Open in Traces. Colour carries data only: three
    green shades for the fastest three, three red shades for the slowest three (the strongest shade is the extreme lap). */
 .ri-sl {
   --sl-g1: var(--ri-green);
@@ -9,9 +9,9 @@
   --sl-r2: color-mix(in srgb, var(--ri-loss) 70%, var(--ri-card));
   --sl-r3: color-mix(in srgb, var(--ri-loss) 46%, var(--ri-card));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(17rem, 24rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
   grid-template-rows: minmax(9rem, 1fr) auto;
-  grid-template-areas: "map map" "laps open";
+  grid-template-areas: "map open" "laps open";
   gap: var(--ri-gap);
   height: 100%;
   min-height: 0;
@@ -25,8 +25,13 @@
 .ri-sl-key i { display: inline-block; width: 1.5rem; height: 0.3125rem; border-radius: 2px; }
 .ri-sl-key i.g { background: linear-gradient(90deg, var(--sl-g1), var(--sl-g2), var(--sl-g3)); }
 .ri-sl-key i.r { background: linear-gradient(90deg, var(--sl-r3), var(--sl-r2), var(--sl-r1)); }
-.ri-sl-svg { flex: 1; width: 100%; min-height: 8rem; touch-action: pan-y; }
-.ri-sl-track { fill: none; stroke: var(--color-border-strong); stroke-width: 4px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* The map and, over it with the same box, the strands, the scrub band along the section and the cursor marker. */
+.ri-sl-stage { position: relative; flex: 1; min-height: 8rem; }
+.ri-sl-svg, .ri-sl-over { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: pan-y; }
+.ri-sl-over { pointer-events: none; }
+.ri-sl-zone { pointer-events: auto; cursor: crosshair; }
+.ri-sl-over .ri-sl-label { pointer-events: auto; }
+.ri-sl-scrub { fill: none; stroke: transparent; stroke-width: 1.75rem; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; }.ri-sl-track { fill: none; stroke: var(--color-border-strong); stroke-width: 4px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 /* The bundle's backing band: six strands at 3.25 px plus a margin. */
 .ri-sl-segment { fill: none; stroke: var(--ri-raise); stroke-width: 1.625rem; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .ri-sl-strand { fill: none; stroke: var(--lap); stroke-width: 2.5px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; }
@@ -35,13 +40,15 @@
 .ri-sl-start { stroke: var(--ri-t1); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .ri-sl-leader { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .ri-sl-label { cursor: pointer; }
-.ri-sl-label circle { fill: var(--ri-card2); stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.ri-sl-label circle:not(.ri-sl-hit) { fill: var(--ri-card2); stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+/* The label's tap target: 44 px across, drawn as nothing. */
+.ri-sl-label .ri-sl-hit { fill: transparent; stroke: none; pointer-events: all; }
 .ri-sl-label text { fill: var(--ri-t1); font-family: var(--ri-disp); font-weight: 700; pointer-events: none; }
-.ri-sl-label.selected circle { fill: var(--ri-ice); stroke: var(--ri-ice); }
+.ri-sl-label.selected circle:not(.ri-sl-hit) { fill: var(--ri-ice); stroke: var(--ri-ice); }
 .ri-sl-label.selected text { fill: var(--ri-on-ice); }
-@media (hover: hover) { .ri-sl-label:not(.selected):hover circle { fill: var(--color-surface-hover); } }
+@media (hover: hover) { .ri-sl-label:not(.selected):hover circle:not(.ri-sl-hit) { fill: var(--color-surface-hover); } }
 .ri-sl-label:focus-visible { outline: none; }
-.ri-sl-label:focus-visible circle { stroke: var(--ri-ice); stroke-width: 2px; }
+.ri-sl-label:focus-visible circle:not(.ri-sl-hit) { stroke: var(--ri-ice); stroke-width: 2px; }
 
 /* Section tabs and the six laps */
 .ri-sl-laps { grid-area: laps; display: flex; flex-direction: column; overflow: hidden; }
@@ -68,25 +75,43 @@
 .ri-lap-row.ri-sgrid.hot:not(.selected) { background: var(--color-surface-hover); }
 .ri-sl-none { padding: var(--space-3); color: var(--ri-t2); font-size: var(--text-body); }
 
-/* Section facts and Open in Traces */
+/* Section facts above, the section's telemetry, Open in Traces below */
 .ri-sl-open { grid-area: open; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3) var(--space-3); }
+/* Telemetry: the section header with the median key and the cursor's lap distance, then four rows over the section's distance with
+   the Traces cursor over them. */
+.ri-st { display: flex; flex: 1; flex-direction: column; gap: var(--space-2); min-height: 0; }
+.ri-st-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-4); }
+.ri-st-key { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--ri-t3); font-size: var(--text-compact); }
+.ri-st-key i { display: inline-block; width: 1.5rem; height: 0.1875rem; border-radius: 2px; background: var(--color-chart-reference); }
+.ri-st-pct { margin-left: auto; color: var(--ri-t1); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
+.ri-st-surface { position: relative; flex: 1; min-width: 0; min-height: 16rem; touch-action: pan-y; cursor: crosshair; outline-offset: -2px; }
+.ri-st-line { fill: none; stroke: var(--lap); stroke-width: 1.6px; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.ri-st-line.median { stroke-width: 2px; stroke-dasharray: 5 3; }
+.ri-st-line.hot { stroke-width: 3px; }
+.ri-st-name { fill: var(--ri-t2); }
+.ri-st-unit { fill: var(--ri-t3); }
+.ri-st-over { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: var(--space-3); color: var(--ri-t2); font-size: var(--text-body); }
 .ri-sl-open h2 { margin: 0; font-family: var(--ri-disp); font-size: 1.125rem; font-weight: 700; font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
 .ri-sl-open h2 small { color: var(--ri-t3); font-weight: var(--weight-regular); letter-spacing: 0; text-transform: none; }
 .ri-sl-facts { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; }
 .ri-sl-facts b { margin-left: 0.375rem; color: var(--ri-t1); font-size: var(--text-data); font-stretch: semi-condensed; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
-.ri-sl-read { display: block; min-height: 1.5rem; color: var(--ri-t1); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
-.ri-sl-action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: auto; }
+.ri-sl-read { flex: 1; min-width: 0; overflow: hidden; color: var(--ri-t1); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.ri-sl-action { display: flex; align-items: center; gap: var(--space-3); margin-top: auto; }
+.ri-sl-action > button { margin-left: auto; }
 .ri-sl-action > span { color: var(--ri-t2); font-size: var(--text-body); }
 
-/* Tablet portrait and phone: map, tabs and laps, then the facts and the button, one column; the page scrolls. */
+/* Tablet portrait and phone: map, tabs and laps, then the facts, the telemetry and the button, one column; the page scrolls. */
 @media (max-width: 900px) {
   .ri-sl { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "map" "laps" "open"; height: auto; }
-  .ri-sl-svg { min-height: 15rem; }
+  .ri-sl-stage { min-height: 15rem; }
   .ri-sl-laps { overflow: visible; }
   .ri-sl-list { overflow: visible; }
+  /* Tall enough that the cursor cards list all six laps. */
+  .ri-st-surface { flex: none; height: 40rem; }
 }
 @media (max-width: 900px), (pointer: coarse) {
   .ri-sl-tab { height: var(--touch-target); min-width: var(--touch-target); }
+  .ri-lap-row.ri-sgrid { min-height: var(--touch-target); }
 }
 @media (max-width: 420px) {
   .ri-sgrid { grid-template-columns: 1.125rem 2.25rem 4.5rem 4.5rem minmax(2rem, 1fr); column-gap: 0.25rem; }

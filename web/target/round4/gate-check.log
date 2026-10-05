@@ -1,0 +1,1310 @@
+
+== verify-repository
+{
+  "ok": true,
+  "checked": true
+}
+{
+  "ok": true,
+  "python": "3.12.14",
+  "plugin_version": "0.1.0+codex.20260802035338",
+  "mcp_server_version": "0.3.0",
+  "mcp_tool_count": 27,
+  "contracts_loaded": 23,
+  "fixtures_loaded": 38,
+  "tracked_files_scanned": 1586,
+  "mcp_e2e": {
+    "ok": true,
+    "protocol_version": "2025-06-18",
+    "dashboard_race_count": 1,
+    "analysis_id": "e8b3f47438885279fc265d17",
+    "subsession_id": 8001,
+    "data_quality": "high",
+    "backend_elapsed_ms": 109.117
+  },
+  "tests": {
+    "run": true,
+    "exit_code": 0,
+    "total": 1459,
+    "passed": 1441,
+    "failed": 0,
+    "skipped": 18
+  }
+}
+
+== cargo fmt --check
+
+== cargo clippy -D warnings
+   Compiling coach-wire v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-wire)
+    Checking coach-ibt v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-ibt)
+    Checking coach-views v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-views)
+    Checking coach-live v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-live)
+    Checking coach-analysis v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-analysis)
+    Checking coach-server v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\server)
+    Checking coach-collector v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\collector)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.84s
+
+== cargo test
+   Compiling coach-wire v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-wire)
+   Compiling coach-ibt v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-ibt)
+   Compiling coach-views v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-views)
+   Compiling coach-live v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-live)
+   Compiling coach-analysis v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\crates\coach-analysis)
+   Compiling coach-server v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\server)
+   Compiling coach-collector v0.19.0 (C:\Users\joshu\source\repos\iRacing Coach\collector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 00s
+     Running unittests src\lib.rs (target\debug\deps\coach_analysis-0d82da9a3e7b43f1.exe)
+
+running 33 tests
+test kernels::field::groove::tests::caution_bits_of_large_floats ... ok
+test kernels::field::geometry::tests::slug_folds_and_joins ... ok
+test kernels::laps::summaries::tests::corrections_count_sign_changes_of_material_steps ... ok
+test kernels::field::geometry::tests::resample_rounds_half_to_even ... ok
+test kernels::field::groove::tests::zone_bins_wrap_and_sort_from_start ... ok
+test kernels::field::groove::tests::percentile_interpolates ... ok
+test kernels::field::groove::tests::lap_fraction_rules ... ok
+test kernels::laps::conditions::tests::fraction_clamps_like_max_min ... ok
+test kernels::laps::dynamics::tests::positive_increase_folds_rises_from_zero ... ok
+test kernels::laps::summaries::tests::racing_and_on_track_truncate ... ok
+test kernels::laps::conditions::tests::deep_find_prefers_the_mapping_own_key ... ok
+test kernels::laps::summaries::tests::lap_keys_order_as_ints ... ok
+test kernels::laps::tests::big_ints_keep_their_exact_decimal_text ... ok
+test kernels::laps::tests::min_and_max_keep_the_first_of_equal_values ... ok
+test kernels::laps::tests::percentile_matches_the_oracle_formula ... ok
+test kernels::laps::tests::strip_and_repr_follow_python ... ok
+test kernels::traces::payload::tests::bins_read_the_oracles_slice_or_indices ... ok
+test kernels::traces::tests::median_sorts_stably ... ok
+test kernels::traces::tests::percentile_interpolates_between_neighbours ... ok
+test kernels::traces::tests::reducers_keep_the_first_of_equal_items ... ok
+test mapped::tests::lengths_beyond_isize_max_are_refused ... ok
+test sampling::tests::infinite_step_is_python_overflow_error ... ok
+test sampling::tests::integral_and_fractional_steps ... ok
+test sampling::tests::invalid_targets_are_the_python_value_error ... ok
+test sampling::tests::native_and_at_or_above_tick_rate_keep_every_record ... ok
+test writer::json::tests::bytes_repr_quotes ... ok
+test writer::json::tests::surrogate_runs ... ok
+test writer::pickle::tests::long_fits_or_not ... ok
+test writer::pickle::tests::refuses_globals_and_trailing_bytes ... ok
+test writer::pickle::tests::surrogatepass_utf8 ... ok
+test mapped::tests::a_file_open_for_writing_is_not_mapped ... ok
+test mapped::tests::maps_whole_files_and_empty_ones ... ok
+test writer::json::tests::threads_give_the_sequential_result ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running unittests src\main.rs (target\debug\deps\coach_analysis-32a7c14678f259a8.exe)
+
+running 3 tests
+test serve::tests::answers_carry_the_outcome_and_the_accessed_channels ... ok
+test serve::tests::call_requests_are_checked_before_dispatch ... ok
+test serve::tests::a_refused_start_answers_an_error_and_ends ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\decode.rs (target\debug\deps\decode-ce181a8d281e505a.exe)
+
+running 12 tests
+test store_rejects_header_lengths_past_the_end ... ok
+test truncated_recording_is_rejected_by_the_shared_layout_parser ... ok
+test channel_selection_follows_normalise_channels ... ok
+test synthetic_race_matches_the_committed_golden ... ok
+test matrix_hash_quiets_signalling_nan_as_python_packs_it ... ok
+test decode_request_runs_end_to_end ... ok
+test edge_types_decode_as_python_reads_them ... ok
+test store_round_trips_every_column ... ok
+test store_rejects_inexact_blocks_and_shapes ... ok
+test store_rejects_a_data_section_past_the_end ... ok
+test edge_types_match_the_python_oracle_when_available ... ok
+test sampling_plan_matches_cpython_vectors ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running tests\kernels_codec.rs (target\debug\deps\kernels_codec-1729937efe8b1fcc.exe)
+
+running 10 tests
+test call_binding_follows_python ... ok
+test entry_table_is_consistent ... ok
+test values_follow_python_semantics ... ok
+test encoder_follows_the_python_rules ... ok
+test decoder_refuses_what_the_codec_never_writes ... ok
+test vector_store_refuses_malformed_blocks ... ok
+test session_caches_handles_and_access ... ok
+test conformance_values_have_python_types_and_bits ... ok
+test conformance_document_reencodes_byte_for_byte ... ok
+test every_recorded_document_reencodes_and_replays_against_itself ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.15s
+
+     Running tests\kernels_field.rs (target\debug\deps\kernels_field-71fa9ba98f4e552f.exe)
+
+running 1 test
+test field_vectors_replay_exactly ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running tests\kernels_handoff.rs (target\debug\deps\kernels_handoff-2ab14225f9a0bfe5.exe)
+
+running 2 tests
+test the_replay_entry_returns_the_series_and_the_handoff_a_handle ... ok
+test setup_series_handle_replays_its_readers_identically ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests\kernels_laps.rs (target\debug\deps\kernels_laps-7fdc63c601501caf.exe)
+
+running 1 test
+test laps_calls_replay_identically ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\kernels_sections.rs (target\debug\deps\kernels_sections-d45547c1323d76c2.exe)
+
+running 1 test
+test sections_vectors_replay_exactly ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests\kernels_table.rs (target\debug\deps\kernels_table-9b3cef38816e924f.exe)
+
+running 6 tests
+test merged_missing_cells_are_none_in_every_view ... ok
+test merge_store_validation ... ok
+test setup_telemetry_from_a_handle_matches_the_oracle ... ok
+test merge_matches_the_oracle ... ok
+test table_vectors_replay_exactly ... ok
+test table_views_match_the_oracle_probe ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+
+     Running tests\kernels_traces.rs (target\debug\deps\kernels_traces-177a5143f25e95f0.exe)
+
+running 1 test
+test traces_calls_replay_identically ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+     Running tests\writer.rs (target\debug\deps\writer-442d7e766e838af6.exe)
+
+running 2 tests
+test writer_refuses_requests_the_seam_never_sends ... ok
+test writer_matches_the_oracle_on_every_vector ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src\lib.rs (target\debug\deps\coach_collector-3de1885cd168261b.exe)
+
+running 105 tests
+test cli::tests::bare_and_run_start_the_collector ... ok
+test cli::tests::subcommands ... ok
+test cli::tests::rejects_bad_input ... ok
+test cli::tests::replay_dry_run_and_paths ... ok
+test backfill::tests::roots_are_telemetry_archive_then_the_given_folders ... ok
+test cpu::tests::the_report_line_is_a_percentage_of_one_core_per_thread ... ok
+test cli::tests::backfill_takes_folders_and_options ... ok
+test config::tests::authority_and_ws_url ... ok
+test config::tests::server_addresses_normalize ... ok
+test fixture::tests::rejects_foreign_files ... ok
+test fixture::tests::session_yaml_nests_sections ... ok
+test fixture::tests::replay_applies_ticks_in_a_ring_and_reports_the_end ... ok
+test garage::tests::a_disconnect_abandons_an_open_visit_and_closes_an_exited_one ... ok
+test garage::tests::a_dip_that_lasts_longer_than_the_join_window_is_an_exit_and_a_new_visit ... ok
+test garage::tests::a_name_change_without_a_value_change_synthesizes_a_snapshot ... ok
+test garage::tests::a_dip_of_in_garage_while_a_setup_is_applied_does_not_split_the_visit ... ok
+test garage::tests::a_visit_that_reloads_the_named_file_and_leaves_unmodified_carries_that_name ... ok
+test garage::tests::a_visit_without_any_value_change_leaves_no_trace ... ok
+test garage::tests::leaving_without_a_name_change_commits_after_five_seconds_with_the_exit_name_when_unmodified ... ok
+test garage::tests::leaving_without_a_name_change_commits_values_only_when_modified_or_unknown ... ok
+test garage::tests::p5_sequence_names_only_the_last_file_loaded ... ok
+test garage::tests::reentering_before_the_window_closes_closes_the_old_visit_first ... ok
+test garage::tests::reentry_with_a_changed_count_commits_the_old_visit_before_the_new_snapshot ... ok
+test garage::tests::the_exit_state_is_read_when_the_window_closes_not_at_the_exit_tick ... ok
+test gate::tests::a_stalled_reader_withdraws_the_evidence ... ok
+test gate::tests::going_on_track_withdraws_at_once ... ok
+test gate::tests::live_data_allows_only_with_is_on_track_false ... ok
+test gate::tests::missing_map_allows_work_at_once ... ok
+test gate::tests::no_evidence_means_on_track ... ok
+test gate::tests::status_clear_needs_two_seconds ... ok
+test hotkey::tests::parses_letters_digits_and_function_keys ... ok
+test hotkey::tests::rejects_everything_else ... ok
+test http::tests::a_failing_body_source_abandons_the_request ... ok
+test garage_io::tests::a_commit_waits_for_the_gate_and_queues_its_sto_with_the_hashed_signature ... ok
+test garage_io::tests::a_commit_without_a_name_is_written_to_the_dry_log_with_its_values ... ok
+test garage::tests::sto_resolution_prefers_the_direct_path_and_flags_duplicates ... ok
+test backfill::tests::the_plan_lists_every_recording_below_a_folder_with_what_would_happen ... ok
+test hub::tests::queue_drops_the_oldest_frame_when_full ... ok
+test hub::tests::status_generation_moves_only_on_change ... ok
+test hub::tests::the_streaming_flag_follows_the_status ... ok
+test config::tests::config_round_trips_and_repairs ... ok
+test journal::tests::a_commit_waits_for_its_hash_and_carries_its_snapshots_values ... ok
+test garage_io::tests::a_file_that_changes_while_it_is_hashed_is_not_hashed_at_all ... ok
+test garage_io::tests::events_that_could_not_be_journaled_wait_and_go_in_order ... ok
+test hub::tests::uploader_sleep_returns_early_when_woken ... ok
+test journal::tests::a_stale_hash_is_ignored_when_the_file_changed ... ok
+test fixture::tests::the_synthetic_run_is_a_valid_fixture_whose_values_move_on_every_tick ... ok
+test journal::tests::a_handle_held_past_the_retry_budget_fails_loudly_and_leaves_the_journal_whole ... ok
+test journal::tests::a_failed_append_applies_nothing_and_its_retry_leaves_no_fragment ... ok
+test journal::tests::an_unavailable_journal_holds_events_back_until_the_file_opens ... ok
+test journal::tests::garage_events_are_sent_once_per_connection_and_resent_after_reconnect ... ok
+test journal::tests::a_rejected_file_leaves_the_pending_entries_and_stays_out_until_it_changes ... ok
+test journal::tests::recordings_survive_a_restart_until_done ... ok
+test journal::tests::a_torn_tail_is_cut_off_so_the_next_append_survives_a_restart ... ok
+test layout::tests::default_layout_is_the_factory_default ... ok
+test layout::tests::parses_a_server_layout_and_skips_bad_tiles ... ok
+test layout::tests::tile_rects_tile_the_window ... ok
+test layout::tests::trend_buffer_windows_and_ignores_non_finite ... ok
+test hub::tests::a_waiting_consumer_wakes_when_a_frame_is_queued_and_not_before ... ok
+test logging::tests::levels_parse_from_directives ... ok
+test logging::tests::a_line_carries_time_level_thread_and_message ... ok
+test pipeline::tests::frames_never_exceed_sixty_per_second ... ok
+test logging::tests::rotates_and_keeps_one_previous_file ... ok
+test journal::tests::the_newest_snapshot_is_kept_after_its_ack_until_the_commit_is_acked ... ok
+test sdk::tests::a_missing_mapping_is_no_map_and_allows_file_work ... ok
+test sdk::tests::an_open_failure_is_unknown_evidence_before_and_between_attempts ... ok
+test sdk::tests::an_unreadable_header_is_unknown_evidence_and_stays_so_until_the_map_is_absent ... ok
+test stream::tests::a_driver_change_across_a_disconnect_drops_demand_too ... ok
+test stream::tests::a_driver_change_drops_the_previous_drivers_demand ... ok
+test stream::tests::a_driver_learned_late_is_a_change_when_it_differs ... ok
+test stream::tests::a_release_before_any_session_leaves_the_first_session_unlatched ... ok
+test stream::tests::a_sim_reconnect_with_a_viewer_latches_the_new_session ... ok
+test stream::tests::a_viewer_standing_across_a_boundary_latches_the_next_session ... ok
+test stream::tests::collector_starts_with_the_latch_clear ... ok
+test stream::tests::demand_survives_the_session_boundary ... ok
+test stream::tests::driver_change_ends_the_session_but_a_missing_value_does_not ... ok
+test stream::tests::release_keeps_streaming_until_the_session_ends ... ok
+test stream::tests::sim_disconnect_ends_the_session ... ok
+test stream::tests::start_before_the_end_cancels_a_release ... ok
+test stream::tests::welcome_true_acts_as_start_and_false_as_release ... ok
+test scan::tests::lists_recordings_and_setups_with_relative_paths ... ok
+test uploader::tests::pending_journal_entries_are_matched_only_while_the_gate_stays_open ... ok
+test util::tests::iso_formats_known_instants ... ok
+test util::tests::jitter_stays_inside_the_band ... ok
+test util::tests::manual_clock_moves_both_scales ... ok
+test util::tests::uuid_has_version_and_variant ... ok
+test win::map::tests::only_a_missing_mapping_counts_as_absent ... ok
+test scan::tests::a_scan_stops_part_way_when_the_check_says_stop ... ok
+test win::tests::arguments_are_quoted_for_createprocess ... ok
+test ws::tests::a_refused_upgrade_is_an_error ... ok
+test ws::tests::base64_pads_correctly ... ok
+test ws::tests::handshake_then_masked_frames_out_and_messages_in ... ok
+test ws::tests::sha1_matches_the_standard_vectors ... ok
+test ws::tests::the_rfc_6455_accept_token_is_reproduced ... ok
+test uploader::tests::a_scan_closed_mid_walk_keeps_its_queue_and_stays_due ... ok
+test cpu::tests::a_busy_thread_shows_up_in_its_own_figure_and_in_the_process ... ok
+test ws::tests::a_partial_frame_waits_for_the_rest_across_timeouts ... ok
+test http::tests::posts_json_and_reads_a_content_length_body ... ok
+test journal::tests::a_torn_last_line_is_skipped_and_compaction_keeps_live_state ... ok
+test journal::tests::rejected_files_survive_compaction ... ok
+test http::tests::a_full_socket_does_not_hold_back_an_abandoned_request ... ok
+test http::tests::reads_chunked_and_head_responses ... ok
+test http::tests::a_stalled_peer_times_out_after_the_io_limit ... ok
+test journal::tests::compaction_waits_out_a_scanner_holding_the_journal_and_then_commits ... ok
+test http::tests::connection_refused_is_a_connect_error ... ok
+
+test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.05s
+
+     Running unittests src\main.rs (target\debug\deps\coach_collector-a2fa753cba307cca.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\backfill.rs (target\debug\deps\backfill-7cb9a6914eb404f2.exe)
+
+running 2 tests
+test a_second_backfill_is_refused_while_the_first_holds_the_lock ... ok
+2026-10-05T02:14:19.224Z ERROR [backfill_uploads_every_recording_once_read_only_and_a_dry_run_only_lists] giving up on C:\Users\joshu\AppData\Local\Temp\coach-test-backfill-4eeb43c0-ec35-4220-b763-6a4966e4d177\old drive\headerless.ibt: the header says it holds 0 records
+test backfill_uploads_every_recording_once_read_only_and_a_dry_run_only_lists ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
+
+     Running tests\e2e.rs (target\debug\deps\e2e-8b9e8d271fda3045.exe)
+
+running 2 tests
+2026-10-05T02:14:20.362Z INFO  [replay_to_server_streams_frames_captures_the_garage_and_uploads_files] collector 0.19.0 starting: server http://127.0.0.1:50110, replay true, dry run false
+2026-10-05T02:14:20.363Z INFO  [a_collector_with_no_server_still_captures_and_queues] collector 0.19.0 starting: server http://127.0.0.1:50111, replay true, dry run false
+2026-10-05T02:14:21.498Z WARN  [a_collector_with_no_server_still_captures_and_queues] drain timed out; exiting with work still queued
+2026-10-05T02:14:21.571Z INFO  [replay_to_server_streams_frames_captures_the_garage_and_uploads_files] collector stopped
+test replay_to_server_streams_frames_captures_the_garage_and_uploads_files ... ok
+2026-10-05T02:14:22.512Z INFO  [a_collector_with_no_server_still_captures_and_queues] collector stopped
+test a_collector_with_no_server_still_captures_and_queues ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.18s
+
+     Running tests\garage.rs (target\debug\deps\garage-dcd4edc75829500a.exe)
+
+running 8 tests
+test the_sto_is_hashed_only_while_the_car_is_off_track ... ok
+test leaving_without_a_name_change_commits_values_only ... ok
+test the_load_placeholder_is_not_a_setup_name ... ok
+test leaving_unmodified_on_the_same_name_commits_that_file_with_its_hash ... ok
+test a_dip_in_in_garage_before_every_apply_keeps_one_visit_with_one_named_commit ... ok
+test the_p5_sequence_commits_only_the_last_loaded_file_with_its_hash ... ok
+2026-10-05T02:14:22.720Z INFO  [dry_run_writes_the_captures_and_a_frame_summary_without_a_server] collector 0.19.0 starting: server http://192.168.1.81:8210, replay true, dry run true
+test a_name_shared_by_two_files_is_ambiguous_and_an_unknown_name_has_no_hash ... ok
+2026-10-05T02:14:22.926Z INFO  [dry_run_writes_the_captures_and_a_frame_summary_without_a_server] collector stopped
+test dry_run_writes_the_captures_and_a_frame_summary_without_a_server ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests\link.rs (target\debug\deps\link-ef2401cafcf0be80.exe)
+
+running 11 tests
+test shutdown_closes_the_socket_promptly ... ok
+test hello_welcome_status_and_layout_sync ... ok
+test garage_events_go_out_in_order_and_the_ack_drops_them ... ok
+test ping_is_answered_and_stream_control_and_viewers_are_applied ... ok
+test unacknowledged_garage_events_are_resent_after_a_reconnect ... ok
+test queued_frames_are_sent_unchanged_and_stream_stats_follow ... ok
+test reconnects_with_backoff_after_a_drop ... ok
+test an_incompatible_protocol_keeps_the_collector_running_and_retries_slowly ... ok
+test a_silent_server_is_given_up_on ... ok
+test status_is_sent_on_change_and_periodically ... ok
+test a_duplicate_collector_id_pauses_reconnecting ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running tests\perf_cpu.rs (target\debug\deps\perf_cpu-735cd17f06a42f8e.exe)
+
+running 1 test
+test a_moving_car_streaming_to_two_viewers_costs_the_collector_under_the_budget ... ignored, runs the release collector for about a minute and shows its overlay
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\perf_reader.rs (target\debug\deps\perf_reader-b33ed81dad7e7e7c.exe)
+
+running 1 test
+test a_moving_car_tick_costs_the_reader_microseconds_not_milliseconds ... ignored, timing; run in release
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\replay_pipeline.rs (target\debug\deps\replay_pipeline-73e7b414ebfe2935.exe)
+
+running 9 tests
+test write_a_synthetic_fixture ... ignored, writes a file when COACH_WRITE_FIXTURE is set
+test a_torn_read_is_retried_once_then_given_up ... ok
+test a_map_that_stays_dead_is_closed_and_opened_again_so_a_new_iracing_run_is_found ... ok
+test a_sim_that_disconnects_resets_the_engine_and_ends_the_stream_session ... ok
+test a_60_hz_recording_sends_every_tick ... ok
+test presence_follows_the_sim_and_the_gate_follows_is_on_track ... ok
+test no_frame_is_encoded_without_demand_and_the_latch_holds_until_the_session_ends ... ok
+test a_240_hz_recording_streams_at_60_frames_per_second_with_the_epoch_marker_carried ... ok
+test record_sdk_round_trips_through_a_replay ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests\rig_g3.rs (target\debug\deps\rig_g3-9d32eada82409103.exe)
+
+running 2 tests
+2026-10-05T02:14:25.093Z INFO  [the_sanitized_rig_capture_replays_into_the_garage_events_the_rig_saw] collector 0.19.0 starting: server http://192.168.1.81:8210, replay true, dry run true
+test the_committed_fixture_carries_no_names_ids_or_purchased_setup_files ... ok
+2026-10-05T02:14:25.408Z INFO  [the_sanitized_rig_capture_replays_into_the_garage_events_the_rig_saw] collector stopped
+test the_sanitized_rig_capture_replays_into_the_garage_events_the_rig_saw ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests\uploader.rs (target\debug\deps\uploader-e2ee5a96dfa2e5bd.exe)
+
+running 17 tests
+test a_file_deleted_before_upload_is_dropped_from_the_journal ... ok
+test a_recording_the_server_refuses_for_good_is_terminal_and_survives_a_restart_unretried ... ok
+test nothing_is_read_or_sent_while_the_car_is_on_track ... ok
+test a_recording_still_being_written_waits_for_the_finalization_gate ... ok
+test a_conflict_answer_moves_to_the_reported_offset ... ok
+test a_hash_mismatch_forgets_the_hash_and_starts_over ... ok
+test a_renamed_setup_posts_an_occurrence_without_sending_bytes_again ... ok
+test resumes_from_the_offset_the_server_reports ... ok
+test a_restart_resumes_from_the_server_offset_without_hashing_again ... ok
+test retry_after_on_503_is_honoured ... ok
+test a_recording_with_no_records_ends_in_a_terminal_state_until_the_file_changes ... ok
+test the_create_carries_the_driver_the_collector_last_saw ... ok
+test recordings_go_before_setup_files_and_setups_keep_their_relative_path ... ok
+test uploads_a_recording_in_chunks_then_drops_the_journal_entry ... ok
+test an_in_flight_chunk_is_abandoned_within_100_ms_when_the_car_goes_on_track ... ok
+test a_chunk_is_abandoned_within_100_ms_even_when_the_server_stops_reading ... ok
+test an_unreachable_server_is_retried_with_backoff_then_the_upload_completes ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.10s
+
+     Running tests\win_install.rs (target\debug\deps\win_install-6d11fd89b59420d4.exe)
+
+running 1 test
+test install_sets_the_run_value_and_starts_it_and_uninstall_removes_everything_it_made ... ignored, starts a collector with a tray icon for a few seconds
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\win_render.rs (target\debug\deps\win_render-08e08c9770f3079e.exe)
+
+running 7 tests
+test a_full_repaint_of_a_busy_layout_costs_about_a_millisecond ... ignored, timing; run in release
+test nothing_is_repainted_until_a_tile_shows_something_new ... ok
+test a_tile_under_another_repaints_the_one_that_covers_it_in_turn ... ok
+test a_partial_repaint_leaves_exactly_the_pixels_a_full_repaint_would ... ok
+test without_a_state_the_monitor_says_it_is_waiting ... ok
+test the_default_layout_renders_text_and_tiles_over_the_background ... ok
+test every_style_draws_at_three_scales ... ok
+
+test result: ok. 6 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests\win_ui_smoke.rs (target\debug\deps\win_ui_smoke-a8baecbc5e6fa992.exe)
+
+running 1 test
+test the_overlay_is_a_visible_layered_topmost_click_through_window_and_exits_cleanly ... ignored, shows a click-through window on the desktop for a few seconds
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coach_ibt-300b4073d0783484.exe)
+
+running 36 tests
+test gate::tests::every_contract_pattern_is_inside_the_subset ... ok
+test gate::tests::exclusions_match_the_last_segment_case_insensitively ... ok
+test header::tests::newest_buffer_and_live_bounds ... ok
+test gate::tests::an_anti_roll_bar_preload_published_as_a_section_leaf_is_derived ... ok
+test extract::tests::modified_falls_back_only_when_absent_or_null ... ok
+test gate::tests::export_keys_match_without_their_underscores ... ok
+test header::tests::live_table_skips_bad_entries_and_replaces_duplicates ... ok
+test header::tests::readers_keep_raw_values ... ok
+test header::tests::ibt_table_rules ... ok
+test gate::tests::fingerprint_hashes_the_kept_pairs_in_key_order ... ok
+test extract::tests::text_of_containers_is_python_str ... ok
+test extract::tests::extracts_follow_python_conversions ... ok
+test literal::tests::numbers ... ok
+test literal::tests::containers ... ok
+test literal::tests::strings ... ok
+test literal::tests::unsupported_results_and_type_errors ... ok
+test matchers::tests::an_optional_group_may_be_absent ... ok
+test matchers::tests::leaf_patterns_match_with_ascii_case_folding ... ok
+test matchers::tests::leaf_patterns_outside_the_subset_are_rejected ... ok
+test matchers::tests::python_floats_and_imaginaries ... ok
+test matchers::tests::python_integers ... ok
+test matchers::tests::yaml_floats ... ok
+test matchers::tests::yaml_integers ... ok
+test py::tests::cp1252_replaces_undefined_bytes ... ok
+test py::tests::parse_int_matches_python_int ... ok
+test py::tests::float_repr_matches_python ... ok
+test py::tests::splitlines_matches_python ... ok
+test literal::tests::nesting_limit_is_python_maxlevel ... ok
+test py::tests::str_repr_matches_python ... ok
+test py::tests::whitespace_includes_python_separators ... ok
+test time::tests::iso_epoch_matches_python ... ok
+test time::tests::mtime_seconds_follow_cpython ... ok
+test time::tests::safe_iso_matches_python ... ok
+test yaml::tests::block_structure ... ok
+test yaml::tests::errors_carry_python_lines ... ok
+test yaml::tests::scalar_typing_follows_yaml_scalar ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\api_shape.rs (target\debug\deps\api_shape-a2657244fcee707d.exe)
+
+running 1 test
+test signatures_match_the_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\files.rs (target\debug\deps\files-15583ea1240be849.exe)
+
+running 8 tests
+test a_directory_is_not_a_recording ... ok
+test session_info_hash_and_text ... ok
+test truncated_fixture_is_rejected ... ok
+test synthetic_fixture_layout ... ok
+test finalization_gate_waits_for_the_writer ... ok
+test edge_reads_return_the_last_record_as_stored ... ok
+test finalization_gate_follows_the_python_rule ... ok
+test streaming_hash_checks_before_every_block ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests\parity.rs (target\debug\deps\parity-a88e5ac70ed27eb4.exe)
+
+running 3 tests
+test private_corpus_matches_python ... ignored, needs COACH_PRIVATE_CORPUS (a folder of private .ibt recordings) and the Python oracle
+test committed_fixtures_match_python ... ok
+test yaml_cases_match_python ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\setup_identity.rs (target\debug\deps\setup_identity-defd96ff169d8b19.exe)
+
+running 4 tests
+test every_preload_the_supra_publishes_is_a_derived_readout ... ok
+test the_last_garage_snapshot_and_the_values_at_apply_and_close_are_one_setup ... ok
+test a_setup_differing_only_in_the_front_bar_preload_keeps_its_fingerprint ... ok
+test publishes_that_differ_only_in_derived_values_share_one_fingerprint ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src\lib.rs (target\debug\deps\coach_live-46fc8308586d7fe2.exe)
+
+running 22 tests
+test engine::tests::laps_remaining_rule ... ok
+test engine::tests::every_cue_id_the_engine_uses_is_in_the_table ... ok
+test format::tests::whole_and_ceiling ... ok
+test format::tests::fixed_rounds_exact_ties_to_even_like_net ... ok
+test engine::tests::ring_keeps_the_newest_eight_and_takes_medians_like_the_csharp_queue ... ok
+test format::tests::lap_time_truncates_ticks_and_milliseconds ... ok
+test engine::tests::phase_normalisation_follows_normalize_session_phase ... ok
+test format::tests::signed_uses_the_zero_section_for_values_that_round_to_zero ... ok
+test format::tests::percent0_matches_en_us_p0 ... ok
+test format::tests::custom_rounds_half_away_after_fifteen_digits ... ok
+test format::tests::custom_optional_drops_trailing_zeros ... ok
+test session::tests::context_of_an_empty_session_info_is_empty ... ok
+test session::tests::context_reads_the_session_info_tree ... ok
+test session::tests::ratio_comes_from_the_car_setup_block_only ... ok
+test session::tests::ratio_parsing_follows_the_backend_rules ... ok
+test session::tests::steering_helpers ... ok
+test truth::tests::non_finite_lap_distance_is_refused ... ok
+test truth::tests::one_lap_to_green_is_a_caution_only_where_the_session_says_so ... ok
+test truth::tests::every_flag_vector_decodes_as_the_backend_does ... ok
+test truth::tests::lap_distance_vectors ... ok
+test truth::tests::caution_mask_is_the_backend_value_not_the_legacy_dotnet_one ... ok
+test truth::tests::precedence_order_is_the_files_order ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\api_shape.rs (target\debug\deps\api_shape-f3c86741db8b0c4d.exe)
+
+running 1 test
+test signatures_match_the_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\csharp_assertions.rs (target\debug\deps\csharp_assertions-89701eac1b5086fa.exe)
+
+running 17 tests
+test a_driving_cue_needs_a_clean_baseline_and_persistence ... ok
+test run_phase_counts_only_clean_green_laps ... ok
+test only_fully_observed_clean_laps_feed_pace_and_fuel ... ok
+test critical_state_wins_and_is_urgent ... ok
+test a_large_overshoot_is_grouped_like_the_csharp_percent_format ... ok
+test fuel_hard_limit_is_not_a_pit_window ... ok
+test repair_confounded_laps_make_no_driving_cue ... ok
+test a_disconnect_clears_pace_and_input_baselines ... ok
+test gap_trend_rolls_and_caution_suppresses_it ... ok
+test road_wheel_steering_is_the_wheel_over_the_setup_ratio ... ok
+test run_phase_resets_when_pit_road_is_observed ... ok
+test missing_dynamics_are_not_a_straight ... ok
+test semantic_ranges_apply_to_bar_capable_readings ... ok
+test safe_glance_delays_an_ordinary_cue_until_a_straight ... ok
+test three_clean_laps_give_a_pace_band_and_pace_stays_apart_from_the_race_gap ... ok
+test the_unlimited_laps_sentinel_is_unknown ... ok
+test the_session_epoch_advances_only_at_stream_boundaries ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+     Running tests\engine_edges.rs (target\debug\deps\engine_edges-ab78fd9fb8f43537.exe)
+
+running 13 tests
+test pausing_replaces_the_cue_and_resuming_restores_it ... ok
+test a_gap_to_a_car_on_another_lap_is_missing ... ok
+test a_nan_scoring_element_makes_that_gap_missing_and_other_gaps_survive ... ok
+test identity_changes_between_known_values_start_a_new_epoch_but_unknown_ones_do_not ... ok
+test a_connected_sample_with_nothing_else_is_all_missing_but_never_zero ... ok
+test non_finite_values_are_missing_in_the_output ... ok
+test disconnected_states_say_waiting_and_carry_the_pause_flag ... ok
+test fallbacks_select_by_presence_not_by_finiteness ... ok
+test the_epoch_wraps_without_panicking_and_reconnects_start_a_new_one ... ok
+test the_engine_lap_decreasing_resets_evidence ... ok
+test the_leader_gap_is_zero_when_the_player_leads ... ok
+test urgent_cues_break_through_the_safe_glance_hold ... ok
+test values_that_do_not_fit_their_channel_are_absent ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\engine_vectors.rs (target\debug\deps\engine_vectors-97ebe68ca826bbf7.exe)
+
+running 2 tests
+test the_tile_table_matches_the_csharp_catalog ... ok
+test engine_and_tile_vectors_match_the_csharp_monitor ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\frame_vectors.rs (target\debug\deps\frame_vectors-e7da0e55c989c6e5.exe)
+
+running 8 tests
+test the_channel_table_is_the_one_the_vectors_were_written_for ... ok
+test malformed_frames_are_rejected_with_the_right_error ... ok
+test channel_order_and_types_follow_the_table ... ok
+test backlog_flag_is_set_in_place_and_nothing_else_changes ... ok
+test too_short_reports_what_it_needed ... ok
+test decoder_reads_every_golden_frame ... ok
+test encoder_reproduces_the_golden_bytes ... ok
+test decoder_never_panics_on_any_truncation_or_byte_flip ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\no_alloc.rs (target\debug\deps\no_alloc-f122ebbc6026c517.exe)
+
+running 1 test
+test ticks_and_frames_do_not_allocate_after_warm_up ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\read_row.rs (target\debug\deps\read_row-4f62e8304263c4c6.exe)
+
+running 3 tests
+test brake_abs_falls_back_to_a_float_variable_above_one_half ... ok
+test read_row_leaves_collector_fields_alone_and_clear_keeps_capacity ... ok
+test read_row_reads_every_vector_value_back ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\session_context.rs (target\debug\deps\session_context-1e5f70b4314e44d8.exe)
+
+running 2 tests
+test a_recording_session_info_gives_a_context ... ok
+test the_vector_session_texts_give_the_contexts_the_csharp_readers_produced ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\solo_test_session.rs (target\debug\deps\solo_test_session-db8f52fd45935f50.exe)
+
+running 5 tests
+test a_session_change_from_a_test_into_a_race_restores_the_race_meaning ... ok
+test the_laps_to_pit_estimate_appears_once_two_clean_laps_have_been_driven ... ok
+test the_cue_never_says_caution_in_a_solo_test_session ... ok
+test two_stints_with_a_pit_stop_keep_estimating_and_say_pit_road_not_caution ... ok
+test the_flag_vectors_hold_in_every_session_type ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\coach_numerics-81011b500795a25b.exe)
+
+running 11 tests
+test unicode::tests::tables_are_sorted_and_disjoint ... ok
+test decimal::tests::ties_round_to_even ... ok
+test decimal::tests::exact_expansions ... ok
+test unicode::tests::known_characters ... ok
+test exact::tests::ratio_handles_subnormals_and_overflow ... ok
+test intrepr::tests::digit_limit_counts_digits_not_the_sign ... ok
+test intrepr::tests::small_and_wide_values ... ok
+test bigint::tests::arithmetic_agrees_with_u128 ... ok
+test exact::tests::ratio_matches_hardware_division_for_exact_operands ... ok
+test round::tests::fast_path_agrees_with_exact_path ... ok
+test bigint::tests::division_identity_holds_for_large_operands ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+
+     Running tests\float_repr_into.rs (target\debug\deps\float_repr_into-58fe965f9c22348f.exe)
+
+running 2 tests
+test equals_float_repr_on_the_repr_vectors ... ok
+test equals_float_repr_on_random_families ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+     Running tests\stats_memory.rs (target\debug\deps\stats_memory-c2968153dd2f0fec.exe)
+
+running 1 test
+test exact_statistics_memory_does_not_grow_with_the_data ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.62s
+
+     Running tests\vectors.rs (target\debug\deps\vectors-6d5062906b7f588c.exe)
+
+running 13 tests
+test int_low64 ... ok
+test parse ... ok
+test parse_unicode ... ok
+test math ... ok
+test libm ... ok
+test sum_builtin ... ok
+test fsum ... ok
+test arithmetic ... ok
+test repr_and_json ... ok
+test round ... ok
+test ordering ... ok
+test format ... ok
+test statistics ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running unittests src\lib.rs (target\debug\deps\coach_server-c68f992ea0c9fa05.exe)
+
+running 39 tests
+test library::tests::the_query_parameter ... ok
+test hub::tests::lag_lasts_while_the_queue_keeps_overflowing_and_ends_when_the_viewer_keeps_up ... ok
+test config::tests::the_image_environment_sets_every_directory_and_the_worker ... ok
+test config::tests::the_worker_command_override_and_optional_limits ... ok
+test config::tests::native_stages_default_to_all_when_the_executable_is_present_and_to_none_otherwise ... ok
+test config::tests::the_native_limits_follow_the_stages ... ok
+test config::tests::empty_values_count_as_unset_and_dev_uses_local_directories ... ok
+test library::tests::the_rule ... ok
+test config::tests::production_defaults_equal_the_image_values ... ok
+test config::tests::a_stage_list_without_its_executable_fails_at_start_instead_of_falling_back ... ok
+test config::tests::dev_finds_the_executable_on_path_and_production_prefers_the_image_location ... ok
+test config::tests::named_stages_are_validated_ordered_and_need_the_executable ... ok
+test library::tests::without_an_event_type_the_session_type_decides ... ok
+test overview::tests::an_even_count_takes_the_mean_of_the_middle_pair ... ok
+test overview::tests::burn_per_lap_is_the_backends_strategy_figure ... ok
+test overview::tests::a_run_with_fewer_than_three_clean_laps_has_no_pace_loss ... ok
+test overview::tests::copies_the_summary_and_adds_the_round_2_figures ... ok
+test overview::tests::missing_evidence_is_null_never_a_guess ... ok
+test overview::tests::no_fit_in_any_run_is_unsupported ... ok
+test overview::tests::qualifying_takes_the_first_two_timed_laps_not_the_out_lap ... ok
+test setups::tests::a_row_unit_is_the_one_both_values_share ... ok
+test setups::tests::an_export_is_named_after_its_file_without_the_extension ... ok
+test overview::tests::the_longest_run_and_its_first_to_last_clean_lap_difference ... ok
+test setups::tests::kelvin_sign_is_not_ascii_k ... ok
+test setups::tests::every_contract_pattern_literal_is_excluded ... ok
+test setups::tests::raced_count_counts_race_sessions_once_and_unknown_is_not_zero ... ok
+test setups::tests::the_displayed_unit_is_split_as_the_backend_reads_a_value ... ok
+test setups::tests::the_compare_key_names_the_worker_and_the_exact_values ... ok
+test overview::tests::the_results_summary_counts_places_by_overall_position ... ok
+test tuning::tests::corner_arc_rules ... ok
+test tuning::tests::open_target_rules ... ok
+test tuning::tests::python_float_repr ... ok
+test tuning::tests::source_aliases ... ok
+test util::tests::base64_decoding ... ok
+test util::tests::hashing ... ok
+test util::tests::iso_round_trip ... ok
+test overview::tests::a_later_recording_refreshes_the_events_other_overviews ... ok
+test overview::tests::an_events_results_come_from_its_later_recordings ... ok
+test overview::tests::the_sanitized_investigation_fixture ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\main.rs (target\debug\deps\coach_server-90d46e5f1c8fd5d9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\admin.rs (target\debug\deps\admin-db4c40b1155ce9bf.exe)
+
+running 7 tests
+test the_request_is_validated ... ok
+test a_remembered_investigation_of_a_removed_session_is_cleared ... ok
+test a_setup_file_goes_with_its_garage_visits_and_orphaned_setups_and_a_shared_blob_stays ... ok
+test removing_one_recording_of_a_session_makes_the_analysis_of_the_rest_current ... ok
+test blocked_targets_are_reported_and_left_alone ... ok
+test removing_one_recording_queues_a_new_analysis_when_the_rest_was_never_analysed_alone ... ok
+test a_recording_goes_with_its_session_analysis_views_and_jobs_and_the_nas_stays ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
+
+     Running tests\api.rs (target\debug\deps\api-f8e11c32f4675a54.exe)
+
+running 8 tests
+test queueing_the_analysis_of_a_session_without_recordings_is_refused ... ok
+test static_files_and_spa_fallback ... ok
+test idempotency_key_replays_the_stored_response ... ok
+test a_recording_names_its_setup_when_the_server_holds_no_such_file ... ok
+test status_reports_queue_spool_and_versions ... ok
+test the_analysis_path_is_post_only_and_the_state_is_read_from_the_session ... ok
+test a_fixed_setup_analysis_lists_compatible_open_targets_and_requires_one ... ok
+test every_endpoint_answers_as_the_contract_says ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.83s
+
+     Running tests\contracts.rs (target\debug\deps\contracts-0cf052a6258bf4b7.exe)
+
+running 4 tests
+test the_three_validated_tools_map_to_their_contracts ... ok
+test a_missing_contract_directory_fails_clearly ... ok
+test valid_results_pass ... ok
+test a_result_that_breaks_its_contract_names_the_mismatch ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\crash.rs (target\debug\deps\crash-6c8a07f09256269b.exe)
+
+running 3 tests
+test crash_child ... ok
+test a_killed_server_never_loses_the_spool_copy_or_half_archives_at_each_archive_cut ... ok
+test a_killed_server_keeps_every_acknowledged_byte_at_each_upload_cut ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.40s
+
+     Running tests\import.rs (target\debug\deps\import-d95e6c6a295e5147.exe)
+
+running 6 tests
+test a_bundle_without_a_legacy_archive_needs_no_worker ... ok
+test a_failing_worker_fails_the_import_and_leaves_it_retryable ... ok
+test tuning_drafts_are_re_keyed_to_the_current_analysis_and_the_rest_are_parked ... ok
+test a_legacy_file_that_fails_its_checks_fails_the_import_before_anything_is_stored ... ok
+test the_legacy_archive_is_imported_through_the_worker_with_a_resolved_analysis_map ... ok
+test the_real_import_tool_records_a_generated_legacy_archive ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.17s
+
+     Running tests\ingest.rs (target\debug\deps\ingest-507671e9fcaa1e23.exe)
+
+running 33 tests
+test a_resume_adds_only_its_increment_to_the_reservation ... ok
+test concurrent_creates_for_different_hashes_cannot_over_admit ... ok
+test archive_waits_while_its_discovery_is_queued_or_running ... ok
+test a_failed_ingest_transaction_is_retried_by_the_scheduler ... ok
+test an_offline_session_alone_leaves_the_rating_unknown ... ok
+test a_create_waits_for_the_hash_lock_before_it_reads_the_state ... ok
+test a_restaged_recording_has_its_source_mtime_and_counts_as_spool ... ok
+test archived_recording_releases_its_spool_copy_once_no_job_needs_it ... ok
+test archiver_quarantines_a_wrong_final_file_and_rewrites ... ok
+test enospc_during_the_commit_returns_503_without_advancing_the_offset ... ok
+test duplicate_sto_under_a_new_name_records_an_occurrence ... ok
+test archive_offered_before_discovery_still_writes_the_discovered_session_types ... ok
+test enospc_on_a_chunk_returns_503_and_keeps_the_offset ... ok
+test every_occurrence_reaches_setup_files_when_the_upload_commits ... ok
+test future_source_mtime_is_clamped_to_ten_seconds_ago ... ok
+test gaps_overlaps_and_identical_resends ... ok
+test idle_cleanup_rechecks_the_upload_under_its_lock ... ok
+test oversize_upload_is_413 ... ok
+test a_restaged_recording_is_analysed_at_once ... ok
+test manifest_lists_the_session_types_discovery_committed ... ok
+test full_spool_and_low_disk_answer_503_with_retry_after ... ok
+test a_restage_the_spool_cannot_take_waits_and_then_fails ... ok
+test reservations_count_incoming_bytes_and_every_outstanding_reservation ... ok
+test recovery_of_a_renamed_file_restores_the_mtime_and_syncs_before_verified ... ok
+test resume_head_and_idempotent_create ... ok
+test reconciliation_table_every_row ... ok
+test two_concurrent_chunks_for_one_hash_second_gets_409 ... ok
+test upload_verifies_commits_and_ingests ... ok
+test the_latest_irating_comes_from_the_newest_session_with_a_real_rating ... ok
+test whole_file_hash_mismatch_discards_and_restarts ... ok
+test nas_state_is_reported_and_archive_retries_use_backoff ... ok
+test crash_at_every_step_of_the_upload_protocol_loses_nothing ... ok
+test crash_at_every_step_of_the_archive_protocol_loses_nothing ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.77s
+
+     Running tests\jobs.rs (target\debug\deps\jobs-28b392ec12ed1829.exe)
+
+running 32 tests
+test a_native_server_admits_by_the_native_estimate ... ok
+test a_deferred_row_that_now_fits_becomes_the_sessions_queued_analysis ... ok
+test analysis_over_the_memory_ceiling_is_deferred_with_its_reason ... ok
+test a_failed_start_write_releases_the_memory_reservation ... ok
+test a_terminal_state_that_sqlite_refuses_is_kept_and_retried ... ok
+test asking_again_after_the_analyzer_changed_keeps_one_deferred_row_per_session ... ok
+test only_decode_with_kernels_selects_the_native_memory_model ... ok
+test an_analysis_that_breaks_its_contract_fails_the_job_as_tool_error ... ok
+test deferred_orphan_cleanup_runs_when_the_drivers_lanes_go_idle ... ok
+test job_root_file_names_cannot_escape_the_root ... ok
+test native_scratch_of_a_killed_worker_waits_while_another_worker_of_the_driver_runs ... ok
+test raw_worker_call_reports_a_missing_interpreter_as_a_crash ... ok
+test baseline_and_tuning_results_are_validated_against_their_contracts ... ok
+test analysis_membership_a_late_recording_queues_a_new_job_and_the_stale_result_is_not_current ... ok
+test running_jobs_become_interrupted_and_are_retried_once ... ok
+test the_native_formula_admits_the_deferred_analyses_and_covers_the_n100_peaks ... ok
+test the_pure_python_formula_is_kept_and_the_legacy_bristol_races_exceed_its_ceiling ... ok
+test a_reconnected_race_joins_its_session_and_supersedes_the_analysis ... ok
+test a_ready_session_whose_newer_analysis_is_deferred_still_says_why ... ok
+test stray_temp_files_of_killed_workers_are_removed_at_start ... ok
+test recording_becomes_a_session_with_a_current_analysis_and_views ... ok
+test worker_environment_is_complete_and_inherits_nothing ... ok
+test htm_exports_become_setup_observations ... ok
+test recording_without_server_ids_uses_a_local_file_key_and_path_selector ... ok
+test shared_memory_budget_makes_a_job_wait_for_running_work ... ok
+test the_worker_gets_the_native_stages_the_server_is_set_to ... ok
+test the_deferral_reaches_the_session_detail_and_the_job_list_with_its_reason ... ok
+test a_worker_that_closes_stdout_without_exiting_is_stopped_at_the_timeout ... ok
+test real_worker_analyses_the_synthetic_fixture ... ok
+test worker_tool_error_crash_and_oom_exit_are_classified ... ok
+test cancelling_a_running_job_kills_the_worker ... ok
+test worker_timeout_stops_the_process_group_and_cleans_orphans ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.18s
+
+     Running tests\lab_library.rs (target\debug\deps\lab_library-d531cf1f39cdd959.exe)
+
+running 6 tests
+test corpus_dry_run ... ok
+test the_historical_windows_are_valid_and_cover_the_acceptance_examples ... ok
+test posting_the_same_start_car_and_track_closes_the_window ... ok
+test a_recording_in_a_matching_window_is_filed_lab_at_ingest ... ok
+test the_classify_repair_files_stored_recordings_once ... ok
+test every_list_defaults_to_main_and_lab_is_explicit ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.44s
+
+     Running tests\library.rs (target\debug\deps\library-cceaef352e3770ea.exe)
+
+running 6 tests
+test the_built_in_trace_layout_has_one_row_per_critical_channel ... ok
+test an_export_only_setup_is_not_compared_with_a_recorded_one ... ok
+test prefs_keep_the_text_size_and_the_page_filters ... ok
+test the_setup_library_filters_raced_and_never_raced ... ok
+test repeated_filters_are_alternatives_and_different_filters_all_hold ... ok
+test the_index_carries_series_and_whether_the_setup_is_fixed ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.78s
+
+     Running tests\live.rs (target\debug\deps\live-865f9185a2bd7d63.exe)
+
+running 10 tests
+test a_driver_change_recounts_demand_for_the_new_driver ... ok
+test an_ambiguous_commit_never_links_a_file_by_name ... ok
+test a_modified_commit_never_links_the_named_file ... ok
+test garage_events_are_acknowledged_once_and_replays_insert_nothing ... ok
+test handshake_versions_duplicates_and_bad_messages ... ok
+test viewers_start_and_release_the_stream_and_receive_decimated_frames_with_backlog ... ok
+test a_browser_that_cannot_keep_up_is_closed_and_stops_counting_as_a_viewer ... ok
+test an_unchanged_status_is_not_forwarded_as_presence ... ok
+test a_silent_collector_goes_offline ... ok
+test garage_events_are_acknowledged_only_once_they_are_attributed_and_stored ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.34s
+
+     Running tests\misc.rs (target\debug\deps\misc-59e837652ff84baf.exe)
+
+running 10 tests
+test worker_identity_changes_with_the_scripts ... ok
+test the_migrations_are_the_contract_schema_and_run_once ... ok
+test a_pending_migration_writes_a_pre_migrate_copy_first ... ok
+test annotation_hash_matches_the_python_oracle ... ok
+test unreadable_recordings_are_marked_failed_with_the_reason ... ok
+test only_the_newest_48_generations_are_kept_locally ... ok
+test a_failed_projection_is_reported_and_can_be_retried ... ok
+test rebuild_index_recovers_blobs_and_recordings_from_manifests ... ok
+test snapshots_follow_user_data_generations_and_back_up_to_the_nas ... ok
+test dev_mode_serves_healthcheck_succeeds_and_idle_memory_is_small ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.16s
+
+     Running tests\offline_sessions.rs (target\debug\deps\offline_sessions-f85c1b924e7231af.exe)
+
+running 10 tests
+test corpus_report ... ok
+test a_recording_whose_lap_counter_stopped_is_no_stint ... ok
+test the_dev_pc_recordings_group_as_their_sim_sessions ... ok
+test hosted_and_file_timed_recordings_are_not_stints ... ok
+test stints_join_only_on_one_setup ... ok
+test a_recording_whose_lap_counter_stopped_joins_nothing_and_its_analysis_is_deferred ... ok
+test the_repair_merges_split_stints_once_and_reports_what_it_would_do ... ok
+test a_setup_change_between_stints_starts_a_session_of_its_own ... ok
+test two_stints_of_one_test_drive_join_one_session_in_either_order ... ok
+test the_repair_merges_stints_of_one_setup_only_and_reports_a_mixed_session ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+     Running tests\round2_fields.rs (target\debug\deps\round2_fields-120381ed91ad2b7c.exe)
+
+running 4 tests
+test setup_filters_keep_several_cars_and_unknown_fields ... ok
+test a_recording_in_no_session_leaves_the_race_count_unknown ... ok
+test the_session_row_carries_green_pace_and_whether_the_trend_is_supported ... ok
+test setups_count_races_and_list_versions_with_the_backends_changed_count ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.16s
+
+     Running tests\round3_fields.rs (target\debug\deps\round3_fields-4794a4dad9f15a24.exe)
+
+running 1 test
+test the_session_row_carries_the_long_run_and_the_first_two_timed_laps ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+     Running tests\round4_fields.rs (target\debug\deps\round4_fields-1589e7b4dfb9c35a.exe)
+
+running 1 test
+test practice_gets_its_field_and_the_race_its_grid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+
+     Running tests\setup_identity.rs (target\debug\deps\setup_identity-a7d1f4d0f21df5fd.exe)
+
+running 6 tests
+test the_sims_rounding_of_camber_and_pressure_is_one_setup_and_nothing_else_is ... ok
+test a_snapshot_only_setup_folds_into_its_visits_commit_and_a_second_start_changes_nothing ... ok
+test exports_of_one_setup_merge_and_take_the_names_of_their_files ... ok
+test garage_snapshots_join_the_setup_their_visit_named_and_a_second_start_changes_nothing ... ok
+test only_the_commit_creates_a_setup_and_the_visits_snapshots_observe_the_setup_they_equal ... ok
+test the_g3_captures_visits_make_a_setup_per_commit_and_none_from_snapshots ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+     Running tests\views.rs (target\debug\deps\views-04f397c5ad6e5dc8.exe)
+
+running 1 test
+test channels_outside_the_default_set_are_served_on_request ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running unittests src\lib.rs (target\debug\deps\coach_views-2f40e05d7cc74b49.exe)
+
+running 33 tests
+test geometry::tests::missing_declaration_is_unknown ... ok
+test laps::tests::a_lap_without_a_number_is_malformed ... ok
+test geometry::tests::transform_must_be_usable ... ok
+test geometry::tests::road_wheel_needs_a_positive_ratio ... ok
+test laps::tests::missing_numbers_skip_their_tests ... ok
+test laps::tests::green_complete_lap_has_no_reasons ... ok
+test laps::tests::restart_needs_a_caution_before_and_green_now ... ok
+test laps::tests::damage_context_without_codes_is_one_reason ... ok
+test laps::tests::other_reason_values_are_their_json_text ... ok
+test laps::tests::reasons_follow_the_documented_order ... ok
+test laps::tests::pit_stops_list_each_service_with_its_lap_tires_and_fuel ... ok
+test laps::tests::build_sorts_stably_and_joins_runs ... ok
+test parse::tests::bare_tokens_become_null_outside_strings_only ... ok
+test parse::tests::clean_input_is_not_copied ... ok
+test parse::tests::tokens_that_only_start_like_infinity_stay ... ok
+test prune::tests::keeps_listed_paths_only ... ok
+test prune::tests::trailing_star_keeps_whole_children ... ok
+test prune::tests::unexpected_shapes_are_kept ... ok
+test section_laps::tests::median_follows_statistics_median ... ok
+test section_laps::tests::round3_rounds_like_python ... ok
+test traces::tests::core_table_matches_the_point_key_order ... ok
+test traces::tests::dtype_is_the_narrowest_exact_encoding ... ok
+test traces::tests::lap_queries_parse_lists_and_ranges ... ok
+test traces::tests::short_labels_cover_corner_families ... ok
+test tuning::tests::display_names_follow_the_c_sharp_rules ... ok
+test tuning::tests::detected_segments_become_unverified_turns ... ok
+test tuning::tests::a_supplied_tuning_map_wins_over_the_recorded_geometry ... ok
+test tuning::tests::fixed_setup_is_evidence_not_a_target ... ok
+test tuning::tests::missing_identity_lists_every_gap_in_order ... ok
+test tuning::tests::open_setup_with_identity_is_eligible ... ok
+test tuning::tests::representative_runs_need_six_references_and_a_clean_context ... ok
+test tuning::tests::source_hashes_are_the_sorted_union ... ok
+test section_laps::tests::section_elapsed_matches_the_backend_on_every_vector ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\api_shape.rs (target\debug\deps\api_shape-98d9d46ce06839b8.exe)
+
+running 1 test
+test signatures_match_the_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\consumed.rs (target\debug\deps\consumed-e2d5f68d3a927558.exe)
+
+running 2 tests
+test the_lists_equal_the_contracts ... ok
+test every_x_source_object_has_a_list_here ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\corpus.rs (target\debug\deps\corpus-89665a650a4d8244.exe)
+
+running 1 test
+test the_largest_private_analysis_projects_within_budget ... ignored, needs COACH_PRIVATE_CORPUS
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\fixtures.rs (target\debug\deps\fixtures-f64daa0402da39ed.exe)
+
+running 11 tests
+test defective_envelopes_fail_with_a_named_field ... ok
+test wrong_future_and_boolean_versions_are_incompatible_not_accepted_forward ... ok
+test an_empty_investigation_means_the_backend_has_none ... ok
+test the_optional_fields_of_later_envelopes_may_be_absent_but_not_mistyped ... ok
+test an_unknown_investigation_field_survives ... ok
+test the_investigation_fixture_passes_through_whole_and_validates ... ok
+test unknown_fields_are_accepted_and_preserved_inside_passed_through_subtrees ... ok
+test a_bare_envelope_is_not_an_analysis_document ... ok
+test an_investigation_of_another_schema_version_is_incompatible ... ok
+test empty_sections_are_legal_and_not_treated_as_absent ... ok
+test the_valid_envelope_projects_and_every_view_validates ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\section_laps.rs (target\debug\deps\section_laps-dfe8915150f5b23f.exe)
+
+running 3 tests
+test few_clean_laps_split_without_overlap_and_bad_bounds_are_skipped ... ok
+test no_clean_lap_gives_a_section_with_no_median ... ok
+test section_laps_rank_the_clean_laps_around_their_median ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests\synthetic.rs (target\debug\deps\synthetic-1743c357d1f400fb.exe)
+
+running 36 tests
+test a_missing_input_is_an_io_error_and_leaves_nothing ... ok
+test malformed_json_is_reported_with_its_position ... ok
+test bins_per_lap_follows_the_backend ... ok
+test a_trace_without_a_lap_row_is_not_recorded_as_eligible ... ok
+test non_finite_tokens_become_missing_and_are_counted ... ok
+test a_real_backend_document_projects ... ok
+test a_geometry_view_over_its_bound_drops_provenance_first ... ok
+test output_must_not_exist_and_a_failed_projection_leaves_nothing ... ok
+test a_track_profile_of_another_type_is_still_rejected ... ok
+test every_view_validates_against_the_wire_schema ... ok
+test race_runs_and_investigation_pass_backend_subtrees_through_with_unknown_fields ... ok
+test a_view_that_cannot_shrink_to_its_bound_fails_instead_of_being_served ... ok
+test ccol_reproduces_every_backend_value_and_its_missingness_exactly ... ok
+test a_backend_without_an_investigation_writes_none ... ok
+test sector_times_are_session_time_between_the_sector_boundaries ... ok
+test pit_stops_list_each_service_with_its_lap_tires_and_fuel ... ok
+test select_with_no_traces_returns_an_empty_container ... ok
+test sector_times_survive_the_catalog_shrink_ladder ... ok
+test runs_and_tuning_shrink_unread_run_fields ... ok
+test a_null_or_absent_track_profile_still_projects_every_view ... ok
+test the_76_signals_of_a_real_recording_are_all_served ... ok
+test signals_carry_backend_units_labels_and_the_steering_basis ... ok
+test summary_names_every_written_file_with_its_hash ... ok
+test signals_past_the_contract_limit_are_listed_not_served ... ok
+test trace_laps_join_comparison_eligibility_and_keep_unknown_fields ... ok
+test two_traces_for_one_lap_or_two_points_in_one_bin_are_rejected ... ok
+test select_rejects_bad_queries_unknown_channels_and_oversized_selections ... ok
+test track_geometry_is_copied_in_the_backends_space_without_reprojection ... ok
+test select_defaults_to_the_catalogs_default_channels_and_all_laps ... ok
+test select_reports_damaged_view_files_as_corrupt ... ok
+test select_returns_only_the_requested_laps_and_channels ... ok
+test without_a_track_profile_or_a_drawable_path_the_track_is_absent_and_the_tuning_map_empty ... ok
+test an_oversized_race_view_shrinks_unread_subtrees_first_then_unread_lap_fields ... ok
+test tuning_view_applies_the_c_sharp_identity_eligibility_and_map_rules ... ok
+test track_transform_falls_back_to_the_provenance_and_unusable_geometry_writes_no_track ... ok
+test payload_bounds_hold_for_a_synthetic_500_lap_analysis ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.33s
+
+     Running unittests src\lib.rs (target\debug\deps\coach_wire-d973e58ead4065d9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\api.rs (target\debug\deps\api-6c4059930c1b3d5d.exe)
+
+running 5 tests
+test health_round_trips ... ok
+test collector_messages_dispatch_on_type ... ok
+test unknown_backend_fields_round_trip ... ok
+test schema_validates_and_rejects_instances ... ok
+test every_component_schema_compiles_and_resolves_its_refs ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+
+     Running tests\tables.rs (target\debug\deps\tables-016da25b1635d205.exe)
+
+running 6 tests
+test channel_table_matches_the_contract ... ok
+test cues_are_numbered_from_one ... ok
+test conversions ... ok
+test setup_key_patterns_are_present ... ok
+test enums_carry_wire_bytes ... ok
+test tiles_reference_known_channels ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_analysis
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_collector
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_ibt
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_live
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_numerics
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_views
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests coach_wire
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+== pnpm install
+Scope: all 2 workspace projects
+(node:3872) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+devDependencies:
++ js-yaml 5.4.2
++ openapi-typescript 7.13.0
++ typescript 5.9.3
+
+Done in 702ms
+
+== wire drift
+
+== theme drift
+
+== web typecheck
+
+> coach-web@0.19.0 typecheck C:\Users\joshu\source\repos\iRacing Coach\web
+> tsc --noEmit -p tsconfig.json
+
+
+== web test
+
+> coach-web@0.19.0 test C:\Users\joshu\source\repos\iRacing Coach\web
+> vitest run --passWithNoTests
+
+
+ RUN  v5.0.3 C:/Users/joshu/source/repos/iRacing Coach/web
+
+
+ Test Files  56 passed (56)
+      Tests  496 passed (496)
+   Start at  21:16:05
+   Duration  2.43s (transform 48%, import 34%, tests 15%, worker 4%)
+
+  Transform  transforming modules took 5.62s · 48% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+
+
+== web build
+
+> coach-web@0.19.0 build C:\Users\joshu\source\repos\iRacing Coach\web
+> vite build
+
+[36mvite v8.3.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 121 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                              0.68 kB │ gzip:  0.34 kB
+dist/assets/tuning-D_4ysr-I.css              5.08 kB │ gzip:  1.34 kB
+dist/assets/live-CywLj_-m.css                7.10 kB │ gzip:  1.81 kB
+dist/assets/setups-D093B2Pt.css             18.76 kB │ gzip:  3.53 kB
+dist/assets/investigation-Bci-ZyPo.css      47.45 kB │ gzip:  8.84 kB
+dist/assets/index-3ob4loOu.css              49.95 kB │ gzip: 10.17 kB
+dist/assets/json-CI0CwBvA.js                 0.33 kB │ gzip:  0.21 kB
+dist/assets/palette-DA5a2lPO.js              0.79 kB │ gzip:  0.47 kB
+dist/assets/unit-WYdmAKQ0.js                 1.06 kB │ gzip:  0.55 kB
+dist/assets/segmented-DONeZJ4W.js            1.07 kB │ gzip:  0.64 kB
+dist/assets/theme-CbZLbWOm.js                2.70 kB │ gzip:  1.53 kB
+dist/assets/model-Bthv4oRT.js                3.26 kB │ gzip:  1.49 kB
+dist/assets/glyphs-C-uPN0wR.js               4.56 kB │ gzip:  1.89 kB
+dist/assets/baseline-CzCFZiIC.js             5.31 kB │ gzip:  2.09 kB
+dist/assets/kit-B1PrQiBL.js                  5.63 kB │ gzip:  2.32 kB
+dist/assets/resource--A-VdNBY.js             6.09 kB │ gzip:  2.49 kB
+dist/assets/kit-Bu30fkUq.js                  8.76 kB │ gzip:  3.05 kB
+dist/assets/setups-D-MH4RxY.js               8.80 kB │ gzip:  3.47 kB
+dist/assets/jsxRuntime.module-DEadsxWB.js   13.46 kB │ gzip:  5.52 kB
+dist/assets/setup-detail-C-50dqVM.js        13.51 kB │ gzip:  4.74 kB
+dist/assets/tuning-B1Vdod4H.js              32.09 kB │ gzip: 10.84 kB
+dist/assets/index-D1n58xrV.js               55.75 kB │ gzip: 19.56 kB
+dist/assets/live-BY0ASv9f.js                57.97 kB │ gzip: 19.27 kB
+dist/assets/investigation-DhmAE46v.js      157.57 kB │ gzip: 52.24 kB
+
+[32m✓ built in 210ms[39m
+
+All checks passed

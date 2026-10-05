@@ -32,6 +32,7 @@ try:  # Package import and direct script execution are both supported.
     )
     from .path_security import local_path
     from .race_foundations import (
+        CENTRELINE_RULE,
         TIRE_MODEL_VERSION,
         _main_loop_quality,
         _sanitize_geometry_layers,
@@ -47,6 +48,7 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     )
     from path_security import local_path
     from race_foundations import (
+        CENTRELINE_RULE,
         TIRE_MODEL_VERSION,
         _main_loop_quality,
         _sanitize_geometry_layers,
@@ -3235,12 +3237,26 @@ class ArchiveStore:
             "observed_main_path_points": observed_points,
         }
 
+    @staticmethod
+    def _centreline_rank(value: Mapping[str, Any]) -> int:
+        """2 for the current rule's clean racing laps, 1 for its off-pit fallback, 0 for older geometry.
+
+        An older geometry is unprojected and built from every off-pit sample, so
+        however many points it holds it never outranks the current rule.
+        """
+
+        centreline = value.get("centreline")
+        if not isinstance(centreline, Mapping) or centreline.get("rule") != CENTRELINE_RULE:
+            return 0
+        return 2 if centreline.get("source") == "clean_racing_laps" else 1
+
     @classmethod
-    def _geometry_score(cls, value: Mapping[str, Any]) -> tuple[int, int, int, int, int, int, int, int]:
+    def _geometry_score(cls, value: Mapping[str, Any]) -> tuple[int, int, int, int, int, int, int, int, int]:
         quality = cls._verified_geometry_quality(value)
         return (
             1 if quality.get("geometry_plausible") else 0,
             1 if quality["main_loop_complete"] else 0,
+            cls._centreline_rank(value),
             int(round(float(quality["lap_percent_coverage"]) * 1_000_000)),
             -int(round(float(quality["maximum_lap_percent_gap"]) * 1_000_000)),
             -int(round(float(quality["closure_distance"]) * 1_000_000)),

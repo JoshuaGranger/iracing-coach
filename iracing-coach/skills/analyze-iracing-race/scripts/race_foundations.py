@@ -55,6 +55,23 @@ MAX_AUXILIARY_BOUNDS_MARGIN = 0.45
 MAX_AUXILIARY_RELATIVE_SEGMENT_DISTANCE = 0.55
 GPS_PLACEHOLDER_EPSILON = 1e-9
 GPS_CLUSTER_RADIUS_DEGREES = 0.25
+# Track centreline rule (build_track_geometry, backlog #65). The main path is
+# the per-bin median of the clean racing-speed laps only: a lap (a run of equal
+# recorded Lap values) whose every sample has an accepted GPS fix, is off pit
+# road, on track (PlayerTrackSurface 3 when recorded) and under no caution
+# flag, and whose lap distances leave no gap over CLEAN_LAP_MAXIMUM_PERCENT_GAP
+# around the circle. Of those, laps no longer than RACING_LAP_DURATION_TOLERANCE
+# times the fastest one (in samples) are kept. Without such a lap the
+# off-pit samples of every lap are used and the source says so. Longitude is
+# scaled by cos(latitude) of the GPS cluster centre so the outline keeps its
+# real proportions, and a complete binned loop is smoothed by a circular
+# moving average over CENTRELINE_SMOOTHING_POINTS consecutive points
+# (left-to-right sums, then one division), which closes the loop.
+CENTRELINE_RULE = "clean-racing-laps-v1"
+CLEAN_LAP_MAXIMUM_PERCENT_GAP = 0.02
+RACING_LAP_DURATION_TOLERANCE = 1.05
+CENTRELINE_SMOOTHING_POINTS = 7
+TRACK_SURFACE_ON_TRACK = 3.0
 
 
 def _finite(value: Any) -> float | None:
@@ -435,6 +452,97 @@ def _main_loop_quality(path: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _circular_maximum_gap(fractions: Iterable[float]) -> float:
+    """Largest gap between lap fractions in [0, 1) around the circle; 1.0 below two values."""
+
+    values = sorted(set(fractions))
+    if len(values) < 2:
+        return 1.0
+    maximum = 1.0 - values[-1] + values[0]
+    for before, after in zip(values, values[1:]):
+        gap = after - before
+        if gap > maximum:
+            maximum = gap
+    return maximum
+
+
+def _clean_racing_laps(
+    channels: Mapping[str, Sequence[Any]],
+    valid: Sequence[Mapping[str, Any] | None],
+    pit: Sequence[Any],
+    count: int,
+) -> list[tuple[float, int, int]]:
+    """The centreline laps as ``(lap number, first sample, end sample)`` in sample order.
+
+    See the CENTRELINE_RULE constants. Empty when the recording has no Lap
+    channel or no lap qualifies.
+    """
+
+    lap_channel = channels.get("Lap") or ()
+    limit = min(count, len(lap_channel))
+    numbers = _finite_column(lap_channel[:limit])
+    surface_channel = channels.get("PlayerTrackSurface") or ()
+    surface_recorded = bool(surface_channel)
+    surface = _finite_column(surface_channel[:limit])
+    flag_channel = channels.get("SessionFlags") or ()
+    flags = _finite_column(flag_channel[:limit])
+    clean: list[tuple[float, int, int]] = []
+    start = 0
+    while start < limit:
+        number = numbers[start]
+        if number is None:
+            start += 1
+            continue
+        stop = start + 1
+        while stop < limit and numbers[stop] == number:
+            stop += 1
+        fractions: list[float] = []
+        usable = True
+        for index in range(start, stop):
+            point = valid[index]
+            if point is None or bool(pit[index]):
+                usable = False
+                break
+            if surface_recorded and (
+                index >= len(surface) or surface[index] != TRACK_SURFACE_ON_TRACK
+            ):
+                usable = False
+                break
+            flag = flags[index] if index < len(flags) else None
+            if flag is not None and int(flag) & YELLOW_FLAGS:
+                usable = False
+                break
+            fractions.append(point["lap_pct"])
+        if usable and _circular_maximum_gap(fractions) <= CLEAN_LAP_MAXIMUM_PERCENT_GAP:
+            clean.append((number, start, stop))
+        start = stop
+    if not clean:
+        return []
+    fastest = min(stop - start for _, start, stop in clean)
+    longest = fastest * RACING_LAP_DURATION_TOLERANCE
+    return [lap for lap in clean if lap[2] - lap[1] <= longest]
+
+
+def _smooth_closed_path(path: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Circular moving average of ``x`` and ``y`` over CENTRELINE_SMOOTHING_POINTS points."""
+
+    count = len(path)
+    width = CENTRELINE_SMOOTHING_POINTS
+    half = width // 2
+    smoothed: list[dict[str, Any]] = []
+    for index, point in enumerate(path):
+        total_x = 0.0
+        total_y = 0.0
+        for offset in range(-half, half + 1):
+            neighbour = path[(index + offset) % count]
+            total_x += neighbour["x"]
+            total_y += neighbour["y"]
+        smoothed.append(
+            {**point, "x": round(total_x / width, 8), "y": round(total_y / width, 8)}
+        )
+    return smoothed
+
+
 def _cross_line(path: Sequence[Mapping[str, Any]], index: int, width: float = 0.018) -> dict[str, Any] | None:
     if not path:
         return None
@@ -604,14 +712,36 @@ def build_track_geometry(
         GPS_CLUSTER_RADIUS_DEGREES,
         median_distance + max(0.0005, distance_mad) * 12.0,
     )
+    # Every layer is drawn in longitude * cos(latitude) and latitude, so a
+    # degree east is as long as a degree north at the track.
+    longitude_scale = math.cos(math.radians(center_y)) if center_y is not None else 1.0
     for index, lap_pct, y, x in candidates:
         if center_x is None or center_y is None or math.hypot(x - center_x, y - center_y) > cluster_radius:
             rejected_gps_samples += 1
             continue
-        point = {"x": x, "y": y, "lap_pct": lap_pct % 1.0, "sample_index": index}
-        valid[index] = point
-        if not bool(pit[index]):
-            bins[min(main_bins - 1, max(0, int((lap_pct % 1.0) * main_bins)))].append(point)
+        valid[index] = {
+            "x": x * longitude_scale,
+            "y": y,
+            "lap_pct": lap_pct % 1.0,
+            "sample_index": index,
+        }
+
+    centreline_laps = _clean_racing_laps(channels, valid, pit, count)
+    if centreline_laps:
+        main_samples = (
+            point
+            for _, start, stop in centreline_laps
+            for point in valid[start:stop]
+            if point is not None
+        )
+    else:
+        main_samples = (
+            point
+            for index, point in enumerate(valid)
+            if point is not None and not bool(pit[index])
+        )
+    for point in main_samples:
+        bins[min(main_bins - 1, max(0, int(point["lap_pct"] * main_bins)))].append(point)
 
     main_raw = [
         {
@@ -625,6 +755,14 @@ def build_track_geometry(
             (item for item in enumerate(bins) if item[1])
         )
     ]
+    # Only a path that goes all the way round is a loop whose ends are neighbours.
+    smoothed = bool(
+        len(main_raw) >= CENTRELINE_SMOOTHING_POINTS
+        and _circular_maximum_gap(point["lap_pct"] for point in main_raw)
+        <= MAX_MAIN_LOOP_LAP_PERCENT_GAP
+    )
+    if smoothed:
+        main_raw = _smooth_closed_path(main_raw)
 
     sample_rate = _finite(metadata.get("sample_rate") or metadata.get("tick_rate")) or 20.0
     window = max(3, int(sample_rate * 4.0))
@@ -668,7 +806,15 @@ def build_track_geometry(
     sanitized_paths, rejected_layers = _sanitize_geometry_layers(paths)
     paths = {name: list(sanitized_paths.get(name) or ()) for name in raw_paths}
     result.update(paths)
+    if transform:
+        transform["longitude_scale"] = longitude_scale
     result["transform"] = transform
+    result["centreline"] = {
+        "rule": CENTRELINE_RULE,
+        "source": "clean_racing_laps" if centreline_laps else "off_pit_samples",
+        "laps": [int(number) for number, _, _ in centreline_laps],
+        "smoothing_points": CENTRELINE_SMOOTHING_POINTS if smoothed else 0,
+    }
     loop_quality = _main_loop_quality(paths["main_path"])
     main_loop_complete = bool(loop_quality["main_loop_complete"])
     if main_loop_complete:

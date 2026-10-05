@@ -1,10 +1,10 @@
-import { reasonsText, signedText } from "../format";
 import { hasPaceResult, type Action, type Cohort, type Comparison, type Corner, type Investigation, type InvestigationLap } from "../investigation-model";
 
 /**
- * The backend's comparisons as Traces and Sections show them (round 3: the comparison machinery left the Race tab, #43 #45): names
- * from the groups, the rail's group marks, the paired input bars and the one-line no-result. Everything is read from the backend's
- * comparison and laps; nothing here recomputes a median, a delta or a screening.
+ * The backend's comparisons, read (round 3: the machinery left the Race tab, #43 #45; round 4: it left Traces too, #66, and nothing
+ * in the investigation draws an earlier/later group). Names from the groups, the Sections entry and the section tone stay for the
+ * model's consumers. Everything is read from the backend's comparison and laps; nothing here recomputes a median, a delta or a
+ * screening.
  */
 
 /**
@@ -18,8 +18,6 @@ export function inspectSectionEntry(c: Comparison | null): { label: string; sect
   if (!lead) return null;
   return { label: lead.sectionId ? `Inspect section ${lead.sectionId}` : "Open in Traces", sectionId: lead.sectionId, action: lead };
 }
-
-export type GroupRole = "earlier" | "later";
 
 /** Contiguous lap ranges in ascending order: `[61, 62, 64, 65]` → `[[61, 62], [64, 65]]`. */
 export function lapRanges(laps: readonly number[]): [number, number][] {
@@ -62,80 +60,6 @@ export function comparisonLaps(c: Comparison): string | null {
   const b = c.compared;
   if (a.runNumber !== null && b.runNumber !== null && a.runNumber !== b.runNumber) return `${rangesText(a.lapNumbers)} → ${rangesText(b.lapNumbers)}`;
   return null;
-}
-
-/** The group a lap belongs to in the selected comparison, or null. */
-export function groupOf(c: Comparison | null, lap: number): GroupRole | null {
-  if (!c) return null;
-  if (c.baseline.lapNumbers.includes(lap)) return "earlier";
-  if (c.compared.lapNumbers.includes(lap)) return "later";
-  return null;
-}
-
-/** Laps of both groups, `earlier` or `later` by lap number. */
-export function groupMap(c: Comparison | null): Map<number, GroupRole> {
-  const out = new Map<number, GroupRole>();
-  if (!c) return out;
-  for (const lap of c.baseline.lapNumbers) out.set(lap, "earlier");
-  for (const lap of c.compared.lapNumbers) out.set(lap, "later");
-  return out;
-}
-
-/** `slower`, `faster` or `equal` for the later group, from the backend's signed difference; null without a pace result. */
-export function direction(c: Comparison): "slower" | "faster" | "equal" | null {
-  if (!hasPaceResult(c)) return null;
-  const delta = c.deltaS as number;
-  return delta > 0 ? "slower" : delta < 0 ? "faster" : "equal";
-}
-
-/** The one line shown instead of the picture when the backend has no pace result: `No pace result · every lap screened · close traffic`. */
-export function noResultLine(c: Comparison): string {
-  const reasons = [reasonsText(c.paceUnusableReasons), reasonsText([...c.baseline.excludedLaps, ...c.compared.excludedLaps].flatMap((lap) => lap.reasons))].filter(Boolean);
-  return ["No pace result", ...new Set(reasons)].join(" · ");
-}
-
-/** The signed difference as the picture prints it: `+0.104`. */
-export function deltaText(c: Comparison): string {
-  return hasPaceResult(c) ? signedText(c.deltaS) : "—";
-}
-
-export interface PairedMetric {
-  key: "fuel" | "throttle" | "traffic";
-  label: string;
-  /** The label where space is short (the Traces strip). */
-  short: string;
-  unit: string;
-  earlier: number | null;
-  later: number | null;
-  /** The bar scale runs from zero to this. */
-  max: number;
-  digits: number;
-}
-
-/** Rounds a scale end up to 1, 2, 2.5 or 5 times a power of ten. */
-export function niceMax(value: number): number {
-  if (!(value > 0)) return 1;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
-  return ([1, 2, 2.5, 5, 10].map((factor) => factor * magnitude).find((candidate) => candidate >= value - 1e-9) ?? value);
-}
-
-/**
- * The paired bars beside the dots: the backend's starting fuel (the groups' `fuel_start_gal`, else the `fuel` metric), average
- * throttle (`throttle`) and close-traffic exposure (`traffic`), each on its own scale from zero. A metric the backend did not
- * report is left out.
- */
-export function pairedMetrics(c: Comparison): PairedMetric[] {
-  const metric = (key: string) => c.metrics.find((item) => item.key === key) ?? null;
-  const out: PairedMetric[] = [];
-  const fuel = metric("fuel");
-  const fuelA = c.baseline.fuelStartGal ?? fuel?.baseline ?? null;
-  const fuelB = c.compared.fuelStartGal ?? fuel?.compared ?? null;
-  if (fuelA !== null || fuelB !== null) out.push({ key: "fuel", label: "Fuel at start", short: "Fuel", unit: "gal", earlier: fuelA, later: fuelB, max: niceMax(Math.max(fuelA ?? 0, fuelB ?? 0)), digits: 1 });
-  const throttle = metric("throttle");
-  if (throttle && (throttle.baseline !== null || throttle.compared !== null)) out.push({ key: "throttle", label: "Throttle", short: "Throttle", unit: "%", earlier: throttle.baseline, later: throttle.compared, max: 100, digits: 0 });
-  const traffic = metric("traffic");
-  if (traffic && (traffic.baseline !== null || traffic.compared !== null)) out.push({ key: "traffic", label: "Close traffic", short: "Traffic", unit: "%", earlier: traffic.baseline, later: traffic.compared, max: 100, digits: 0 });
-  return out;
 }
 
 /** Gain or loss for a section's time against the selected comparison; neutral when the comparison has no pace result or the section too few passes. */

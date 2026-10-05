@@ -5,7 +5,8 @@ import { createTraceData, lapProgressEnds, progressColors } from "../geometry/tr
 import { decodeCcol } from "../ccol";
 import { parseInvestigation, type Comparison } from "../investigation-model";
 import { runColor } from "../format";
-import { comparisonLaps, comparisonName, direction, groupMap, lapRanges, niceMax, noResultLine, pairedMetrics, rangesText, sectionTone } from "../ui/comparison-model";
+import * as comparisonModel from "../ui/comparison-model";
+import { comparisonLaps, comparisonName, lapRanges, rangesText, sectionTone } from "../ui/comparison-model";
 import { lapChipStatus } from "../ui/LapRail";
 import { chartLaps, fitStatus, lapLabel } from "../ui/RaceView";
 import { fitLabel, fitSegment, runCards, sparkGeometry } from "../ui/runs-model";
@@ -31,33 +32,11 @@ describe("comparison names and brackets (round 2, #28d, #28e)", () => {
     const free = { ...byId(ROUND2_COMPARISONS.runs), baseline: { ...byId(ROUND2_COMPARISONS.runs).baseline, runNumber: null }, compared: { ...byId(ROUND2_COMPARISONS.runs).compared, runNumber: null } };
     expect(comparisonName(free)).toBe("L31–35 → L61–65");
   });
-
-  it("marks each group's laps for the Traces rail", () => {
-    expect(groupMap(byId(ROUND2_COMPARISONS.runs)).get(33)).toBe("earlier");
-    expect(groupMap(byId(ROUND2_COMPARISONS.runs)).get(63)).toBe("later");
-    expect(groupMap(byId(ROUND2_COMPARISONS.runs)).has(40)).toBe(false);
-  });
 });
 
-describe("the Traces comparison strip reads the backend and computes nothing", () => {
-  it("gives the backend's signed difference its direction; no pace result is one line", () => {
-    expect(direction(byId(ROUND2_COMPARISONS.runs))).toBe("slower");
-    expect(direction(byId(ROUND2_COMPARISONS.window))).toBe("faster");
-    expect(direction(byId(ROUND2_COMPARISONS.none))).toBeNull();
-    expect(noResultLine(byId(ROUND2_COMPARISONS.none))).toBe("No pace result · every lap screened · close traffic");
-    expect(noResultLine(byId(ROUND2_COMPARISONS.none))).not.toMatch(/\./);
-  });
-
-  it("pairs starting fuel, throttle and close traffic, each on its own scale from zero", () => {
-    const metrics = pairedMetrics(byId(ROUND2_COMPARISONS.runs));
-    expect(metrics.map((m) => m.key)).toEqual(["fuel", "throttle", "traffic"]);
-    expect(metrics[0]).toMatchObject({ unit: "gal", earlier: 14.6, later: 12.9, max: 20 });
-    expect(metrics[1]).toMatchObject({ unit: "%", earlier: 71, later: 68, max: 100 });
-    expect(metrics[2]).toMatchObject({ unit: "%", earlier: 4, later: 22, max: 100 });
-    expect(niceMax(14.6)).toBe(20);
-    expect(niceMax(2.3)).toBe(2.5);
-    expect(niceMax(0)).toBe(1);
-    expect(pairedMetrics({ ...byId(ROUND2_COMPARISONS.runs), metrics: [], baseline: { ...byId(ROUND2_COMPARISONS.runs).baseline, fuelStartGal: null }, compared: { ...byId(ROUND2_COMPARISONS.runs).compared, fuelStartGal: null } })).toEqual([]);
+describe("no earlier/later drawing is left in the investigation (round 4, #66)", () => {
+  it("keeps no group marks, paired bars or direction helpers", () => {
+    for (const name of ["groupMap", "groupOf", "pairedMetrics", "direction", "noResultLine", "deltaText", "niceMax"]) expect(name in comparisonModel, name).toBe(false);
   });
 
   it("colours a section by sign only against a comparison with a pace result", () => {
@@ -111,7 +90,7 @@ describe("runs: the fit confined to its span, run cards (round 2, #28f)", () => 
     expect(cards.map((card) => card.runNumber)).toEqual([1, 2, 3]);
     expect(cards[0]!.slope).toBe("+0.033 s/lap · 18 laps");
     expect(cards[2]!.slope).toBeNull();
-    expect(cards[2]!.noFitReason).toBe("insufficient_timed_clean_laps");
+    expect(cards[2]!.fallOff).not.toBeNull();
     expect(cards[0]!.fuelBand).toBe(`${(60 / 3.785411784).toFixed(1)} → ${(14.3 / 3.785411784).toFixed(1)} gal`);
     expect(cards[1]!.tireLaps).toBe("25–52");
     expect(cards[0]!.tireLaps).toBe("27");

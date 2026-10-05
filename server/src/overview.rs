@@ -40,9 +40,21 @@ pub const ROUND3_KEYS: [&str; 4] = [
     "timed_lap_2_s",
 ];
 
+/// The round-4 Sessions figures (field size and official position, the grid position a race
+/// finish is measured against, burn per lap), always sent like `ROUND2_KEYS`.
+pub const ROUND4_KEYS: [&str; 4] = [
+    "field_size",
+    "results_position",
+    "start_position",
+    "fuel_per_lap_gal",
+];
+
 /// Every key the server always sends on `SessionSummary.overview`, null when not measured.
 pub fn always_sent() -> impl Iterator<Item = &'static str> {
-    ROUND2_KEYS.into_iter().chain(ROUND3_KEYS)
+    ROUND2_KEYS
+        .into_iter()
+        .chain(ROUND3_KEYS)
+        .chain(ROUND4_KEYS)
 }
 
 /// Fewest clean laps a run needs before its first-to-last difference is reported.
@@ -89,7 +101,209 @@ pub fn session_overview(race: &Value, investigation: Option<&Value>) -> Value {
     let timed = timed_laps(race);
     out.insert("timed_lap_1_s".into(), json!(timed.first()));
     out.insert("timed_lap_2_s".into(), json!(timed.get(1)));
+    // the backend's own burn figure: the median green-lap burn over its runs
+    // (`strategy.measured_green_fuel_gal_per_lap`), never recomputed here
+    out.insert(
+        "fuel_per_lap_gal".into(),
+        json!(
+            race["strategy"]["measured_green_fuel_gal_per_lap"]
+                .as_f64()
+                .filter(|v| v.is_finite() && *v > 0.0)
+        ),
+    );
+    // the session-info figures: `merge_results` fills them from the event's recordings
+    for key in ["field_size", "results_position", "start_position"] {
+        out.insert(key.into(), Value::Null);
+    }
     Value::Object(out)
+}
+
+// ------------------------------------------------------------ official results
+
+/// The last entry of `key` in a YAML map (Python dict semantics).
+fn yaml_field<'a>(node: &'a coach_ibt::YamlNode, key: &str) -> Option<&'a coach_ibt::YamlNode> {
+    match node {
+        coach_ibt::YamlNode::Map(entries) => {
+            entries.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v)
+        }
+        _ => None,
+    }
+}
+
+fn yaml_int(node: Option<&coach_ibt::YamlNode>) -> Option<i64> {
+    use coach_ibt::{YamlNode, YamlScalar};
+    let scalar = match node? {
+        YamlNode::Scalar(s) => s.typed(),
+        YamlNode::Literal(s) => s.clone(),
+        _ => return None,
+    };
+    match scalar {
+        YamlScalar::Int(i) => Some(i),
+        YamlScalar::Float(f) if f.is_finite() && f.fract() == 0.0 => Some(f as i64),
+        YamlScalar::Str(text) => text.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+/// One results list (`ResultsPositions` or `QualifyResultsInfo.Results`): the number of cars it
+/// lists and the player's place in it, counted by its overall `Position` (never `ClassPosition`),
+/// so a list that numbers from 0 and one that numbers from 1 give the same place. None when the
+/// list names no car.
+fn standing(list: Option<&coach_ibt::YamlNode>, car_idx: Option<i64>) -> Option<Value> {
+    let coach_ibt::YamlNode::List(items) = list? else {
+        return None;
+    };
+    let mut cars: Vec<(i64, i64)> = Vec::new();
+    for item in items {
+        let (Some(car), Some(position)) = (
+            yaml_int(yaml_field(item, "CarIdx")),
+            yaml_int(yaml_field(item, "Position")),
+        ) else {
+            continue;
+        };
+        if car >= 0 && !cars.iter().any(|(c, _)| *c == car) {
+            cars.push((car, position));
+        }
+    }
+    if cars.is_empty() {
+        return None;
+    }
+    let position = car_idx
+        .and_then(|me| cars.iter().find(|(c, _)| *c == me))
+        .map(|(_, mine)| 1 + cars.iter().filter(|(_, p)| p < mine).count() as i64);
+    Some(json!({"field_size": cars.len(), "position": position}))
+}
+
+/// What a recording's session info says about results, stored as `recordings.header_json.results`:
+/// the player's `CarIdx`; per session that lists results, the number of cars and the player's
+/// overall place; `grid`, the same from `QualifyResultsInfo.Results` (null when absent). The
+/// session info is the one the sim wrote when the recording started, so a session's results are
+/// final only in a recording of a later session (`merge_results`).
+pub fn results_summary(info: &coach_ibt::SessionInfo) -> Value {
+    let car_idx = yaml_int(info.get("DriverInfo.DriverCarIdx"));
+    let mut sessions = Vec::new();
+    if let Some(coach_ibt::YamlNode::List(items)) = info.get("SessionInfo.Sessions") {
+        for item in items {
+            let Some(num) = yaml_int(yaml_field(item, "SessionNum")) else {
+                continue;
+            };
+            if let Some(mut s) = standing(yaml_field(item, "ResultsPositions"), car_idx) {
+                s["session_num"] = json!(num);
+                sessions.push(s);
+            }
+        }
+    }
+    json!({
+        "car_idx": car_idx,
+        "sessions": sessions,
+        "grid": standing(info.get("QualifyResultsInfo.Results"), car_idx),
+    })
+}
+
+fn is_race(session_type: Option<&str>) -> bool {
+    session_type.is_some_and(|t| t.to_ascii_lowercase().contains("race"))
+}
+
+/// Fills the session-info figures of one session's overview from the stored results of its
+/// event's recordings (`header_json.results`, newest recording first):
+/// - `field_size` and `results_position`: that session's results as listed by a recording of a
+///   later session of the same event (only there are they final), sent together, null otherwise;
+/// - `start_position`, races only: the player's place on the grid (`QualifyResultsInfo`) in a
+///   recording of this race or later, else the backend's position at the green flag
+///   (`starting_position`); null for other sessions.
+pub fn merge_results(
+    conn: &rusqlite::Connection,
+    session_id: i64,
+    overview: &mut Value,
+) -> rusqlite::Result<()> {
+    use rusqlite::OptionalExtension;
+    if !overview.is_object() {
+        return Ok(());
+    }
+    let row: Option<(i64, Option<i64>, Option<i64>, Option<String>)> = conn
+        .query_row(
+            "SELECT customer_id, subsession_id, sim_session_num, session_type FROM sessions WHERE session_id = ?1",
+            [session_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    let Some((customer, subsession, num, session_type)) = row else {
+        return Ok(());
+    };
+    let mut phase: Option<(Value, Value)> = None;
+    let mut grid: Option<i64> = None;
+    if let (Some(subsession), Some(num)) = (subsession.filter(|s| *s != 0), num) {
+        let recordings: Vec<(String, Option<i64>)> = conn
+            .prepare(
+                "SELECT r.header_json, s.sim_session_num FROM recordings r
+                 JOIN session_recordings sr ON sr.recording_sha256 = r.sha256
+                 JOIN sessions s ON s.session_id = sr.session_id
+                 WHERE s.customer_id = ?1 AND s.subsession_id = ?2
+                 ORDER BY r.start_time_utc DESC, r.sha256",
+            )?
+            .query_map(rusqlite::params![customer, subsession], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        for (header, recorded) in recordings {
+            let Some(recorded) = recorded else { continue };
+            let header: Value = serde_json::from_str(&header).unwrap_or(Value::Null);
+            let results = &header["results"];
+            if phase.is_none() && recorded > num {
+                phase = results["sessions"].as_array().and_then(|list| {
+                    list.iter()
+                        .find(|s| s["session_num"].as_i64() == Some(num))
+                        .filter(|s| s["position"].as_i64().is_some())
+                        .map(|s| (s["field_size"].clone(), s["position"].clone()))
+                });
+            }
+            if grid.is_none() && recorded >= num {
+                grid = results["grid"]["position"].as_i64();
+            }
+        }
+    }
+    let (field_size, position) = phase.unwrap_or((Value::Null, Value::Null));
+    overview["field_size"] = field_size;
+    overview["results_position"] = position;
+    overview["start_position"] = if is_race(session_type.as_deref()) {
+        json!(grid.or_else(|| overview["starting_position"].as_i64()))
+    } else {
+        Value::Null
+    };
+    Ok(())
+}
+
+/// Re-reads the session-info figures of the other sessions of `session_id`'s event (a later
+/// recording makes an earlier session's results final). Returns how many overviews changed.
+pub fn refresh_event(conn: &rusqlite::Connection, session_id: i64) -> rusqlite::Result<usize> {
+    let siblings: Vec<(i64, String)> = conn
+        .prepare(
+            "SELECT o.session_id, o.overview_json FROM sessions s
+             JOIN sessions o ON o.customer_id = s.customer_id AND o.subsession_id = s.subsession_id
+             WHERE s.session_id = ?1 AND s.subsession_id IS NOT NULL AND s.subsession_id != 0
+               AND o.session_id != s.session_id AND o.current_analysis_id IS NOT NULL",
+        )?
+        .query_map([session_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut changed = 0;
+    for (id, stored) in siblings {
+        let Ok(before) = serde_json::from_str::<Value>(&stored) else {
+            continue;
+        };
+        if !before.is_object() {
+            continue;
+        }
+        let mut after = before.clone();
+        merge_results(conn, id, &mut after)?;
+        if after != before {
+            conn.execute(
+                "UPDATE sessions SET overview_json = ?2 WHERE session_id = ?1",
+                rusqlite::params![id, after.to_string()],
+            )?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
 }
 
 /// The backend run with the most laps (`race.json` `laps[].run_number`, joined from the backend's
@@ -211,50 +425,129 @@ pub fn from_views(dir: &Path) -> Option<Value> {
     Some(session_overview(&race, investigation.as_ref()))
 }
 
-/// At start, in the background: sessions whose current analysis is projected at this version but
-/// whose stored overview predates the round-2 or round-3 figures get them from their views. Idempotent; a
-/// session whose views cannot be read keeps its overview.
+/// Adds `results` (`results_summary`) to the stored header of recordings in a session that were
+/// parsed before it, reading each recording's session info from the spool or, archived, from the
+/// NAS (header and session info only). Returns how many rows gained it; a recording that cannot
+/// be read is left as it is (the next start tries again).
+pub async fn backfill_results(app: &AppState) -> Result<usize> {
+    let rows: Vec<(String, String)> = app
+        .store
+        .read(|conn| {
+            Ok(conn
+                .prepare(
+                    "SELECT DISTINCT r.sha256, r.header_json FROM recordings r
+                     JOIN session_recordings sr ON sr.recording_sha256 = r.sha256
+                     WHERE NOT json_valid(r.header_json) OR json_type(r.header_json, '$.results') IS NULL",
+                )?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?)
+        })
+        .await?;
+    let mut done = 0;
+    for (sha, stored) in rows {
+        let spool = crate::ingest::ready_path(app, &sha);
+        let nas = app
+            .archiver
+            .nas_root()
+            .join("raw")
+            .join(&sha[..2.min(sha.len())])
+            .join(format!("{sha}.ibt"));
+        let parser = app.parser.clone();
+        let results = tokio::task::spawn_blocking(move || {
+            [spool, nas]
+                .into_iter()
+                .filter(|p| p.is_file())
+                .find_map(|p| parser.results(&p).ok())
+        })
+        .await
+        .ok()
+        .flatten();
+        let Some(results) = results else { continue };
+        let mut header: Value = serde_json::from_str(&stored).unwrap_or_else(|_| json!({}));
+        if !header.is_object() {
+            header = json!({});
+        }
+        header["results"] = results;
+        let (sha, text) = (sha.clone(), header.to_string());
+        app.store
+            .write(move |conn| {
+                conn.execute(
+                    "UPDATE recordings SET header_json = ?2 WHERE sha256 = ?1",
+                    rusqlite::params![sha, text],
+                )?;
+                Ok(())
+            })
+            .await?;
+        done += 1;
+    }
+    Ok(done)
+}
+
+/// At start, in the background: recordings stored before the results summary gain it
+/// (`backfill_results`); sessions whose current analysis is projected at this version but whose
+/// stored overview predates the round-2, round-3 or round-4 figures get them from their views;
+/// every such overview then takes its session-info figures (`merge_results`) from the stored
+/// results. Returns how many overviews changed. Idempotent; a session whose views cannot be read
+/// keeps its view figures.
 pub async fn refresh_on_start(app: &AppState) -> Result<usize> {
+    if let Err(e) = backfill_results(app).await {
+        tracing::warn!(error = %e, "recording results not backfilled");
+    }
     let version = app.projector.version();
-    let rows: Vec<(i64, String)> = app
+    let rows: Vec<(i64, String, String)> = app
         .store
         .read(move |conn| {
             Ok(conn
                 .prepare(
-                    "SELECT s.session_id, s.current_analysis_id FROM sessions s
+                    "SELECT s.session_id, s.current_analysis_id, s.overview_json FROM sessions s
                      JOIN analyses a ON a.analysis_id = s.current_analysis_id
-                     WHERE a.projection_state = 'ready' AND a.projection_version = ?1
-                       AND (NOT json_valid(s.overview_json)
-                            OR json_type(s.overview_json, '$.pace_slope_supported') IS NULL
-                            OR json_type(s.overview_json, '$.longest_run_laps') IS NULL)",
+                     WHERE a.projection_state = 'ready' AND a.projection_version = ?1",
                 )?
-                .query_map([version], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .query_map([version], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
                 .collect::<rusqlite::Result<_>>()?)
         })
         .await?;
-    let mut updates = Vec::new();
-    for (session_id, analysis_id) in rows {
-        if let Some(overview) = from_views(&app.cfg.views_dir(&analysis_id, version)) {
-            updates.push((session_id, overview.to_string()));
+    let mut candidates = Vec::new();
+    for (session_id, analysis_id, stored) in rows {
+        let before: Value = serde_json::from_str(&stored).unwrap_or(Value::Null);
+        let stale = !before.is_object()
+            || [
+                "pace_slope_supported",
+                "longest_run_laps",
+                "fuel_per_lap_gal",
+            ]
+            .iter()
+            .any(|key| before.get(key).is_none());
+        let after = if stale {
+            from_views(&app.cfg.views_dir(&analysis_id, version))
+        } else {
+            Some(before.clone())
+        };
+        if let Some(after) = after {
+            candidates.push((session_id, before, after));
         }
     }
-    let count = updates.len();
-    if count > 0 {
-        app.store
-            .write(move |conn| {
-                let tx = conn.transaction()?;
-                for (session_id, overview) in &updates {
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+    app.store
+        .write(move |conn| {
+            let tx = conn.transaction()?;
+            let mut count = 0;
+            for (session_id, before, mut after) in candidates {
+                merge_results(&tx, session_id, &mut after)?;
+                if after != before {
                     tx.execute(
                         "UPDATE sessions SET overview_json = ?2 WHERE session_id = ?1",
-                        rusqlite::params![session_id, overview],
+                        rusqlite::params![session_id, after.to_string()],
                     )?;
+                    count += 1;
                 }
-                tx.commit()?;
-                Ok(())
-            })
-            .await?;
-    }
-    Ok(count)
+            }
+            tx.commit()?;
+            Ok(count)
+        })
+        .await
 }
 
 #[cfg(test)]
@@ -409,6 +702,245 @@ mod tests {
         for key in ROUND3_KEYS {
             assert_eq!(o[key], Value::Null, "{key} is always sent");
         }
+    }
+
+    #[test]
+    fn burn_per_lap_is_the_backends_strategy_figure() {
+        let mut r = race(Value::Null);
+        r["strategy"] = json!({"measured_green_fuel_gal_per_lap": 0.424, "measured_green_fuel_l_per_lap": 1.605});
+        let o = session_overview(&r, None);
+        assert_eq!(o["fuel_per_lap_gal"], 0.424);
+        // no strategy, or no measured green burn: null, never fuel used over the race
+        let o = session_overview(&race(Value::Null), None);
+        assert_eq!(o["fuel_per_lap_gal"], Value::Null);
+        r["strategy"]["measured_green_fuel_gal_per_lap"] = Value::Null;
+        assert_eq!(session_overview(&r, None)["fuel_per_lap_gal"], Value::Null);
+        for key in ROUND4_KEYS {
+            assert!(o.get(key).is_some(), "{key} is always sent");
+        }
+    }
+
+    /// The session info of a race recording at Talladega as the sim writes it when the race
+    /// starts: practice and qualifying final, the race list still the grid order, the grid in
+    /// `QualifyResultsInfo` numbered from 0.
+    const SESSION_INFO: &str = "\
+DriverInfo:
+ DriverCarIdx: 7
+ Drivers:
+ - CarIdx: 7
+   UserName: Joshua Granger
+SessionInfo:
+ Sessions:
+ - SessionNum: 0
+   SessionType: Practice
+   ResultsPositions:
+   - Position: 1
+     ClassPosition: 0
+     CarIdx: 3
+   - Position: 2
+     ClassPosition: 1
+     CarIdx: 7
+   - Position: 3
+     ClassPosition: 2
+     CarIdx: 9
+ - SessionNum: 1
+   SessionType: Lone Qualify
+   ResultsPositions:
+   - Position: 1
+     ClassPosition: 0
+     CarIdx: 3
+   - Position: 2
+     ClassPosition: 1
+     CarIdx: 9
+   - Position: 3
+     ClassPosition: 2
+     CarIdx: 7
+   - Position: 4
+     ClassPosition: 3
+     CarIdx: 11
+ - SessionNum: 2
+   SessionType: Race
+   ResultsPositions:
+QualifyResultsInfo:
+ Results:
+ - Position: 0
+   ClassPosition: 0
+   CarIdx: 3
+ - Position: 1
+   ClassPosition: 1
+   CarIdx: 9
+ - Position: 2
+   ClassPosition: 2
+   CarIdx: 7
+ - Position: 3
+   ClassPosition: 3
+   CarIdx: 11
+";
+
+    #[test]
+    fn the_results_summary_counts_places_by_overall_position() {
+        let info = coach_ibt::SessionInfo::parse(SESSION_INFO).unwrap();
+        let s = results_summary(&info);
+        assert_eq!(s["car_idx"], 7);
+        assert_eq!(
+            s["sessions"],
+            json!([{"session_num": 0, "field_size": 3, "position": 2},
+                   {"session_num": 1, "field_size": 4, "position": 3}]),
+            "a session with an empty list is left out"
+        );
+        // numbered from 0 there: the same place
+        assert_eq!(s["grid"], json!({"field_size": 4, "position": 3}));
+        // a player missing from a list: the field is known, the place is not
+        let info = coach_ibt::SessionInfo::parse(
+            &SESSION_INFO.replace("DriverCarIdx: 7", "DriverCarIdx: 42"),
+        )
+        .unwrap();
+        let s = results_summary(&info);
+        assert_eq!(s["grid"], json!({"field_size": 4, "position": null}));
+        // nothing at all
+        let s = results_summary(
+            &coach_ibt::SessionInfo::parse("WeekendInfo:\n TrackName: x\n").unwrap(),
+        );
+        assert_eq!(s, json!({"car_idx": null, "sessions": [], "grid": null}));
+    }
+
+    fn db() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (session_id INTEGER PRIMARY KEY, customer_id INTEGER, subsession_id INTEGER,
+               sim_session_num INTEGER, session_type TEXT, overview_json TEXT NOT NULL DEFAULT '{}', current_analysis_id TEXT);
+             CREATE TABLE recordings (sha256 TEXT PRIMARY KEY, header_json TEXT NOT NULL DEFAULT '{}', start_time_utc TEXT);
+             CREATE TABLE session_recordings (session_id INTEGER, recording_sha256 TEXT);",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn add(
+        conn: &rusqlite::Connection,
+        id: i64,
+        num: i64,
+        kind: &str,
+        start: &str,
+        results: Value,
+    ) {
+        conn.execute(
+            "INSERT INTO sessions VALUES (?1, 1, 89012751, ?2, ?3, '{}', 'a')",
+            rusqlite::params![id, num, kind],
+        )
+        .unwrap();
+        let sha = format!("sha-{id}");
+        conn.execute(
+            "INSERT INTO recordings VALUES (?1, ?2, ?3)",
+            rusqlite::params![sha, json!({"results": results}).to_string(), start],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session_recordings VALUES (?1, ?2)",
+            rusqlite::params![id, sha],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn an_events_results_come_from_its_later_recordings() {
+        let conn = db();
+        // each recording's own session lists only what was known when it started
+        let early = |num: i64| json!({"car_idx": 7, "sessions": [{"session_num": num, "field_size": 1, "position": 1}], "grid": null});
+        add(&conn, 25, 0, "Practice", "2026-09-30T02:32:36Z", early(0));
+        add(
+            &conn,
+            24,
+            1,
+            "Lone Qualify",
+            "2026-09-30T02:34:29Z",
+            early(1),
+        );
+        let info = coach_ibt::SessionInfo::parse(SESSION_INFO).unwrap();
+        add(
+            &conn,
+            23,
+            2,
+            "Race",
+            "2026-09-30T02:39:30Z",
+            results_summary(&info),
+        );
+        let overview = |id: i64, start: i64| {
+            let mut o = json!({"starting_position": start, "final_position": 7});
+            merge_results(&conn, id, &mut o).unwrap();
+            o
+        };
+        // practice and qualifying: final in the race recording
+        let o = overview(25, 3);
+        assert_eq!(
+            (o["results_position"].clone(), o["field_size"].clone()),
+            (json!(2), json!(3))
+        );
+        assert_eq!(
+            o["start_position"],
+            Value::Null,
+            "only a race has a grid position"
+        );
+        let o = overview(24, 3);
+        assert_eq!(
+            (o["results_position"].clone(), o["field_size"].clone()),
+            (json!(3), json!(4))
+        );
+        // the race: its grid, not the first recorded position; its own results are not final
+        let o = overview(23, 12);
+        assert_eq!(o["start_position"], 3);
+        assert_eq!(o["field_size"], Value::Null);
+        assert_eq!(o["results_position"], Value::Null);
+        // without a grid: the backend's position at the green flag
+        conn.execute(
+            "UPDATE recordings SET header_json = '{\"results\": null}' WHERE sha256 = 'sha-23'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(overview(23, 12)["start_position"], 12);
+        // and the qualifying session then has no later recording that lists it
+        assert_eq!(overview(24, 3)["field_size"], Value::Null);
+        assert_eq!(overview(24, 3)["results_position"], Value::Null);
+    }
+
+    #[test]
+    fn a_later_recording_refreshes_the_events_other_overviews() {
+        let conn = db();
+        add(
+            &conn,
+            24,
+            1,
+            "Lone Qualify",
+            "2026-09-30T02:34:29Z",
+            Value::Null,
+        );
+        conn.execute(
+            "UPDATE sessions SET overview_json = '{\"final_position\": 5}' WHERE session_id = 24",
+            [],
+        )
+        .unwrap();
+        let info = coach_ibt::SessionInfo::parse(SESSION_INFO).unwrap();
+        add(
+            &conn,
+            23,
+            2,
+            "Race",
+            "2026-09-30T02:39:30Z",
+            results_summary(&info),
+        );
+        assert_eq!(refresh_event(&conn, 23).unwrap(), 1);
+        let stored: String = conn
+            .query_row(
+                "SELECT overview_json FROM sessions WHERE session_id = 24",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let o: Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(o["final_position"], 5, "the recorded figure stays");
+        assert_eq!(o["results_position"], 3);
+        assert_eq!(o["field_size"], 4);
+        assert_eq!(refresh_event(&conn, 23).unwrap(), 0, "idempotent");
     }
 
     #[test]

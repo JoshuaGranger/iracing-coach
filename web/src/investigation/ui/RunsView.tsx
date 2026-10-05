@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from "preact/hooks";
-import { n, PlotScale, reason, ticks } from "../format";
+import { n, PlotScale, ticks } from "../format";
 import { pitStops } from "../geometry/rail-model";
 import type { Investigation, InvestigationLap } from "../investigation-model";
 import type { RaceViewData } from "../types";
-import { chartLaps, exposureWord, lapLabel, RunSwatch } from "./RaceView";
+import { exposureWord, lapLabel, RunSwatch } from "./RaceView";
 import { useElementSize, useSessionNumbers } from "./hooks";
-import { fitLabel, fitSegment, identityColour, paceFitText, runCards, runIdentities, runsChartLaps, sparkGeometry, toggleRun, type RunCard, type RunIdentity } from "./runs-model";
+import { fitDrawn, fitLabel, fitSegment, identityColour, runCards, runIdentities, runsChartLaps, sparkGeometry, toggleRun, type RunCard, type RunIdentity } from "./runs-model";
 import { scaleFor, useRemPx } from "./unit";
 
 export interface RunsViewProps {
@@ -35,11 +35,13 @@ function RunCardView({ card, identity, shown, locked, onToggle }: { card: RunCar
         {spark.dots.map((dot, index) => <circle key={index} cx={dot.cx} cy={dot.cy} r="1.6" class={`ri-spark-dot${dot.used ? "" : " hollow"}`} />)}
       </svg>
       <span class="ri-facts">
-        <span class="ri-fact"><span class="ri-fact-label">Fit</span><b class="ri-fact-value" data-run-slope>{card.slope ?? <span title={card.noFitReason ? reason(card.noFitReason) : undefined}>No fit</span>}</b></span>
+        {/* Wide figures in the first column: the fit and the fuel band; the observed fall-off beside the fit (#59a). */}
+        <span class="ri-fact"><span class="ri-fact-label">Fit</span><b class="ri-fact-value" data-run-slope>{card.slope ?? "—"}</b></span>
+        <span class="ri-fact" title={card.fallOffHover ?? undefined}><span class="ri-fact-label">Fall-off</span><b class="ri-fact-value" data-run-falloff>{card.fallOff ?? "—"}</b></span>
         <span class="ri-fact"><span class="ri-fact-label">Used</span><b class="ri-fact-value" data-run-used>{card.used}</b></span>
-        <span class="ri-fact"><span class="ri-fact-label">Screened</span><b class="ri-fact-value" data-run-screened>{card.screened}</b></span>
         <span class="ri-fact"><span class="ri-fact-label">Fuel</span><b class="ri-fact-value">{card.fuelBand ?? "—"}</b></span>
         <span class="ri-fact"><span class="ri-fact-label">Tire laps</span><b class="ri-fact-value">{card.tireLaps ?? "—"}</b></span>
+        <span class="ri-fact"><span class="ri-fact-label">Screened</span><b class="ri-fact-value" data-run-screened>{card.screened}</b></span>
       </span>
     </button>
   );
@@ -60,7 +62,8 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
   const identities = useMemo(() => runIdentities(runNumbers, race ? pitStops(race, { runs: runs ?? [] }, null) : []), [runNumbers, race, runs]);
   const allPoints = useMemo(() => runsChartLaps(inv.laps), [inv]);
   const points = useMemo(() => allPoints.filter((lap) => lap.runNumber === null || !hidden.has(lap.runNumber)), [allPoints, hidden]);
-  const fits = useMemo(() => inv.runs.filter((run) => !hidden.has(run.runNumber)).map((run) => ({ run, segment: fitSegment(run), label: fitLabel(run) })).filter((fit) => fit.segment !== null), [inv, hidden]);
+  // The screened fit only where it covers at least half the run's green laps (#59a), as on Race.
+  const fits = useMemo(() => inv.runs.filter((run) => !hidden.has(run.runNumber) && fitDrawn(run, inv.laps)).map((run) => ({ run, segment: fitSegment(run), label: fitLabel(run) })).filter((fit) => fit.segment !== null), [inv, hidden]);
   const cards = useMemo(() => runCards(inv, runs ?? []), [inv, runs]);
   // The chart's scale follows the visible runs: their laps and their fits.
   const plot = useMemo(() => {
@@ -88,7 +91,6 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
     }
   }
   const readout = hover ? lapLabel(hover, word) : "";
-  const fitText = paceFitText(inv, chartLaps(inv.laps).pace.length);
   const visibleCount = runNumbers.filter((run) => !hidden.has(run)).length;
   return (
     <div class="ri-runs-view" data-ri-view="runs">
@@ -98,7 +100,6 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
         ) : (
           <>
             <div class="ri-chart-head">
-              {fitText && <span class="ri-fit-count" data-pace-fit>{fitText}</span>}
               <div class="ri-legend" data-legend="runs">
                 {inv.runs.filter((run) => !hidden.has(run.runNumber)).map((run) => {
                   const identity = identities.get(run.runNumber);

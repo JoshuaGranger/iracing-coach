@@ -64,6 +64,162 @@ class RaceFoundationTests(unittest.TestCase):
         self.assertGreater(len(main_only["main_path"]), 50)
         self.assertTrue(any("Pit-road state" in reason for reason in main_only["unavailable_reasons"]))
 
+    @staticmethod
+    def _session_on_circle(
+        laps: list[dict],
+        *,
+        latitude: float = 36.27,
+        radius_m: float = 400.0,
+        samples_per_lap: int = 200,
+    ) -> dict[str, list]:
+        """A circle of ``radius_m`` driven lap by lap; each lap may sit off the line, on pit road, off track or slow."""
+
+        metres_per_degree = 111_320.0
+        columns: dict[str, list] = {
+            name: [] for name in ("Lap", "LapDistPct", "Lat", "Lon", "OnPitRoad", "PlayerTrackSurface", "SessionFlags")
+        }
+        for number, spec in enumerate(laps, start=1):
+            count = int(samples_per_lap * spec.get("slow", 1.0))
+            for index in range(count):
+                pct = index / count
+                offset = spec.get("offset", lambda value: 0.0)(pct)
+                radius = radius_m + offset
+                east = radius * math.cos(2 * math.pi * pct)
+                north = radius * math.sin(2 * math.pi * pct)
+                columns["Lap"].append(number)
+                columns["LapDistPct"].append(pct)
+                columns["Lat"].append(latitude + north / metres_per_degree)
+                columns["Lon"].append(
+                    -115.0 + east / (metres_per_degree * math.cos(math.radians(latitude)))
+                )
+                columns["OnPitRoad"].append(spec.get("pit", lambda value: False)(pct))
+                columns["PlayerTrackSurface"].append(spec.get("surface", lambda value: 3)(pct))
+                columns["SessionFlags"].append(spec.get("flags", lambda value: 0x0004)(pct))
+        return columns
+
+    def _radii(self, result: dict) -> list[float]:
+        points = result["main_path"]
+        xs = [point["x"] for point in points]
+        ys = [point["y"] for point in points]
+        cx = (min(xs) + max(xs)) / 2
+        cy = (min(ys) + max(ys)) / 2
+        return [math.hypot(x - cx, y - cy) for x, y in zip(xs, ys)]
+
+    def test_centreline_comes_from_clean_racing_laps_only(self) -> None:
+        def pit_approach(pct: float) -> float:
+            # The in/out lap leaves the line by 60 m inside along pit approach and exit, off pit road.
+            return -60.0 if pct < 0.15 or pct > 0.85 else 0.0
+
+        columns = self._session_on_circle(
+            [
+                {"offset": pit_approach, "pit": lambda pct: pct < 0.05 or pct > 0.95},  # out lap
+                {},  # clean, racing speed
+                {"offset": lambda pct: 25.0 if 0.4 < pct < 0.5 else 0.0, "surface": lambda pct: 0 if 0.4 < pct < 0.5 else 3},
+                {"offset": lambda pct: 90.0 if pct > 0.6 else 0.0, "surface": lambda pct: -1 if pct > 0.6 else 3},  # tow
+                {"offset": lambda pct: 15.0, "flags": lambda pct: 0x4000},  # caution
+                {"offset": lambda pct: -20.0, "slow": 1.2},  # cool-down, 20 % slower
+                {},  # clean, racing speed
+                {"offset": pit_approach, "pit": lambda pct: pct > 0.95},  # in lap
+            ]
+        )
+        result = build_track_geometry(
+            columns,
+            {"sample_rate": 60},
+            {"track_id": 9, "track_name": "Test Oval", "track_config": "Oval"},
+            main_bins=200,
+        )
+        self.assertEqual(result["status"], "usable")
+        self.assertEqual(
+            result["centreline"],
+            {"rule": "clean-racing-laps-v1", "source": "clean_racing_laps", "laps": [2, 7], "smoothing_points": 7},
+        )
+        radii = self._radii(result)
+        # A circle stays a circle: no pit approach, off-track, tow, caution or slow-lap point bends it.
+        self.assertLess(max(radii) - min(radii), 0.003 * max(radii))
+        self.assertGreaterEqual(len(result["main_path"]), 195)
+        self.assertLess(result["quality"]["closure_distance"], 0.03)
+
+    def test_legacy_rule_mixed_pit_approach_into_the_line(self) -> None:
+        approach = {
+            "offset": lambda pct: -60.0 if pct > 0.85 else 0.0,
+            "surface": lambda pct: 2 if pct > 0.85 else 3,  # approaching pits, not yet on pit road
+        }
+        columns = self._session_on_circle([approach, {}, approach])
+        without_laps = {key: value for key, value in columns.items() if key != "Lap"}
+        legacy = build_track_geometry(without_laps, {"sample_rate": 60}, {"track_id": 9}, main_bins=200)
+        self.assertEqual(legacy["centreline"]["source"], "off_pit_samples")
+        self.assertEqual(legacy["centreline"]["laps"], [])
+        radii = self._radii(legacy)
+        self.assertGreater(max(radii) - min(radii), 0.02 * max(radii))
+        clean = build_track_geometry(columns, {"sample_rate": 60}, {"track_id": 9}, main_bins=200)
+        self.assertEqual(clean["centreline"]["laps"], [2])
+
+    def test_outline_keeps_real_proportions_at_any_latitude(self) -> None:
+        for latitude in (0.0, 36.27, 60.0):
+            with self.subTest(latitude=latitude):
+                result = build_track_geometry(
+                    self._session_on_circle([{}, {}], latitude=latitude),
+                    {"sample_rate": 60},
+                    {"track_id": 9},
+                    main_bins=200,
+                )
+                xs = [point["x"] for point in result["main_path"]]
+                ys = [point["y"] for point in result["main_path"]]
+                self.assertAlmostEqual((max(xs) - min(xs)) / (max(ys) - min(ys)), 1.0, places=2)
+                scale = result["transform"]["longitude_scale"]
+                self.assertAlmostEqual(scale, math.cos(math.radians(latitude)), places=4)
+                # A recorded fix maps onto the outline through the transform.
+                bounds = result["transform"]["source_bounds"]
+                first = result["main_path"][0]
+                self.assertTrue(-0.01 <= (-115.0 * scale - bounds["minimum_x"]) / result["transform"]["normalization_scale"] <= 1.01)
+                self.assertGreaterEqual(first["x"], 0.0)
+
+    def test_smoothing_is_a_seven_point_circular_mean_and_closes_the_loop(self) -> None:
+        from race_foundations import _smooth_closed_path
+
+        path = [{"sequence": index, "lap_pct": index / 10, "x": float(index % 2), "y": float(index), "observations": 1} for index in range(10)]
+        smoothed = _smooth_closed_path(path)
+        self.assertEqual([point["sequence"] for point in smoothed], list(range(10)))
+        self.assertEqual(list(smoothed[0]), ["sequence", "lap_pct", "x", "y", "observations"])
+        # Neighbours of 0 are 7, 8, 9, 0, 1, 2, 3 around the loop.
+        self.assertEqual(smoothed[0]["y"], round((7 + 8 + 9 + 0 + 1 + 2 + 3) / 7, 8))
+        self.assertEqual(smoothed[0]["x"], round(4 / 7, 8))
+        jagged = self._session_on_circle([{"offset": lambda pct: 6.0 if int(pct * 200) % 2 else -6.0}] * 2)
+        result = build_track_geometry(jagged, {"sample_rate": 60}, {"track_id": 9}, main_bins=200)
+        radii = self._radii(result)
+        self.assertLess(max(radii) - min(radii), 0.006 * max(radii))
+        again = build_track_geometry(jagged, {"sample_rate": 60}, {"track_id": 9}, main_bins=200)
+        self.assertEqual(result, again)
+
+    def test_open_path_is_not_smoothed_across_its_gap(self) -> None:
+        pct = [0.18 + index * 0.004 for index in range(120)]
+        result = build_track_geometry(
+            {
+                "LapDistPct": pct,
+                "Lat": [math.sin(2 * math.pi * value) for value in pct],
+                "Lon": [math.cos(2 * math.pi * value) for value in pct],
+            },
+            {"sample_rate": 60},
+            {"track_id": 7},
+            main_bins=200,
+        )
+        self.assertEqual(result["centreline"]["smoothing_points"], 0)
+        self.assertGreater(result["quality"]["maximum_lap_percent_gap"], 0.05)
+
+    def test_cache_prefers_the_clean_lap_rule_over_legacy_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            store = ArchiveStore(Path(folder) / "portable")
+            columns = self._session_on_circle([{}, {}], samples_per_lap=200)
+            legacy = build_track_geometry(columns, {"sample_rate": 60}, {"track_id": 9, "track_config": "Oval"}, main_bins=500)
+            legacy.pop("centreline")
+            current = build_track_geometry(columns, {"sample_rate": 60}, {"track_id": 9, "track_config": "Oval"}, main_bins=150)
+            store.cache_track_geometry(legacy)
+            chosen = store.cache_track_geometry(current)
+            self.assertEqual(chosen["centreline"]["rule"], "clean-racing-laps-v1")
+            self.assertEqual(len(chosen["main_path"]), len(current["main_path"]))
+            kept = store.cache_track_geometry(legacy)
+            self.assertEqual(kept["centreline"]["rule"], "clean-racing-laps-v1")
+
     def test_incomplete_main_loop_is_unavailable_and_never_gets_a_start_line(self) -> None:
         pct = [0.18 + index * 0.004 for index in range(120)]
         result = build_track_geometry(
@@ -117,8 +273,10 @@ class RaceFoundationTests(unittest.TestCase):
         self.assertTrue(result["quality"]["main_loop_complete"])
         self.assertTrue(result["quality"]["geometry_plausible"])
         self.assertGreaterEqual(result["quality"]["main_path_span"], 0.99)
-        self.assertGreater(result["transform"]["source_bounds"]["minimum_x"], -94)
-        self.assertLess(result["transform"]["source_bounds"]["maximum_x"], -92)
+        scale = result["transform"]["longitude_scale"]
+        self.assertAlmostEqual(scale, math.cos(math.radians(41.675)), places=4)
+        self.assertGreater(result["transform"]["source_bounds"]["minimum_x"], -94 * scale)
+        self.assertLess(result["transform"]["source_bounds"]["maximum_x"], -92 * scale)
         self.assertGreater(result["transform"]["source_bounds"]["minimum_y"], 41)
         self.assertGreaterEqual(result["quality"]["rejected_gps_samples"], 1)
         for field in ("pit_lane", "pit_entry_path", "pit_exit_path"):

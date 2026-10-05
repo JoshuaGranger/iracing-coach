@@ -33,6 +33,9 @@ import {
   gridTemplate,
   practiceSlots,
   qualifySlots,
+  startPosition,
+  classification,
+  burnPerLap,
 } from "./model";
 
 beforeEach(() => resetCarOrder());
@@ -192,19 +195,51 @@ describe("figures", () => {
   });
 
   it("shows a place change for a race only, with a win and a result band", () => {
-    const gain = session({ overview: { starting_position: 12, final_position: 4 } });
+    const gain = session({ overview: { start_position: 12, final_position: 4 } });
     expect(positionChange(gain)).toEqual({ from: 12, to: 4, gained: 8 });
     expect(resultBand(gain)).toBe("gain");
     expect(resultText(gain)).toBe("P12 → P4");
-    const loss = session({ overview: { starting_position: 7, final_position: 9 } });
+    const loss = session({ overview: { start_position: 7, final_position: 9 } });
     expect(positionChange(loss)!.gained).toBe(-2);
     expect(resultBand(loss)).toBe("loss");
-    expect(resultBand(session({ overview: { starting_position: 2, final_position: 1 } }))).toBe("win");
-    expect(resultBand(session({ overview: { starting_position: 5, final_position: 5 } }))).toBeNull();
-    const qual = session({ session_type: "Qualify", overview: { starting_position: 7, final_position: 2 } });
+    expect(resultBand(session({ overview: { start_position: 2, final_position: 1 } }))).toBe("win");
+    expect(resultBand(session({ overview: { start_position: 5, final_position: 5 } }))).toBeNull();
+    const qual = session({ session_type: "Qualify", overview: { start_position: 7, final_position: 2 } });
     expect(positionChange(qual)).toBeNull();
     expect(resultBand(qual)).toBeNull();
     expect(resultText(session({ overview: { final_position: 4 } }))).toBe("P4");
+  });
+
+  it("measures a finish against the official start, never the first recorded position (#56)", () => {
+    // Talladega 2026-09-29: gridded P12, finished P7.
+    const s = session({ overview: { starting_position: 14, start_position: 12, final_position: 7 } });
+    expect(startPosition(s)).toBe(12);
+    expect(positionChange(s)).toEqual({ from: 12, to: 7, gained: 5 });
+    // Without the official start there is no change to show.
+    const none = session({ overview: { starting_position: 12, start_position: null, final_position: 7 } });
+    expect(startPosition(none)).toBeNull();
+    expect(positionChange(none)).toBeNull();
+    expect(phaseSlots(none, null)[0]!.parts.map((p) => p.text)).toEqual(["P7"]);
+  });
+
+  it("practice and qualifying place: official over the field, else the recorded place alone (#55)", () => {
+    const official = session({ session_type: "Qualify", overview: { final_position: 2, results_position: 5, field_size: 24 } });
+    expect(classification(official)).toEqual({ position: 5, field: 24 });
+    const pos = qualifySlots(official, null)[0]!;
+    expect(pos.parts).toEqual([{ text: "P5" }, { text: "/ 24", tone: "unit" }]);
+    expect(pos.title).toBe("Classified P5 of 24");
+    const recorded = session({ session_type: "Practice", overview: { final_position: 3, results_position: null, field_size: null } });
+    expect(classification(recorded)).toEqual({ position: 3, field: null });
+    expect(practiceSlots(recorded, null)[0]!.parts).toEqual([{ text: "P3" }]);
+    // A field size without the official place is never put under a recorded place.
+    expect(classification(session({ session_type: "Practice", overview: { final_position: 3, field_size: 24 } }))).toEqual({ position: 3, field: null });
+    expect(classification(session({ session_type: "Practice", overview: {} }))).toBeNull();
+  });
+
+  it("burn per lap is the backend's figure, absent when it measured none (#57)", () => {
+    expect(burnPerLap(session({ overview: { fuel_per_lap_gal: 0.424, fuel_used_gal: 20.7 } }))).toBe(0.424);
+    expect(burnPerLap(session({ overview: { fuel_used_gal: 20.7 } }))).toBeNull();
+    expect(burnPerLap(session({ overview: { fuel_per_lap_gal: 0 } }))).toBeNull();
   });
 
   it("tells a measured row from one that has only discovery", () => {
@@ -262,16 +297,18 @@ describe("local dates (audit S1)", () => {
 describe("phase cell slots (web round 2)", () => {
   const race = session({
     session_type: "Race",
-    overview: { starting_position: 12, final_position: 4, recorded_laps: 82, green_laps_estimated: 60, caution_laps_estimated: 20, pit_stops_detected: 3, longest_green_run: 41, pace_slope_s_per_lap: 0.021, best_clean_lap_s: 15.234, fuel_used_gal: 21.6 },
+    overview: { starting_position: 14, start_position: 12, final_position: 4, recorded_laps: 82, green_laps_estimated: 60, caution_laps_estimated: 20, pit_stops_detected: 3, longest_green_run: 41, pace_slope_s_per_lap: 0.021, best_clean_lap_s: 15.234, fuel_used_gal: 21.6, fuel_per_lap_gal: 0.471 },
   });
   const text = (s: ReturnType<typeof phaseSlots>[number]) => s.parts.map((p) => p.text).join(" ");
 
   it("has seven slots in the plan's order with the figures printed as the cell shows them", () => {
     const slots = phaseSlots(race, 15.234);
-    expect(slots.map((s) => s.key)).toEqual(["pos", "laps", "best", "pace", "stops", "fuel", "run"]);
-    expect(slots.map(text)).toEqual(["P4 ▲8", "60 · 20", "15.234", "+0.021", "3", "21.6 gal", "41"]);
-    expect(slots[0]!.label).toBe("Finish");
+    expect(slots.map((s) => s.key)).toEqual(["pos", "laps", "best", "pace", "stops", "burn", "run"]);
+    expect(slots.map(text)).toEqual(["P4 ▲8 from P12", "60 · 20", "15.234", "+0.021", "3", "0.47 gal/lap", "41"]);
+    expect(slots.map((s) => s.label)).toEqual(["Finish", "Grn · Cau", "Best", "Pace", "Stops", "Burn", "Long run"]);
     expect(slots.every((s) => !s.missing)).toBe(true);
+    // fuel used over the race is not a slot (#57)
+    expect(phaseSlots(session({ overview: { fuel_used_gal: 21.6 } }), null).find((s) => s.key === "burn")!.missing).toBe(true);
   });
 
   it("labels a practice position `Pos` and shows no change for it", () => {
@@ -292,19 +329,21 @@ describe("phase cell slots (web round 2)", () => {
     expect(text(zero.find((s) => s.key === "laps")!)).toBe("0 · 0");
   });
 
-  it("spends the colour budget on a supported position change and a caution count above zero, and nothing else", () => {
-    const tones = (s: ReturnType<typeof phaseSlots>) => s.flatMap((x) => x.parts).filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "caution").map((p) => `${p.tone}:${p.text}`);
-    expect(tones(phaseSlots(race, 15.234))).toEqual(["gain:▲8", "caution:20"]);
-    const lost = session({ overview: { ...race.overview, starting_position: 7, final_position: 9, caution_laps_estimated: 0 } });
-    expect(tones(phaseSlots(lost, null))).toEqual(["loss:▼2"]);
-    // Unchanged position, no cautions: no colour at all. A win is a plain number.
-    const win = session({ overview: { ...race.overview, starting_position: 1, final_position: 1, caution_laps_estimated: 0 } });
-    expect(tones(phaseSlots(win, null))).toEqual([]);
-    expect(text(phaseSlots(win, null)[0]!)).toBe("P1");
-    expect(colouredFigures(phaseSlots(race, 15.234))).toBe(2);
-    // Pace trend, best and fuel never carry a colour whatever their value.
+  it("spends the colour budget on the position change, the green count and a caution count above zero, and nothing else", () => {
+    const tones = (s: ReturnType<typeof phaseSlots>) => s.flatMap((x) => x.parts).filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "green" || p.tone === "caution").map((p) => `${p.tone}:${p.text}`);
+    expect(tones(phaseSlots(race, 15.234))).toEqual(["gain:▲8", "green:60", "caution:20"]);
+    const lost = session({ overview: { ...race.overview, start_position: 7, final_position: 9, caution_laps_estimated: 0 } });
+    expect(tones(phaseSlots(lost, null))).toEqual(["loss:▼2", "green:60"]);
+    // Unchanged position, no cautions: only the green count. A win is a plain number with its reference.
+    const win = session({ overview: { ...race.overview, start_position: 1, final_position: 1, caution_laps_estimated: 0 } });
+    expect(tones(phaseSlots(win, null))).toEqual(["green:60"]);
+    expect(text(phaseSlots(win, null)[0]!)).toBe("P1 from P1");
+    expect(colouredFigures(phaseSlots(race, 15.234))).toBe(3);
+    // No green lap: no green colour.
+    expect(tones(phaseSlots(session({ overview: { green_laps_estimated: 0, caution_laps_estimated: 0 } }), null))).toEqual([]);
+    // Pace trend, best and burn never carry a colour whatever their value.
     const hot = session({ overview: { ...race.overview, pace_slope_s_per_lap: 0.2, best_clean_lap_s: 14.9 } });
-    expect(phaseSlots(hot, 14.9).filter((s) => ["best", "pace", "stops", "fuel", "run"].includes(s.key)).flatMap((s) => s.parts).every((p) => !p.tone || p.tone === "unit")).toBe(true);
+    expect(phaseSlots(hot, 14.9).filter((s) => ["best", "pace", "stops", "burn", "run"].includes(s.key)).flatMap((s) => s.parts).every((p) => !p.tone || p.tone === "unit")).toBe(true);
   });
 
   it("marks the event's fastest lap without colour, and reads a green pace the server may add", () => {
@@ -361,7 +400,7 @@ describe("practice and qualifying cells (round 3, #33)", () => {
   it("practice: position, fastest lap, longest run without a reset, its pace loss; no fuel or stops", () => {
     const slots = practiceSlots(practice, null);
     expect(slots.map((s) => s.key)).toEqual(["pos", "best", "run", "loss"]);
-    expect(slots.map((s) => s.label)).toEqual(["Pos", "Best", "Run", "Fall-off"]);
+    expect(slots.map((s) => s.label)).toEqual(["Pos", "Best", "Long run", "Fall-off"]);
     expect(slots.map(text)).toEqual(["P5", "15.500", "14 laps", "+0.21 s"]);
     expect(cellSlots(practice, null)).toEqual(slots);
     expect(colouredFigures(slots)).toBe(0);
@@ -387,8 +426,8 @@ describe("practice and qualifying cells (round 3, #33)", () => {
     expect(one.map(text)).toEqual(["P3", "1:16.204", "—"]);
   });
 
-  it("the race cell is unchanged: seven slots", () => {
-    expect(cellSlots(session({ session_type: "Race", overview: { final_position: 4 } }), null).map((s) => s.key)).toEqual(["pos", "laps", "best", "pace", "stops", "fuel", "run"]);
+  it("the race cell: seven slots", () => {
+    expect(cellSlots(session({ session_type: "Race", overview: { final_position: 4 } }), null).map((s) => s.key)).toEqual(["pos", "laps", "best", "pace", "stops", "burn", "run"]);
   });
 
   it("signed seconds to two decimals", () => {

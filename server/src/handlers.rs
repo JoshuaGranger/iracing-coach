@@ -696,11 +696,16 @@ async fn mark_projected(
                 .collect::<rusqlite::Result<_>>()?;
             for (session_id, _) in &sessions {
                 if let Some(overview) = &overview {
+                    // the session-info figures (field size, official place, grid) join the
+                    // view figures; the event's other sessions re-read theirs
+                    let mut overview = overview.clone();
+                    crate::overview::merge_results(&tx, *session_id, &mut overview)?;
                     tx.execute(
                         "UPDATE sessions SET overview_json = ?2 WHERE session_id = ?1",
                         params![session_id, overview.to_string()],
                     )?;
                 }
+                crate::overview::refresh_event(&tx, *session_id)?;
                 crate::jobs::refresh_session_state(&tx, *session_id)?;
             }
             tx.commit()?;

@@ -621,16 +621,10 @@ class StageEquivalenceTests(unittest.TestCase):
                         ),
                     )
 
-    def test_track_geometry_and_foundation_statistics(self) -> None:
-        for seed, variant in VARIANTS:
-            with self.subTest(variant=variant):
-                table = engine.TelemetryTable(synthetic_race(seed, variant=variant))
-                identity = {"track_id": 1, "track_name": "Synthetic", "track_config": "Oval"}
-                assert_identical(
-                    self,
-                    foundations_reference.build_track_geometry(table.channels, table.metadata, identity, []),
-                    race_foundations.build_track_geometry(table.channels, table.metadata, identity, []),
-                )
+    def test_foundation_statistics(self) -> None:
+        # build_track_geometry left this equivalence with profile v24: the
+        # centreline rule (clean racing laps, cos-latitude scale, smoothing)
+        # deliberately changes its output. test_race_foundations pins the rule.
         for values in (
             noisy(random.Random(3), [f32(value / 7.0) for value in range(200)], 0.2),
             [10**400, 1.0, None],  # float() overflow is a gap in race_foundations

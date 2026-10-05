@@ -25,8 +25,19 @@
 //! - `_sanitize_geometry_layers` checks pit lane, entry and exit only (the line fields are
 //!   absent from the paths at that point), appending rejected names in that order; the reason
 //!   text sorts them.
-//! - `result.update(paths)` keeps the keys' positions; `transform` is appended after `quality`;
-//!   the hash is taken over the final dict.
+//! - `result.update(paths)` keeps the keys' positions; `transform` (with `longitude_scale` after
+//!   `normalization_scale`) and then `centreline` are appended after `quality`; the hash is taken
+//!   over the final dict.
+//! - Centreline rule `clean-racing-laps-v1` (`_clean_racing_laps`): an accepted point's `x` is
+//!   its longitude times `cos(radians(median latitude))` (the C library's `cos`); laps are runs
+//!   of equal finite `Lap` values over `[:min(count, len(Lap))]`, each column read over the same
+//!   slice; a lap is clean when every sample has a point, is off pit road, reads surface 3.0 when
+//!   `PlayerTrackSurface` is truthy, carries no `int(flags) & YELLOW_FLAGS`, and its fractions
+//!   leave no circular gap over 0.02; laps longer than `fastest * 1.05` samples are dropped.
+//!   With laps, only their points fill the bins (lap order, then sample order); without, every
+//!   off-pit point (the old rule). `_smooth_closed_path` runs only when the binned path has at
+//!   least seven points and no circular lap-fraction gap over 0.05: each point's `x` and `y` are
+//!   `round((sum of the seven neighbours, left to right from index - 3) / 7, 8)`.
 
 use std::cmp::Ordering;
 
@@ -34,7 +45,8 @@ use coach_numerics as num;
 
 use super::geometry_hash::track_geometry_sha256;
 use super::{
-    Channels, as_mapping, casefold, finite, format, int_of, median, py_str, round, sequence,
+    Channels, Series, as_mapping, casefold, finite, format, int_of, int_value, median, py_str,
+    round, sequence,
 };
 use crate::kernels::error::KernelError;
 use crate::kernels::value::{Dict, PyValue};
@@ -48,6 +60,12 @@ const MAX_AUXILIARY_BOUNDS_MARGIN: f64 = 0.45;
 const MAX_AUXILIARY_RELATIVE_SEGMENT_DISTANCE: f64 = 0.55;
 const GPS_PLACEHOLDER_EPSILON: f64 = 1e-9;
 const GPS_CLUSTER_RADIUS_DEGREES: f64 = 0.25;
+const YELLOW_FLAGS: i64 = 0x0008 | 0x0100 | 0x4000 | 0x8000;
+const CENTRELINE_RULE: &str = "clean-racing-laps-v1";
+const CLEAN_LAP_MAXIMUM_PERCENT_GAP: f64 = 0.02;
+const RACING_LAP_DURATION_TOLERANCE: f64 = 1.05;
+const CENTRELINE_SMOOTHING_POINTS: usize = 7;
+const TRACK_SURFACE_ON_TRACK: f64 = 3.0;
 
 /// A recorded point (`{"x", "y", "lap_pct", "sample_index"}`).
 #[derive(Clone, Copy)]
@@ -389,6 +407,130 @@ fn main_loop_quality(path: &[Point]) -> Result<(Dict, bool, f64, f64, f64), Kern
     ))
 }
 
+/// `_circular_maximum_gap(fractions)`: the largest gap around the circle of the distinct
+/// fractions, 1.0 below two.
+fn circular_maximum_gap(mut values: Vec<f64>) -> f64 {
+    // sorted(set(...)): the fractions are finite, so equal floats collapse to one.
+    values.sort_by(f64::total_cmp);
+    values.dedup_by(|a, b| a == b);
+    if values.len() < 2 {
+        return 1.0;
+    }
+    let mut maximum = 1.0 - values[values.len() - 1] + values[0];
+    for pair in values.windows(2) {
+        let gap = pair[1] - pair[0];
+        if gap > maximum {
+            maximum = gap;
+        }
+    }
+    maximum
+}
+
+/// A centreline lap: `(lap number, first sample, end sample)`.
+type Lap = (f64, usize, usize);
+
+/// `_clean_racing_laps(channels, valid, pit, count)`.
+fn clean_racing_laps(
+    channels: &Channels<'_>,
+    valid: &[Option<Sample>],
+    pit: &dyn Fn(usize) -> Result<bool, KernelError>,
+    count: usize,
+) -> Result<Vec<Lap>, KernelError> {
+    // `channels.get(name) or ()`: a missing or empty channel reads as no samples.
+    let optional = |name: &str| -> Result<Option<Series<'_>>, KernelError> {
+        if channels.truthy(name)? {
+            Ok(Some(channels.required(name)?))
+        } else {
+            Ok(None)
+        }
+    };
+    let Some(lap_series) = optional("Lap")? else {
+        return Ok(Vec::new());
+    };
+    let limit = count.min(lap_series.len());
+    let surface = optional("PlayerTrackSurface")?;
+    let flags = optional("SessionFlags")?;
+    // Each column is read over `[:limit]`, so an index at or past its own length is `None`.
+    let read = |series: Option<Series<'_>>, index: usize| -> Option<f64> {
+        series.and_then(|s| {
+            if index < limit.min(s.len()) {
+                s.finite(index)
+            } else {
+                None
+            }
+        })
+    };
+    let mut clean: Vec<Lap> = Vec::new();
+    let mut start = 0;
+    while start < limit {
+        let Some(number) = lap_series.finite(start) else {
+            start += 1;
+            continue;
+        };
+        let mut stop = start + 1;
+        while stop < limit && lap_series.finite(stop) == Some(number) {
+            stop += 1;
+        }
+        let mut fractions: Vec<f64> = Vec::with_capacity(stop - start);
+        let mut usable = true;
+        for (index, sample) in valid.iter().enumerate().take(stop).skip(start) {
+            let Some(point) = sample else {
+                usable = false;
+                break;
+            };
+            if pit(index)? {
+                usable = false;
+                break;
+            }
+            if surface.is_some() && read(surface, index) != Some(TRACK_SURFACE_ON_TRACK) {
+                usable = false;
+                break;
+            }
+            if let Some(flag) = read(flags, index)
+                && int_of(flag)? & YELLOW_FLAGS != 0
+            {
+                usable = false;
+                break;
+            }
+            fractions.push(point.lap_pct);
+        }
+        if usable && circular_maximum_gap(fractions) <= CLEAN_LAP_MAXIMUM_PERCENT_GAP {
+            clean.push((number, start, stop));
+        }
+        start = stop;
+    }
+    let Some(fastest) = clean.iter().map(|&(_, start, stop)| stop - start).min() else {
+        return Ok(Vec::new());
+    };
+    let longest = fastest as f64 * RACING_LAP_DURATION_TOLERANCE;
+    clean.retain(|&(_, start, stop)| ((stop - start) as f64) <= longest);
+    Ok(clean)
+}
+
+/// `_smooth_closed_path(path)`: a circular moving average of `x` and `y` (left-to-right sums,
+/// one division, rounded to 8 digits).
+fn smooth_closed_path(path: &[Point]) -> Result<Vec<Point>, KernelError> {
+    let count = path.len() as i64;
+    let width = CENTRELINE_SMOOTHING_POINTS as i64;
+    let half = width / 2;
+    let mut smoothed = Vec::with_capacity(path.len());
+    for (index, point) in path.iter().enumerate() {
+        let mut total_x = 0.0;
+        let mut total_y = 0.0;
+        for offset in -half..=half {
+            let neighbour = &path[(index as i64 + offset).rem_euclid(count) as usize];
+            total_x += neighbour.x;
+            total_y += neighbour.y;
+        }
+        smoothed.push(Point {
+            x: round(total_x / width as f64, 8)?,
+            y: round(total_y / width as f64, 8)?,
+            ..point.clone()
+        });
+    }
+    Ok(smoothed)
+}
+
 /// `_cross_line(path, index)` with the default width.
 fn cross_line(path: &[Point], index: usize) -> Result<Option<Line>, KernelError> {
     const WIDTH: f64 = 0.018;
@@ -621,6 +763,7 @@ pub fn build_track_geometry(
 
     let mut bins: Vec<Vec<Sample>> = vec![Vec::new(); main_bins];
     let mut valid: Vec<Option<Sample>> = vec![None; count];
+    let mut longitude_scale = 1.0;
     if !candidates.is_empty() {
         let xs: Vec<f64> = candidates.iter().map(|c| c.x).collect();
         let ys: Vec<f64> = candidates.iter().map(|c| c.y).collect();
@@ -641,21 +784,39 @@ pub fn build_track_geometry(
             GPS_CLUSTER_RADIUS_DEGREES,
             median_distance + max2(0.0005, distance_mad) * 12.0,
         );
+        longitude_scale = num::cos(num::radians(center_y))?;
         for candidate in &candidates {
             if num::hypot(candidate.x - center_x, candidate.y - center_y) > cluster_radius {
                 rejected_gps_samples += 1;
                 continue;
             }
-            let wrapped = num::float_mod(candidate.lap_pct, 1.0)?;
-            let point = Sample {
-                lap_pct: wrapped,
+            valid[candidate.index] = Some(Sample {
+                x: candidate.x * longitude_scale,
+                lap_pct: num::float_mod(candidate.lap_pct, 1.0)?,
                 ..*candidate
-            };
-            valid[candidate.index] = Some(point);
-            if !pit(candidate.index)? {
-                let bin = int_of(wrapped * main_bins as f64)?.max(0);
-                let bin = (bin as usize).min(main_bins - 1);
-                bins[bin].push(point);
+            });
+        }
+    }
+
+    let centreline_laps = clean_racing_laps(channels, &valid, &pit, count)?;
+    let mut bin_point = |point: Sample| -> Result<(), KernelError> {
+        let bin = int_of(point.lap_pct * main_bins as f64)?.max(0);
+        let bin = (bin as usize).min(main_bins - 1);
+        bins[bin].push(point);
+        Ok(())
+    };
+    if centreline_laps.is_empty() {
+        for (index, point) in valid.iter().enumerate() {
+            if let Some(point) = point
+                && !pit(index)?
+            {
+                bin_point(*point)?;
+            }
+        }
+    } else {
+        for &(_, start, stop) in &centreline_laps {
+            for point in valid[start..stop].iter().flatten() {
+                bin_point(*point)?;
             }
         }
     }
@@ -679,6 +840,13 @@ pub fn build_track_geometry(
             lap_pct: Some(round((bin_index as f64 + 0.5) / main_bins as f64, 6)?),
             observations: points.len(),
         });
+    }
+    // Only a path that goes all the way round is a loop whose ends are neighbours.
+    let smoothed = main_raw.len() >= CENTRELINE_SMOOTHING_POINTS
+        && circular_maximum_gap(main_raw.iter().filter_map(|p| p.lap_pct).collect())
+            <= MAX_MAIN_LOOP_LAP_PERCENT_GAP;
+    if smoothed {
+        main_raw = smooth_closed_path(&main_raw)?;
     }
 
     let rate_value = match get(metadata, "sample_rate") {
@@ -790,10 +958,39 @@ pub fn build_track_geometry(
             let mut dict = Dict::with_capacity(2);
             dict.push_new("source_bounds", bounds);
             dict.push_new("normalization_scale", t.scale);
+            dict.push_new("longitude_scale", longitude_scale);
             PyValue::Dict(dict)
         }
     };
     result.push_new("transform", transform_value);
+    let mut centreline = Dict::with_capacity(4);
+    centreline.push_new("rule", CENTRELINE_RULE);
+    centreline.push_new(
+        "source",
+        if centreline_laps.is_empty() {
+            "off_pit_samples"
+        } else {
+            "clean_racing_laps"
+        },
+    );
+    centreline.push_new(
+        "laps",
+        PyValue::List(
+            centreline_laps
+                .iter()
+                .map(|&(number, _, _)| int_value(number))
+                .collect::<Result<_, _>>()?,
+        ),
+    );
+    centreline.push_new(
+        "smoothing_points",
+        PyValue::Int(if smoothed {
+            CENTRELINE_SMOOTHING_POINTS as i64
+        } else {
+            0
+        }),
+    );
+    result.push_new("centreline", centreline);
 
     let (loop_quality, main_loop_complete, coverage, gap, closure) = main_loop_quality(main_path)?;
     if main_loop_complete {

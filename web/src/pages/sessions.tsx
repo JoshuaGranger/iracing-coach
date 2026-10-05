@@ -7,7 +7,7 @@ import { readJson, writeJson } from "../core/store";
 import { useLibraryChoice } from "../core/library";
 import { FilterBar, type FilterControl } from "../ui/filter-bar";
 import { Empty, ErrorLine, Loading, Notice } from "../ui/kit";
-import { EventRow, SetupBadge } from "../sessions/event-row";
+import { EventRow, LockIcon } from "../sessions/event-row";
 import { useLibrary } from "../sessions/library";
 import {
   FILTER_IDS,
@@ -115,7 +115,9 @@ export function SessionsPage({ customerId }: { customerId: number }) {
             {o.phase}
           </span>
         ) : id === "setup" ? (
-          <SetupBadge type={o.key === "Fixed" ? "Fixed" : "Open"} />
+          <span class="sx-lock" aria-hidden="true">
+            <LockIcon type={o.key === "Fixed" ? "Fixed" : "Open"} />
+          </span>
         ) : undefined,
     }));
 

@@ -18,8 +18,10 @@ const bar = (page: Page) => page.locator(".fb");
 const GAIN = "rgb(61, 220, 132)";
 const LOSS = "rgb(255, 90, 110)";
 const CAUTION = "rgb(255, 212, 59)";
-const PHASE_P = "rgb(95, 116, 139)";
-const PHASE_R = "rgb(242, 245, 247)";
+// Phase hues (round 4, #52): config/theme.dark.json phase.practiceHue, qualifyHue, raceHue.
+const PHASE_P = "rgb(95, 135, 179)";
+const PHASE_Q = "rgb(201, 138, 171)";
+const PHASE_R = "rgb(238, 243, 247)";
 
 type LibraryRow = { session_id: number; event_key: string; overview: Record<string, unknown>; start_time_utc: string };
 
@@ -128,9 +130,9 @@ for (const device of ROUND2_DEVICES) {
       const row = bristol(page);
       await expect(row.getByRole("heading", { name: "Bristol Motor Speedway" })).toBeVisible();
       await expect(row.locator(".sx-meta span").first()).toHaveText("Oval · Mon Sep 28");
-      await expect(row.locator(".sx-meta .chip-constraint")).toHaveText("Fixed");
+      await expect(row.getByRole("img", { name: "Fixed setup" })).toHaveCount(1);
       await expect(row.locator(".sx-car")).toContainText("NASCAR Xfinity Toyota Supra");
-      await expect(row.locator(".sx-phase")).toHaveText(["Practice", "Qualifying", "Race"]);
+      await expect(row.locator(".sx-phase")).toHaveText([/Practice$/, /Qualifying$/, /Race$/]);
       await expect(row.locator(".sx-head .sx-l")).toHaveText(["1:00 pm", "1:30 pm", "2:00 pm · 2 rec"]);
       expect(await row.locator("li.session-row").evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")))).toEqual(["practice", "qualify", "race"]);
       await expect(page.locator(".sx-events details, .sx-events [aria-expanded]")).toHaveCount(0);
@@ -189,40 +191,146 @@ for (const device of ROUND2_DEVICES) {
     test("seven labelled slots per phase, a dash where the backend reported nothing", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const race = cell(page, 103);
-      await expect(race.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Finish", "Grn · Cau", "Best", "Pace", "Stops", "Fuel", "Run"]);
-      await expect(value(race, "pos")).toHaveText("P4▲8");
+      await expect(race.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Finish", "Grn · Cau", "Best", "Pace", "Stops", "Burn", "Long run"]);
+      await expect(value(race, "pos")).toHaveText("P4▲8from P12");
       await expect(value(race, "laps")).toHaveText("60·20");
       await expect(value(race, "best")).toHaveText("15.234");
       await expect(value(race, "pace")).toHaveText("15.612+0.021");
       await expect(value(race, "stops")).toHaveText("3");
-      await expect(value(race, "fuel")).toHaveText("21.6gal");
+      await expect(value(race, "burn")).toHaveText("0.47gal/lap");
       await expect(value(race, "run")).toHaveText("41");
       await expect(slot(race, "laps")).toHaveAttribute("title", "Green · caution laps");
       await expect(slot(race, "pos")).toHaveAttribute("title", "Finished P4, started P12");
+      await expect(slot(race, "burn")).toHaveAttribute("title", "Fuel burn per green lap, gallons");
+      // Fuel used over the race is no longer a slot (#57).
+      await expect(slot(race, "fuel")).toHaveCount(0);
 
       await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { recorded_laps: 82, final_position: 4 } } : r)));
       await page.reload();
       const bare = cell(page, 103);
       await expect(value(bare, "pos")).toHaveText("P4");
-      for (const key of ["laps", "best", "pace", "stops", "fuel", "run"]) await expect(value(bare, key)).toHaveText("—");
+      for (const key of ["laps", "best", "pace", "stops", "burn", "run"]) await expect(value(bare, key)).toHaveText("—");
+    });
+
+    test("round 4: the finish change names its reference, the official start, never the first recorded position (#56)", async ({ page }) => {
+      // Bristol's race: first recorded P14, gridded P12, finished P4.
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const race = cell(page, 103);
+      await expect(race.locator(".sx-p.gain")).toHaveText("▲8");
+      await expect(slot(race, "pos").locator(".sx-p.unit")).toHaveText("from P12");
+      // The reference is muted text, the arrow the one colour.
+      const muted = await slot(race, "pos").locator(".sx-p.unit").evaluate((el) => getComputedStyle(el).color);
+      expect([GAIN, LOSS]).not.toContain(muted);
+      // Without an official start there is nothing to measure against: no arrow, no reference.
+      await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { ...r.overview, start_position: null } } : r)));
+      await page.reload();
+      await expect(value(cell(page, 103), "pos")).toHaveText("P4");
+      await expect(cell(page, 103).locator(".sx-p.gain, .sx-p.loss")).toHaveCount(0);
+      // Printed whole at every width.
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await page.reload();
+      const v = value(cell(page, 103), "pos");
+      await expect(v).toHaveText("P4▲8from P12");
+      expect(await v.evaluate((el) => el.scrollWidth > el.clientWidth + 1), "the finish is clipped").toBe(false);
+    });
+
+    test("round 4: practice and qualifying read P3 / 24, the official place over the field; the recorded place alone without it (#55)", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      // Bristol's qualifying ended P2 when its recording stopped and was classified P5 of 24.
+      await expect(quiet(cell(page, 102), "pos")).toHaveText("P5/ 24");
+      await expect(slot(cell(page, 102), "pos")).toHaveAttribute("title", "Classified P5 of 24");
+      await expect(quiet(cell(page, 101), "pos")).toHaveText("P5/ 24");
+      // A practice-only event has no later recording: the recorded place alone, never over a field.
+      const solo = page.getByRole("region", { name: "Lime Rock Park - Grand Prix" }).locator("li.session-row").first();
+      await expect(quiet(solo, "pos")).toHaveText("P7");
+      await expect(slot(solo, "pos")).toHaveAttribute("title", "Last recorded P7");
+      // The race keeps its finish and change: no field size there.
+      await expect(value(cell(page, 103), "pos")).not.toContainText("/");
+    });
+
+    test("round 4: P, Q and R badges and phase hues; the green count in green, caution in amber (#52, #53)", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const row = bristol(page);
+      await expect(row.locator(".sx-badge")).toHaveText(["P", "Q", "R"]);
+      // The badge is the cell's top-left mark.
+      for (const c of await row.locator("li.session-row").all()) {
+        const [cb, bb] = [(await c.boundingBox())!, (await c.locator(".sx-badge").boundingBox())!];
+        expect(bb.x - cb.x).toBeLessThan(24);
+        expect(bb.y - cb.y).toBeLessThan(16);
+      }
+      const bg = (l: Locator) => l.evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(await Promise.all((await row.locator(".sx-badge").all()).map(bg))).toEqual([PHASE_P, PHASE_Q, PHASE_R]);
+      const edge = (id: number) => cell(page, id).locator(".sx-cell-body").evaluate((el) => getComputedStyle(el).boxShadow);
+      expect(await edge(101)).toContain(PHASE_P);
+      expect(await edge(102)).toContain(PHASE_Q);
+      expect(await edge(103)).toContain(PHASE_R);
+      const colour = (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
+      const laps = slot(cell(page, 103), "laps");
+      await expect(laps.locator(".sx-p.green")).toHaveText("60");
+      expect(await colour(laps.locator(".sx-p.green"))).toBe(GAIN);
+      expect(await colour(laps.locator(".sx-p.caution"))).toBe(CAUTION);
+      // The investigation's P · Q · R selector uses the same three hues.
+      await page.getByRole("link", { name: /^Race, Bristol Motor Speedway - Oval/ }).first().click();
+      const seg = (name: string) => page.getByRole("group", { name: "Session" }).getByRole("button", { name, exact: true });
+      await expect(seg("Race")).toBeVisible();
+      expect(await seg("Race").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(PHASE_R);
+      expect(await seg("Practice").evaluate((el) => getComputedStyle(el, "::after").backgroundColor)).toBe(PHASE_P);
+      expect(await seg("Qualifying").evaluate((el) => getComputedStyle(el, "::after").backgroundColor)).toBe(PHASE_Q);
+    });
+
+    test("round 4: each event its own card with a gap, the setup lock in its top-right corner (#50, #51)", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const cards = page.locator("section.sx-event");
+      await expect(cards.first()).toBeVisible();
+      const boxes = await Promise.all((await cards.all()).slice(0, 3).map(async (c) => (await c.boundingBox())!));
+      for (let i = 1; i < boxes.length; i++) {
+        const gap = boxes[i]!.y - (boxes[i - 1]!.y + boxes[i - 1]!.height);
+        expect(gap).toBeGreaterThanOrEqual(10);
+        expect(gap).toBeLessThanOrEqual(14);
+      }
+      for (const c of (await cards.all()).slice(0, 3)) {
+        const st = await c.evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { sides: [cs.borderTopWidth, cs.borderLeftWidth, cs.borderRightWidth, cs.borderBottomWidth], radius: parseFloat(cs.borderTopLeftRadius) };
+        });
+        expect(st.sides).toEqual(["1px", "1px", "1px", "1px"]);
+        expect(st.radius).toBeGreaterThan(0);
+      }
+      const card = bristol(page);
+      const lock = card.getByRole("img", { name: "Fixed setup" });
+      await expect(lock).toHaveAttribute("title", "Fixed setup");
+      const [cb, lb] = [(await card.boundingBox())!, (await lock.boundingBox())!];
+      expect(cb.x + cb.width - (lb.x + lb.width)).toBeLessThan(12);
+      expect(lb.y - cb.y).toBeLessThan(12);
+      // Closed for fixed, open for open: different glyphs.
+      const open = page.getByRole("region", { name: "Indianapolis Raceway Park - Oval" }).first().getByRole("img", { name: "Open setup" });
+      await expect(open).toHaveCount(1);
+      expect(await lock.locator("path").getAttribute("d")).not.toBe(await open.locator("path").getAttribute("d"));
+      // The lock overlaps no figure.
+      for (const c of await card.locator(".sx-slot").all()) {
+        const b = (await c.boundingBox())!;
+        const overlap = !(b.x + b.width <= lb.x || lb.x + lb.width <= b.x || b.y + b.height <= lb.y || lb.y + lb.height <= b.y);
+        expect(overlap).toBe(false);
+      }
+      await expectNoHorizontalScroll(page);
     });
 
     test("practice: position, fastest lap, longest run without a reset and its pace loss; qualifying: position, lap 1, lap 2", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const practice = cell(page, 101);
-      await expect(practice.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Pos", "Best", "Run", "Fall-off"]);
-      await expect(quiet(practice, "pos")).toHaveText("P5");
+      await expect(practice.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Pos", "Best", "Long run", "Fall-off"]);
+      await expect(quiet(practice, "pos")).toHaveText("P5/ 24");
       await expect(quiet(practice, "best")).toHaveText("15.500");
       await expect(quiet(practice, "run")).toHaveText("9laps");
       await expect(quiet(practice, "loss")).toHaveText("+0.21s");
       await expect(slot(practice, "run")).toHaveAttribute("title", "Longest run without a reset, laps");
       const qualify = cell(page, 102);
       await expect(qualify.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Pos", "Lap 1", "Lap 2"]);
-      await expect(quiet(qualify, "pos")).toHaveText("P2");
+      await expect(quiet(qualify, "pos")).toHaveText("P5/ 24");
       await expect(quiet(qualify, "lap1")).toHaveText("15.610");
       await expect(quiet(qualify, "lap2")).toHaveText("15.410");
-      // No fuel, stops, cautions or pace trend in the preamble.
-      for (const c of [practice, qualify]) for (const key of ["fuel", "stops", "laps", "pace"]) await expect(slot(c, key)).toHaveCount(0);
+      // No burn, stops, cautions or pace trend in the preamble.
+      for (const c of [practice, qualify]) for (const key of ["burn", "fuel", "stops", "laps", "pace"]) await expect(slot(c, key)).toHaveCount(0);
       // A faster end is a true minus; a run with too few clean laps and a missing second lap are dashes.
       await expect(quiet(cell(page, 104), "loss")).toHaveText("−0.08s");
       await expect(quiet(page.getByRole("region", { name: "Indianapolis Raceway Park - Oval" }).nth(1).locator("li.session-row").first(), "loss")).toHaveText("—");
@@ -255,7 +363,7 @@ for (const device of ROUND2_DEVICES) {
       await expect(a).toBeVisible();
       for (const c of [a, b]) {
         await c.scrollIntoViewIfNeeded();
-        for (const key of ["run", "pace", "fuel"]) {
+        for (const key of ["run", "pace", "burn"]) {
           const v = value(c, key);
           await expect(v).not.toHaveText("—");
           // Printed whole: never cut to an ellipsis.
@@ -265,7 +373,7 @@ for (const device of ROUND2_DEVICES) {
       }
       await expect(value(a, "run")).toHaveText("41");
       await expect(value(b, "run")).toHaveText("38");
-      await expect(value(b, "fuel")).toHaveText("18.6gal");
+      await expect(value(b, "burn")).toHaveText("0.44gal/lap");
       expect(page.url()).toBe(url);
       if (wide) {
         // Both figures sit on one screen at once.
@@ -279,12 +387,12 @@ for (const device of ROUND2_DEVICES) {
     test("the large colourful tile treatment is gone: no fills, no glow, no bands", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       await expect(bristol(page)).toBeVisible();
-      for (const gone of [".sx-big", ".sx-rb", ".sx-band", ".sx-win", ".sx-flag", ".sx-chg", ".sx-dot", ".sx-stats", ".sx-tile", ".sx-tiles", ".sx-badge", "section.sx-event > header"]) await expect(page.locator(gone), gone).toHaveCount(0);
+      for (const gone of [".sx-big", ".sx-rb", ".sx-band", ".sx-win", ".sx-flag", ".sx-chg", ".sx-dot", ".sx-stats", ".sx-tile", ".sx-tiles", "section.sx-event > header"]) await expect(page.locator(gone), gone).toHaveCount(0);
       const { glow, fills } = await paint(page);
       expect(glow, "glow or shadow").toEqual([]);
-      // The only saturated fills are the car stripes (identity) and the Session filter's phase letters.
-      expect(fills.filter((f) => !/sx-stripe/.test(f))).toEqual([]);
-      // A phase keeps its one unsaturated hue as an edge.
+      // The only saturated fills are the car stripes (identity) and the phase letters (the P, Q, R badges, #52); no panel fill.
+      expect(fills.filter((f) => !/sx-stripe|sx-badge/.test(f))).toEqual([]);
+      // A phase keeps its hue as an edge.
       const edge = (c: Locator) => c.locator(".sx-cell-body").evaluate((el) => getComputedStyle(el).boxShadow);
       expect(await edge(cell(page, 101))).toContain(PHASE_P);
       expect(await edge(cell(page, 103))).toContain(PHASE_R);
@@ -308,7 +416,7 @@ for (const device of ROUND2_DEVICES) {
       await expect(cell(page, 101).locator(".sx-p.caution")).toHaveCount(0);
       await expect(cell(page, 101).locator(".sx-p.gain, .sx-p.loss")).toHaveCount(0);
       // A win is a plain number, no flag.
-      await expect(value(cell(page, 110), "pos")).toHaveText("P1▲2");
+      await expect(value(cell(page, 110), "pos")).toHaveText("P1▲2from P3");
       await expect(cell(page, 110).locator(".sx-flag, .sx-win")).toHaveCount(0);
       // The fastest lap is not coloured across phases: qualifying's lap 2 holds NH's event best, marked by weight in the plain
       // secondary colour of every preamble figure.
@@ -316,13 +424,13 @@ for (const device of ROUND2_DEVICES) {
       await expect(value(cell(page, 110), "best")).not.toHaveAttribute("data-event-best", "true");
       expect(await colour(quiet(cell(page, 109), "lap2").locator(".sx-qp"))).toBe(await colour(quiet(cell(page, 109), "lap1").locator(".sx-qp")));
       expect(await quiet(cell(page, 109), "lap2").evaluate((el) => getComputedStyle(el).fontWeight)).toBe("700");
-      // At most two coloured figures in any phase cell.
+      // At most three coloured figures in any phase cell: the change, the green count, the caution count.
       const counts = await page.locator("li.session-row").evaluateAll((cells, [g, l, c]) => cells.map((el) => [...el.querySelectorAll(".sx-p")].filter((p) => [g, l, c].includes(getComputedStyle(p).color)).length), [GAIN, LOSS, CAUTION]);
-      expect(Math.max(...counts)).toBeLessThanOrEqual(2);
+      expect(Math.max(...counts)).toBeLessThanOrEqual(3);
     });
 
     test("a place lost reads in the loss colour with its figure", async ({ page }) => {
-      await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { ...r.overview, starting_position: 7, final_position: 9 } } : r)));
+      await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { ...r.overview, start_position: 7, final_position: 9 } } : r)));
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const race = cell(page, 103);
       await expect(race.locator(".sx-p.loss")).toHaveText("▼2");
@@ -337,34 +445,41 @@ for (const device of ROUND2_DEVICES) {
       const px = (l: Locator) => l.evaluate((el) => getComputedStyle(el).fontSize);
       expect(await px(value(race, "best").locator(".sx-p").first())).toBe("15px");
       expect(await px(race.locator(".sx-slot[data-slot=best] .sx-l"))).toBe("14px");
-      expect(await px(race.locator(".sx-slot[data-slot=fuel] .sx-p.unit"))).toBe("14px");
+      expect(await px(race.locator(".sx-slot[data-slot=burn] .sx-p.unit"))).toBe("14px");
+      expect(await px(race.locator(".sx-slot[data-slot=pos] .sx-p.unit"))).toBe("14px");
+      expect(await px(race.locator(".sx-badge"))).toBe("14px");
       expect(await px(bristol(page).getByRole("heading", { name: "Bristol Motor Speedway" }))).toBe("16px");
       expect(await px(bristol(page).locator(".sx-meta span").first())).toBe("14px");
       expect(await px(bristol(page).locator(".sx-car span").first())).toBe("14px");
       const box = (await race.boundingBox())!;
       expect(box.height).toBeGreaterThanOrEqual(80);
-      // Larger type lets the row grow (the plan's about 5.5 rem is a floor); it must not run away.
-      expect(box.height).toBeLessThanOrEqual(150);
+      // Larger type lets the row grow (the plan's about 5.5 rem is a floor); it must not run away. On a phone the race's header
+      // takes its own line above three rows of figures, so a figure is never cut (round 4: `from P12`, `gal/lap`).
+      expect(box.height).toBeLessThanOrEqual(phone ? 180 : 150);
       // The silhouette is about 1.5 rem tall.
     });
 
-    test("Fixed and Open are the one constraint chip; a phase that differs carries its own; no status-normal chip", async ({ page }) => {
+    test("Fixed and Open are a lock glyph, not a chip; a phase that differs carries its own; no status-normal chip", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
-      await expect(bristol(page).locator(".sx-meta .chip-constraint")).toHaveText("Fixed");
-      await expect(page.getByRole("region", { name: "Indianapolis Raceway Park - Oval" }).first().locator(".sx-meta .chip-constraint")).toHaveText("Open");
+      const lock = (l: Locator) => l.locator(".sx-card-lock");
+      await expect(lock(bristol(page))).toHaveAttribute("aria-label", "Fixed setup");
+      await expect(lock(page.getByRole("region", { name: "Indianapolis Raceway Park - Oval" }).first())).toHaveAttribute("aria-label", "Open setup");
       const hampshire = page.getByRole("region", { name: "New Hampshire Motor Speedway - Oval" });
-      await expect(hampshire.locator(".sx-meta .chip-constraint")).toHaveText("Fixed");
-      await expect(cell(page, 108).locator(".sx-head .chip-constraint")).toHaveText("Open");
-      await expect(cell(page, 109).locator(".sx-head .chip")).toHaveCount(0);
+      await expect(lock(hampshire)).toHaveAttribute("aria-label", "Fixed setup");
+      await expect(cell(page, 108).locator(".sx-head .sx-lock")).toHaveAttribute("aria-label", "Open setup");
+      await expect(cell(page, 109).locator(".sx-head .sx-lock")).toHaveCount(0);
+      // The words are never drawn: only the glyph, its meaning on hover.
+      await expect(page.locator(".sx-events .chip-constraint")).toHaveCount(0);
+      await expect(page.locator(".sx-events").getByText(/^(Fixed|Open)$/)).toHaveCount(0);
       // An event with no recorded setup type shows none. The series is not drawn; it is in the car's tooltip.
       await expect(bristol(page).locator(".sx-car span[title]")).toHaveAttribute("title", "NASCAR Xfinity Toyota Supra · NASCAR Xfinity Series");
       await expect(bristol(page).getByText("NASCAR Xfinity Series")).toHaveCount(0);
       const none = page.getByRole("region", { name: "Indianapolis Raceway Park - Oval" }).nth(1);
-      await expect(none.locator(".sx-meta .chip")).toHaveCount(0);
+      await expect(none.locator(".sx-lock")).toHaveCount(0);
       await expect(page.getByRole("region", { name: "Lime Rock Park - Grand Prix" }).getByText("Global Mazda MX-5 Cup")).toHaveCount(1);
-      // Only constraints and exceptions exist; none of the retired status chips.
+      // Only exceptions are chips; none of the retired status chips.
       const kinds = await page.locator(".sx-events .chip").evaluateAll((els) => [...new Set(els.map((e) => [...e.classList].find((c) => /^chip-(constraint|exception|action)$/.test(c)) ?? "other"))].sort());
-      expect(kinds).toEqual(["chip-constraint", "chip-exception"]);
+      expect(kinds).toEqual(["chip-exception"]);
       for (const word of ["Analyzed", "Values known", "Recording"]) await expect(page.getByText(word, { exact: true })).toHaveCount(0);
       expect(await page.locator(".sx-events .chip").evaluateAll((els) => els.map((e) => getComputedStyle(e).borderRadius))).not.toContain("999px");
     });
@@ -478,7 +593,7 @@ for (const device of ROUND2_DEVICES) {
       await page.keyboard.press("Escape");
       await closeFilters(page);
       await expect(page.locator("li.session-row")).toHaveCount(4);
-      await expect(page.locator("li.session-row .sx-phase")).toHaveText(["Race", "Race", "Race", "Race"]);
+      await expect(page.locator("li.session-row .sx-phase")).toHaveText([/Race$/, /Race$/, /Race$/, /Race$/]);
       // Races only: one column, the race panel as wide as the phases area inside its gutter.
       const only = (await page.locator("li.session-row").first().boundingBox())!;
       const inner = await page.locator(".sx-cells").first().evaluate((el) => {
@@ -605,7 +720,7 @@ for (const device of ROUND2_DEVICES) {
   });
 }
 
-// Acceptance screenshots (round 3 R1: web/target/round3/R1): the list at the three viewports, one event's three blocks, the exceptions.
+// Acceptance screenshots (round 4 S1: web/target/round4/S1): the list at the three viewports, one event's card, the exceptions.
 const dir = process.env.COACH_SCREENS_DIR;
 test.describe("screenshots", () => {
   test.skip(!dir, "set COACH_SCREENS_DIR to write the screenshots");
@@ -628,6 +743,12 @@ test.describe("screenshots", () => {
         await cell(page, 108).scrollIntoViewIfNeeded();
         await page.waitForTimeout(150);
         await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}-exceptions.png` });
+
+        // The investigation's P · Q · R selector in the same phase hues (#52).
+        await page.goto(hash(`/d/${DRIVER}/s/103/race`));
+        const pqr = page.getByRole("group", { name: "Session" });
+        await expect(pqr).toBeVisible();
+        await pqr.screenshot({ path: `${dir}/investigation-pqr-${d.viewport.width}.png` });
       });
     });
   }

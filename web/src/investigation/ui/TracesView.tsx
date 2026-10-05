@@ -11,8 +11,6 @@ import { applyLayoutAction, insertSignalRow, moveRow, placeSignal, removeRow, re
 import { activeLayout, type LayoutSet } from "../layout-sets";
 import type { RaceViewData, TraceLayoutBody, TraceRowSpec } from "../types";
 import type { Comparison } from "../investigation-model";
-import { groupMap } from "./comparison-model";
-import { ComparisonStrip } from "./ComparisonPicture";
 import { LapRail } from "./LapRail";
 import { TraceChart } from "./TraceChart";
 import { TraceToolbox, type LayoutCommandRequest } from "./TraceToolbox";
@@ -44,7 +42,7 @@ export interface TracesViewProps {
   analysisKey: string;
   reducedMotion: boolean;
   onCursor?(cursor: TelemetryCursor | null): void;
-  /** The selected comparison: its groups mark the rail and its picture sits above the traces. */
+  /** The workspace's selected comparison. Traces draws nothing of it (#66): the rail, the chart, the map and the cursor readouts. */
   comparison?: Comparison | null;
 }
 
@@ -221,7 +219,6 @@ export function TracesView(props: TracesViewProps) {
     edit(placeSignal(layoutRef.current, rowId, signalId));
     setLoadTick((value) => value + 1);
   };
-  const groups = useMemo(() => groupMap(props.comparison ?? null), [props.comparison]);
   const trackPoints = props.map?.points ?? [];
   const initialFraction = region ? (region.start + region.end) / 2 : 0.25;
 
@@ -229,16 +226,15 @@ export function TracesView(props: TracesViewProps) {
     <div class={`ri-traces${full ? " full" : ""}`} data-ri-view="traces">
       <LapRail
         data={data} runs={props.runs} selected={new Set(selected)} spotlight={spotlight} zeroLap={railZero} greenOnly={greenOnly} cleanOnly={cleanOnly}
-        incidents={incidents} pitStops={stops} groups={groups} comparison={props.comparison ?? null}
+        incidents={incidents} pitStops={stops}
         onToggle={toggle} onGreenOnly={(value) => applyFilters(value, cleanOnly)} onCleanOnly={(value) => applyFilters(greenOnly, value)}
         onFastest={() => { const lap = fastestLap(data); setSelected(lap === null ? [] : [lap]); setSpotlight(null); }}
         onBestThree={() => { setSelected(bestThree(data)); setSpotlight(null); }}
         onClear={() => { setSelected([]); setSpotlight(null); }}
         onShowAll={showAll}
       />
-      <div class={`ri-traces-right${props.comparison ? " with-comparison" : ""}`}>
+      <div class="ri-traces-right">
         <TrackPanel data={data} map={props.map} mode={mode} onModeChange={setMode} selectedLaps={selected} zeroLap={zeroLap} refs={trackRefs} analysisKey={props.analysisKey} sectors={sectorStarts(data)} loadTick={loadTick} />
-        {props.comparison && <ComparisonStrip comparison={props.comparison} />}
         <div class={`ri-studio${editing ? " editing" : ""}`} ref={studio}>
           <div class={`ri-card ri-studio-panel${full ? " ri-full" : ""}`} ref={card}>
             <div class="ri-trace-head">

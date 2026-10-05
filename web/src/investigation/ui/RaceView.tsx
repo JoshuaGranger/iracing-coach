@@ -1,4 +1,4 @@
-import type { ComponentChildren } from "preact";
+import { Fragment, type ComponentChildren } from "preact";
 import { useMemo, useRef, useState } from "preact/hooks";
 import { exposureText, lapTime, n, PlotScale, reasonsText, ticks } from "../format";
 import type { Comparison, Investigation, InvestigationLap } from "../investigation-model";
@@ -7,8 +7,8 @@ import { fastestCleanLap } from "../geometry/trace-model";
 import { asArray, asRecord, type RaceViewData, type TraceLapData } from "../types";
 import { useElementSize } from "./hooks";
 import { PitCard, PitGlyph, pitLabel } from "./PitPictogram";
-import { availableLayers, lapContexts, layersReadout, readLayers, writeLayers, type LapContext, type LayerKey } from "./race-layers";
-import { fitOnLaps, identityColour, paceFitText, runIdentities, runLine, smoothPath, type RunIdentity } from "./runs-model";
+import { availableLayers, fuelPath, lapContexts, layersReadout, readLayers, refills, seriesSegments, writeLayers, type LapContext, type LayerKey } from "./race-layers";
+import { fitDrawn, fitOnLaps, identityColour, runIdentities, runLineParts, runLineReadout, smoothPath, type RunIdentity } from "./runs-model";
 import { scaleFor, useRemPx } from "./unit";
 
 /** `green` everywhere except Offline Testing, where laps are counted as clean (audit R7). */
@@ -101,18 +101,6 @@ export function raceFastestLap(laps: readonly InvestigationLap[], race?: RaceVie
   return fastestCleanLap(source, race ? incidentPointsByLap(race) : new Map());
 }
 
-/** Contiguous runs of a per-lap series, broken at a missing lap, a run change or (for fuel) a refill: one polyline each. */
-export function seriesSegments<T extends { lap: number; value: number; run: number | null }>(points: readonly T[], breakOnRise = false): T[][] {
-  const out: T[][] = [];
-  for (const point of [...points].sort((a, b) => a.lap - b.lap)) {
-    const last = out[out.length - 1]?.[out[out.length - 1]!.length - 1];
-    const join = last && point.lap === last.lap + 1 && point.run === last.run && !(breakOnRise && point.value > last.value + 1e-9);
-    if (join) out[out.length - 1]!.push(point);
-    else out.push([point]);
-  }
-  return out;
-}
-
 interface ChartProps {
   inv: Investigation;
   stops: readonly PitStop[];
@@ -123,9 +111,11 @@ interface ChartProps {
   contexts: ReadonlyMap<number, LapContext>;
   layers: readonly LayerKey[];
   header: ComponentChildren;
+  /** The readout while no chart mark is under the pointer (a run line's hover or tap). */
+  note?: string;
 }
 
-function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, layers, header }: ChartProps) {
+function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, layers, header, note }: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
   const k = scaleFor(useRemPx());
@@ -133,7 +123,8 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
   const { pace: plotted, caution: cautionDots } = useMemo(() => chartLaps(inv.laps), [inv]);
   const incidents = useMemo(() => inv.timeline.filter((item) => item.kind === "incident"), [inv]);
   const timelinePits = useMemo(() => inv.timeline.filter((item) => item.kind === "pit_service" && !knownPitLaps.has(item.lap)), [inv, knownPitLaps]);
-  const fits = useMemo(() => inv.runs.map((run) => ({ run, points: fitOnLaps(run, inv.laps) })).filter((fit) => fit.points.length >= 2), [inv]);
+  // The screened fit only where it covers at least half the run's green laps (#59a).
+  const fits = useMemo(() => inv.runs.filter((run) => fitDrawn(run, inv.laps)).map((run) => ({ run, points: fitOnLaps(run, inv.laps) })).filter((fit) => fit.points.length >= 2), [inv]);
   const on = (key: LayerKey): boolean => layers.includes(key);
   const placed = inv.laps.filter((lap) => lap.position !== null && lap.position > 0);
   const hasPositions = placed.length >= 2;
@@ -148,7 +139,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
     const max = times.length ? Math.max(...times) : 1;
     const pad = Math.max(0.08, (max - min) * 0.06);
     // Margins and label offsets are the default-size geometry times the root font size's factor; the axis text is --text-compact.
-    const temps = on("temp") ? inv.laps.map((lap) => ({ lap: lap.lap, value: contexts.get(lap.lap)?.trackTempF ?? null, run: lap.runNumber })).filter((p): p is { lap: number; value: number; run: number | null } => p.value !== null) : [];
+    const temps = on("temp") ? inv.laps.map((lap) => ({ lap: lap.lap, value: contexts.get(lap.lap)?.trackTempF ?? null })).filter((p): p is { lap: number; value: number } => p.value !== null) : [];
     const left = Math.round(52 * k);
     const right = Math.round((temps.length ? 48 : 12) * k);
     const draft = new PlotScale(left, 0, Math.max(60, width - left - right), 1, minLap - 0.5, Math.max(minLap + 1, maxLap) + 0.5, 0, 1);
@@ -178,11 +169,10 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
     const tempHi = temps.length ? Math.max(...temps.map((p) => p.value)) : 1;
     const tempPad = Math.max(0.5, (tempHi - tempLo) * 0.1);
     const tempScale = new PlotScale(pace.left, pace.top, pace.width, pace.height, pace.xMin, pace.xMax, tempLo - tempPad, tempHi + tempPad);
-    const fuels = on("fuel") ? inv.laps.map((lap) => ({ lap: lap.lap, value: contexts.get(lap.lap)?.fuelGal ?? null, run: lap.runNumber })).filter((p): p is { lap: number; value: number; run: number | null } => p.value !== null) : [];
+    const fuels = on("fuel") ? inv.laps.map((lap) => ({ lap: lap.lap, value: contexts.get(lap.lap)?.fuelGal ?? null })).filter((p): p is { lap: number; value: number } => p.value !== null) : [];
     const fuelScale = new PlotScale(pace.left, pace.top, pace.width, pace.height, pace.xMin, pace.xMax, 0, Math.max(1, ...fuels.map((p) => p.value)) * 1.05);
     const line = (scale: PlotScale, segment: { lap: number; value: number }[]): string => segment.map((p, i) => `${i ? "L" : "M"}${n(scale.x(p.lap))},${n(scale.y(p.value))}`).join("");
-    const dotLaps = [...cautionDots, ...plotted];
-    const lapAt = new Map(dotLaps.map((lap) => [lap.lap, lap] as const));
+    const lapAt = new Map([...cautionDots, ...plotted].map((lap) => [lap.lap, lap] as const));
     const dotY = (lap: InvestigationLap): number => clampY(lap.lapTimeS as number);
     const lapHover = (lap: InvestigationLap) => () => setHover({ kind: "lap", lap });
     return (
@@ -212,10 +202,13 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
         )}
         {fuels.length > 0 && (
           <g class="ri-layer-fuel" data-layer="fuel">
-            {seriesSegments(fuels, true).map((segment) => (
+            {/* One line through every lap with a reading; a refill is a step up; only a lap with no reading breaks it (#63). */}
+            {seriesSegments(fuels).map((segment) => (
               <g key={`fl${segment[0]!.lap}`}>
-                <path d={line(fuelScale, segment)} class="ri-fuel-line" data-fuel-from={segment[0]!.lap} />
-                <text x={n(fuelScale.x(segment[0]!.lap) + 4)} y={n(fuelScale.y(segment[0]!.value) - 5)} class="ri-fuel-label">{`${segment[0]!.value.toFixed(1)} gal`}</text>
+                <path d={fuelPath(segment, (lap) => fuelScale.x(lap), (value) => fuelScale.y(value), n)} class="ri-fuel-line" data-fuel-from={segment[0]!.lap} data-fuel-to={segment[segment.length - 1]!.lap} />
+                {[segment[0]!, ...refills(segment)].map((point) => (
+                  <text key={`fv${point.lap}`} x={n(fuelScale.x(point.lap) + 4)} y={n(fuelScale.y(point.value) - 5)} class="ri-fuel-label" data-fuel-label={point.lap}>{`${point.value.toFixed(1)} gal`}</text>
+                ))}
               </g>
             ))}
           </g>
@@ -264,18 +257,6 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
               <path d={d} class="ri-fit" stroke-dasharray={identities.get(run.runNumber)?.dash || undefined} />
             </g>
           );
-        })}
-        {on("traffic") && dotLaps.map((lap) => {
-          const traffic = contexts.get(lap.lap)?.traffic ?? null;
-          // A lap with no close traffic draws nothing; its readout still says 0 %.
-          if (traffic === null || traffic < 0.005) return null;
-          const y = dotY(lap) + dotRadius + 2;
-          return <line key={`tr${lap.lap}`} x1={n(pace.x(lap.lap))} x2={n(pace.x(lap.lap))} y1={n(y)} y2={n(y + 1 + traffic * 11 * k)} class="ri-traffic-tick" data-traffic-lap={lap.lap} />;
-        })}
-        {on("slip") && dotLaps.map((lap) => {
-          const slip = contexts.get(lap.lap)?.slip ?? null;
-          if (!slip || slip.spinS + slip.lockS <= 0) return null;
-          return <circle key={`sl${lap.lap}`} cx={n(pace.x(lap.lap))} cy={n(dotY(lap))} r={n(dotRadius + 3)} class="ri-slip-ring" data-slip-lap={lap.lap} />;
         })}
         {cautionDots.map((lap) => {
           const off = (lap.lapTimeS as number) > pace.yMax;
@@ -344,7 +325,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
       ? lapReadout(hover.lap)
       : hover?.kind === "pit"
         ? pitLabel(hover.stop)
-        : "";
+        : note ?? "";
   return (
     <div class="ri-progress" data-ri-progress>
       <div class="ri-chart-head">
@@ -437,11 +418,11 @@ export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
   const [stored, toggleLayer] = useLayers();
   const layers = stored.filter((key) => offered.some((layer) => layer.key === key));
   const word = exposureWord(sessionType);
-  const fitText = paceFitText(inv, chartLaps(inv.laps).pace.length);
+  const [note, setNote] = useState<string | null>(null);
+  const lines = useMemo(() => inv.runs.map((run) => ({ run, parts: runLineParts(run, identities.get(run.runNumber), runs ?? [], inv.laps) })), [inv, identities, runs]);
   const header = (
     <>
       <span class="ri-card-title">Race progression</span>
-      {fitText && <span class="ri-fit-count" data-pace-fit>{fitText}</span>}
       <div class="ri-legend" data-legend="runs">
         {inv.runs.map((run) => {
           const identity = identities.get(run.runNumber);
@@ -451,9 +432,7 @@ export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
       {offered.length > 0 && (
         <div class="ri-layer-toggles" role="group" aria-label="Context layers">
           {offered.map((layer) => (
-            <button type="button" key={layer.key} class="ri-pill-toggle ri-layer-toggle" aria-pressed={layers.includes(layer.key)} data-layer-toggle={layer.key} title={`${layer.label} · ${layer.evidence}`} onClick={() => toggleLayer(layer.key)}>
-              {layer.label}<small>{layer.evidence}</small>
-            </button>
+            <button type="button" key={layer.key} class="ri-pill-toggle ri-layer-toggle" aria-pressed={layers.includes(layer.key)} data-layer-toggle={layer.key} onClick={() => toggleLayer(layer.key)}>{layer.label}</button>
           ))}
         </div>
       )}
@@ -462,12 +441,20 @@ export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
   return (
     <div class="ri-race-view" data-ri-view="race">
       <div class="ri-card ri-fill">
-        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} layers={layers} header={header} />
-        {inv.runs.length > 0 && (
+        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} layers={layers} header={header} note={note ?? undefined} />
+        {lines.length > 0 && (
           <ul class="ri-run-lines" aria-label="Runs">
-            {inv.runs.map((run) => (
-              <li key={run.runNumber} data-run-line={run.runNumber} style={`--run:${identityColour(identities, run.runNumber)}`}>{runLine(run, identities.get(run.runNumber), runs ?? [])}</li>
-            ))}
+            {lines.map(({ run, parts }) => {
+              const show = (): void => setNote(runLineReadout(parts));
+              return (
+                <li key={run.runNumber} data-run-line={run.runNumber} style={`--run:${identityColour(identities, run.runNumber)}`} tabIndex={0}
+                  onPointerEnter={show} onFocus={show} onClick={show} onPointerLeave={(event: PointerEvent) => { if (event.pointerType !== "touch") setNote(null); }} onBlur={() => setNote(null)}>
+                  {parts.map((part, index) => (
+                    <Fragment key={part.key}>{index > 0 && " · "}<span data-part={part.key} title={part.hover}>{part.text}</span></Fragment>
+                  ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

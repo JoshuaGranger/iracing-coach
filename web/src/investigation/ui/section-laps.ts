@@ -15,6 +15,8 @@ export interface SectionLapEntry {
   sectionId: string;
   cleanLapCount: number;
   medianS: number | null;
+  /** The clean lap whose section time is the median (`median_lap`, optional); null when the view does not report it. */
+  medianLap: number | null;
   /** Fastest first. */
   fastest: SectionLap[];
   /** Slowest first. */
@@ -49,7 +51,7 @@ export function parseSectionLaps(raw: unknown): SectionLaps | null {
     const s = asRecord(item);
     const sectionId = str(s.section_id);
     if (sectionId === null) continue;
-    out.set(sectionId, { sectionId, cleanLapCount: num(s.clean_lap_count) ?? 0, medianS: num(s.median_s), fastest: laps(s.fastest).slice(0, 3), slowest: laps(s.slowest).slice(0, 3) });
+    out.set(sectionId, { sectionId, cleanLapCount: num(s.clean_lap_count) ?? 0, medianS: num(s.median_s), medianLap: num(s.median_lap), fastest: laps(s.fastest).slice(0, 3), slowest: laps(s.slowest).slice(0, 3) });
   }
   return out;
 }

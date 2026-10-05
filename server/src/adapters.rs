@@ -51,6 +51,11 @@ pub trait RecordingParser: Send + Sync {
     fn parse(&self, path: &Path) -> Result<ParsedRecording, String>;
     /// Setup values fingerprint (`setup-keys.json`), used for garage and export observations.
     fn fingerprint(&self, values: &BTreeMap<String, String>) -> String;
+    /// The results summary of the recording at `path` (`header_json.results`,
+    /// `overview::results_summary`), for recordings parsed before it was stored.
+    fn results(&self, path: &Path) -> Result<Value, String> {
+        Ok(self.parse(path)?.header_json["results"].clone())
+    }
 }
 
 /// `coach-ibt` behind the trait.
@@ -79,6 +84,12 @@ fn last_lap(file: &coach_ibt::IbtFile) -> Option<i64> {
 impl RecordingParser for IbtParser {
     fn fingerprint(&self, values: &BTreeMap<String, String>) -> String {
         coach_ibt::setup_values_fingerprint(values)
+    }
+
+    fn results(&self, path: &Path) -> Result<Value, String> {
+        let file = coach_ibt::IbtFile::open(path).map_err(|e| e.to_string())?;
+        let info = file.session_info().map_err(|e| e.to_string())?;
+        Ok(crate::overview::results_summary(&info))
     }
 
     fn parse(&self, path: &Path) -> Result<ParsedRecording, String> {
@@ -123,6 +134,8 @@ impl RecordingParser for IbtParser {
             "lap_last": last_lap(&file),
             "file_size": file.file_size,
             "summary": serde_json::to_value(&summary).unwrap_or(Value::Null),
+            // field size, official places and the grid (`overview::merge_results`)
+            "results": crate::overview::results_summary(&info),
         });
         Ok(ParsedRecording {
             customer_id: summary

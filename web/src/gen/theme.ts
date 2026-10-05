@@ -96,7 +96,10 @@ export const theme = {
   "phase": {
     "p": "#5F748B",
     "q": "#AFBCC8",
-    "r": "#F2F5F7"
+    "r": "#F2F5F7",
+    "practiceHue": "#5F87B3",
+    "qualifyHue": "#C98AAB",
+    "raceHue": "#EEF3F7"
   },
   "typography": {
     "uiFamilies": [
@@ -239,6 +242,9 @@ export const cssVariables: Readonly<Record<string, string>> = {
   "--phase-p": "#5F748B",
   "--phase-q": "#AFBCC8",
   "--phase-r": "#F2F5F7",
+  "--phase-practice-hue": "#5F87B3",
+  "--phase-qualify-hue": "#C98AAB",
+  "--phase-race-hue": "#EEF3F7",
   "--car-1": "#A98BFF",
   "--car-2": "#2CCFC1",
   "--car-3": "#D9B27C",

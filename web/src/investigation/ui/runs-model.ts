@@ -6,9 +6,10 @@ import { asRecord, num } from "../types";
 const LITERS_PER_GALLON = 3.785411784;
 
 /**
- * Runs as the Race and Runs charts draw them (round 3, #40 #42 #43 #44 #47): the backend's screened fit as the only line, run
- * identity by tire set, one line of facts per run, and the run toggles. Every figure is the backend's; the browser only evaluates
- * the backend's fitted line at the exposures the backend reported, to draw it.
+ * Runs as the Race and Runs charts draw them (round 3, #40 #42 #43 #44 #47; round 4, #59a): the backend's screened fit as the only
+ * line, drawn only where it covers half the run's green laps; run identity by tire set; one line of facts per run with the observed
+ * fall-off; the run toggles. The browser evaluates the backend's fitted line at the exposures the backend reported, to draw it, and
+ * reads the fall-off off two of the backend's lap times.
  */
 
 /**
@@ -149,30 +150,106 @@ function backendRun(runs: readonly unknown[], runNumber: number): Record<string,
   return null;
 }
 
-/** Fuel in the car at the run's start, gal, from the runs view (`fuel.start_l`); null when not reported. */
-export function fuelStartGal(runs: readonly unknown[], runNumber: number): number | null {
-  const liters = num(asRecord(backendRun(runs, runNumber)?.fuel).start_l);
-  return liters === null ? null : liters / LITERS_PER_GALLON;
+/**
+ * The run's green laps as the Race chart draws them (the backend's `plot_pace`: complete, green, no pit, timed), traffic included,
+ * in lap order. Observations, not the screened set.
+ */
+export function greenLaps(run: Pick<RunView, "runNumber">, laps: readonly InvestigationLap[]): InvestigationLap[] {
+  return laps.filter((lap) => lap.runNumber === run.runNumber && lap.plotPace && lap.lapTimeS !== null && lap.lapTimeS > 0).sort((a, b) => a.lap - b.lap);
 }
 
-/** `L3–19`: the laps the backend's fit used, else the run's own laps. */
-export function runSpan(run: RunView): string {
-  const laps = run.fit?.laps ?? [];
-  const [a, b] = laps.length ? [Math.min(...laps), Math.max(...laps)] : [run.firstLap, run.lastLap];
+export interface FallOff {
+  /** Seconds per lap: last green lap time less the first, over the laps between them. */
+  sPerLap: number;
+  first: InvestigationLap;
+  last: InvestigationLap;
+  greenLaps: number;
+}
+
+/**
+ * The run's observed fall-off (#59a): the last green lap's time less the first's, over the laps between them, from the backend's
+ * lap rows, traffic laps included. Null under three green laps. Observed, never the screened fit.
+ */
+export function fallOff(run: Pick<RunView, "runNumber">, laps: readonly InvestigationLap[]): FallOff | null {
+  const green = greenLaps(run, laps);
+  if (green.length < 3) return null;
+  const first = green[0]!;
+  const last = green[green.length - 1]!;
+  const between = last.lap - first.lap;
+  if (between <= 0) return null;
+  return { sPerLap: ((last.lapTimeS as number) - (first.lapTimeS as number)) / between, first, last, greenLaps: green.length };
+}
+
+/** `+0.07 s/lap`, `−0.02 s/lap`. */
+export function perLapText(value: number, digits = 2): string {
+  const text = Math.abs(value).toFixed(digits);
+  const sign = Number(text) === 0 ? "" : value > 0 ? "+" : "−";
+  return `${sign}${text} s/lap`;
+}
+
+/** `fall-off +0.07 s/lap`; null without a fall-off. */
+export function fallOffText(f: FallOff | null): string | null {
+  return f ? `fall-off ${perLapText(f.sPerLap)}` : null;
+}
+
+/** The hover of a fall-off: `observed · L3 28.912 s → L24 30.402 s`. */
+export function fallOffHover(f: FallOff): string {
+  return `observed · L${f.first.lap} ${(f.first.lapTimeS as number).toFixed(3)} s → L${f.last.lap} ${(f.last.lapTimeS as number).toFixed(3)} s`;
+}
+
+/**
+ * Whether the backend's screened fit is drawn (#59a): only when it covers at least half of the run's green laps (its eligible count
+ * over the green laps drawn). Otherwise no line, and nothing says why.
+ */
+export function fitDrawn(run: RunView, laps: readonly InvestigationLap[]): boolean {
+  if (!run.fit || !fitSegment(run)) return false;
+  const green = greenLaps(run, laps).length;
+  return green > 0 && run.fit.eligibleCount * 2 >= green;
+}
+
+/** Green-flag burn per lap from the runs view (`fuel.green_gal_per_lap`, else `green_l_per_lap` in gallons); null when not reported. */
+export function burnGalPerLap(runs: readonly unknown[], runNumber: number): number | null {
+  const fuel = asRecord(backendRun(runs, runNumber)?.fuel);
+  const gal = num(fuel.green_gal_per_lap);
+  if (gal !== null && gal > 0) return gal;
+  const liters = num(fuel.green_l_per_lap);
+  return liters !== null && liters > 0 ? liters / LITERS_PER_GALLON : null;
+}
+
+/** `L3–24`: the run's green laps, first to last; the run's own laps when it has none. */
+export function runSpan(run: RunView, laps: readonly InvestigationLap[] = []): string {
+  const green = greenLaps(run, laps);
+  const [a, b] = green.length ? [green[0]!.lap, green[green.length - 1]!.lap] : [run.firstLap, run.lastLap];
   return a === b ? `L${a}` : `L${a}–${b}`;
 }
 
-/** The line under the Race chart: `Run 1 · L3–19 · +0.041 s/lap · 17.4 gal`; a figure the backend did not report is left out. */
-export function runLine(run: RunView, identity: RunIdentity | undefined, runs: readonly unknown[]): string {
-  const fuel = fuelStartGal(runs, run.runNumber);
-  return [identity?.name ?? `Run ${run.runNumber}`, runSpan(run), slopeText(run), fuel !== null ? `${fuel.toFixed(1)} gal` : null].filter(Boolean).join(" · ");
+export interface RunLinePart {
+  key: "name" | "span" | "falloff" | "burn";
+  text: string;
+  /** The hover of the part (the fall-off's `observed` tag and its two laps). */
+  hover?: string;
 }
 
-/** `Pace fit: 31 of 41 laps`: laps the backend's fits used over the laps drawn as pace dots. Null when nothing is drawn. */
-export function paceFitText(inv: Investigation, plotted: number): string | null {
-  if (plotted <= 0) return null;
-  const used = inv.runs.reduce((sum, run) => sum + (run.fit && fitSegment(run) ? run.fit.eligibleCount : 0), 0);
-  return `Pace fit: ${used} of ${plotted} laps`;
+/**
+ * The line under the Race chart (#59a): `Run 1 · L3–24 · fall-off +0.07 s/lap · 0.33 gal/lap`. A figure the backend did not report,
+ * or a fall-off under three green laps, is left out.
+ */
+export function runLineParts(run: RunView, identity: RunIdentity | undefined, runs: readonly unknown[], laps: readonly InvestigationLap[]): RunLinePart[] {
+  const parts: RunLinePart[] = [{ key: "name", text: identity?.name ?? `Run ${run.runNumber}` }, { key: "span", text: runSpan(run, laps) }];
+  const f = fallOff(run, laps);
+  if (f) parts.push({ key: "falloff", text: fallOffText(f)!, hover: fallOffHover(f) });
+  const burn = burnGalPerLap(runs, run.runNumber);
+  if (burn !== null) parts.push({ key: "burn", text: `${burn.toFixed(2)} gal/lap` });
+  return parts;
+}
+
+export function runLine(run: RunView, identity: RunIdentity | undefined, runs: readonly unknown[], laps: readonly InvestigationLap[]): string {
+  return runLineParts(run, identity, runs, laps).map((part) => part.text).join(" · ");
+}
+
+/** The readout of a run line on hover or tap: `Run 1 · fall-off +0.07 s/lap · observed · L3 28.912 s → L24 30.402 s · 0.33 gal/lap`. */
+export function runLineReadout(parts: readonly RunLinePart[]): string {
+  return parts.filter((part) => part.key !== "span").flatMap((part) => (part.hover ? [part.text, part.hover] : [part.text])).join(" · ");
 }
 
 export interface SparkPoint {
@@ -186,9 +263,13 @@ export interface RunCard {
   lapsText: string;
   /** The run's laps on the Runs chart's axes (green laps into run, lap time) for the card's dot sparkline. */
   points: SparkPoint[];
+  /** The fit drawn on the card and the chart: null when the backend has none or it covers under half the run's green laps. */
   fit: { x1: number; y1: number; x2: number; y2: number } | null;
+  /** `+0.041 s/lap · 18 laps` when the fit is drawn, else null. */
   slope: string | null;
-  noFitReason: string | null;
+  /** The observed fall-off over the run's green laps: `+0.07 s/lap`; null under three green laps. */
+  fallOff: string | null;
+  fallOffHover: string | null;
   used: number;
   screened: number;
   /** `15.9 → 3.8 gal` from the runs view's fuel at start and end; the range stays a range. Null when not reported. */
@@ -221,19 +302,22 @@ export function runsChartLaps(laps: readonly InvestigationLap[]): InvestigationL
   return laps.filter((lap) => lap.plotPace && lap.greenExposure !== null && lap.lapTimeS !== null && lap.lapTimeS > 0);
 }
 
-/** One card per run: dot sparkline with the fit, slope, laps used and screened, fuel band, tire laps. Counts are of the backend's lap flags. */
+/** One card per run: dot sparkline with the fit, fall-off, slope, laps used and screened, fuel band, tire laps. Counts are of the backend's lap flags. */
 export function runCards(inv: Investigation, runs: readonly unknown[]): RunCard[] {
   const drawn = runsChartLaps(inv.laps);
   return inv.runs.map((run) => {
     const laps = inv.laps.filter((lap) => lap.runNumber === run.runNumber && lap.plotPace);
     const raw = backendRun(runs, run.runNumber);
+    const drawnFit = fitDrawn(run, inv.laps);
+    const f = fallOff(run, inv.laps);
     return {
       runNumber: run.runNumber,
       lapsText: `L${run.firstLap}–${run.lastLap}`,
       points: drawn.filter((lap) => lap.runNumber === run.runNumber).map((lap) => ({ x: lap.greenExposure as number, y: lap.lapTimeS as number, used: lap.eligible })),
-      fit: fitSegment(run),
-      slope: fitLabel(run),
-      noFitReason: fitLabel(run) === null ? run.fitUnavailableReason ?? "No fit" : null,
+      fit: drawnFit ? fitSegment(run) : null,
+      slope: drawnFit ? fitLabel(run) : null,
+      fallOff: f ? perLapText(f.sPerLap) : null,
+      fallOffHover: f ? fallOffHover(f) : null,
       used: laps.filter((lap) => lap.eligible).length,
       screened: laps.filter((lap) => !lap.eligible).length,
       fuelBand: fuelBand(raw),

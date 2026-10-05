@@ -35,6 +35,30 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 Each contract change adds one entry here in the same commit; review per the rule at the top.
 
+### 2026-10-04, S3: `section_laps[].median_lap` (web round 4 task S3; additive, no review needed)
+
+Reason: backlog #64, the Sections telemetry draws the median lap in grey and needs the backend to name it.
+
+- `api.openapi.yaml`: `InvestigationView.section_laps.sections[].median_lap` (integer or null): the lower-middle lap of the sorted clean section times. Emitted by `crates/coach-views/src/section_laps.rs`; regenerated with `pnpm gen:wire`.
+
+### 2026-10-04, S4: track centreline from clean racing laps, true proportions (web round 4 task S4; additive optional field, no review needed; analysis profile v24)
+
+Reason: backlog #65: the track maps were lopsided with a jagged stretch. The backend's main path was the per-bin median of every off-pit sample in raw degrees: pit approach and exit samples (off pit road, on the in and out laps) bent the line, and longitude was not scaled by cos(latitude), stretching every map east-west (24 % at Las Vegas).
+
+- Python (oracle, `race_foundations.build_track_geometry`, rule `clean-racing-laps-v1`): the main path comes from the clean racing-speed laps only (every sample off pit road, on track, under no caution, a full lap of distance; laps within 5 % of the fastest one's duration), else every off-pit sample as before; every layer's x is longitude times `cos(latitude of the GPS centre)`; a complete loop is smoothed by a seven-point circular moving average. `track_geometry.transform.longitude_scale` and `track_geometry.centreline` (`rule`, `source`, `laps`, `smoothing_points`) are new. The per-track geometry cache ranks the current rule above older geometry. `ANALYSIS_PROFILE_VERSION` v23 becomes v24, so `POST /admin/reanalyze` re-queues every stored session.
+- Native kernel `analysis_engine.build_track_geometry` (`crates/coach-analysis`) ported byte for byte; field vectors regenerated on both platforms (two new synthetic tables, `field-surface`, `field-no-lap`).
+- `api.openapi.yaml`: `GeometryTransform.longitude_scale` (optional; 1 when absent). `coach-views` carries it into `track.json`; the browser multiplies a recorded longitude by it before the transform.
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+
+### 2026-10-04, S1: field size, official place, grid position and burn per lap on the Sessions row (web round 4 task S1; additive optional fields, no review needed)
+
+Reason: backlog #55 to #57 and `web-round-2-plan.md` "Round 4": practice and qualifying show `P3 / 24`, a race finish change is measured against the official starting position and names it (`from P12`), the race cell shows burn per lap instead of fuel used. Session 23 (Talladega 2026-09-29) shows why the grid matters: its race recording holds P12 through the pace laps, while the lone-qualifying cell showed P5, the position when that recording ended, before the rest of the field qualified.
+
+- `api.openapi.yaml`: `SessionOverview.field_size` and `results_position` (the session's official results and the driver's overall place in them, from a recording of a later session of the event: the sim writes a recording's session info when it starts, so only a later recording holds a session's final results), `start_position` (races: the overall grid place from `QualifyResultsInfo.Results`, else the backend's `starting_position`), `fuel_per_lap_gal` (the backend's `strategy.measured_green_fuel_gal_per_lap`). All four always sent, null without the evidence.
+- Server, no schema change: the parser stores a results summary in `recordings.header_json.results` (`overview::results_summary`: per session the car count and the overall place, counted by `Position` so 0- and 1-based lists agree; the grid). At start, in the background, recordings stored without it are re-read (header and session info only, spool or NAS) and every overview at the current projection version takes the figures; overviews without `fuel_per_lap_gal` are rebuilt from their views. No re-projection: `strategy` is already in `race.json`. A projection also refreshes the other sessions of its event.
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+- Proof: `cargo test -p coach-server` (`tests/round4_fields.rs`; unit tests in `src/overview.rs`), `pnpm -C web typecheck`.
+
 ### 2026-10-04, R4: per-section clean-lap times (web round 3 task R4; additive optional field, no review needed; one new projection version)
 
 Reason: backlog #48 and #49 and `web-round-2-plan.md` "Round 3": Sections lists, per detected section, the three fastest and three slowest clean laps by that section's time around the section's median. The investigation view carried section times only for a comparison's two passes. Projection version 2 becomes 3 so stored analyses are re-projected (the server queues the projection on the first request for a stale view).

@@ -41,7 +41,9 @@ function overviewFor(e, phase, state) {
     const start = e === 3 ? 3 : 12;
     const final = e === 3 ? 1 : 4 + e;
     const slope = [0.021, -0.012, 0.004, 0.031, 0.0, 0.012][e] ?? 0.004;
-    return { starting_position: start, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: 15.234 + e * 0.1, green_pace_median_s: 15.612 + e * 0.1, fuel_used_gal: 21.6 - e };
+    // Round 4 (#56, #57): the grid the finish is measured against (event 0's first recorded position was 14, its grid 12); burn per
+    // green lap (event 5 measured none). A race's own results are never final in its recordings: no field size.
+    return { starting_position: e === 0 ? 14 : start, start_position: start, field_size: null, results_position: null, fuel_per_lap_gal: e === 5 ? null : 0.47 - e * 0.01, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: 15.234 + e * 0.1, green_pace_median_s: 15.612 + e * 0.1, fuel_used_gal: 21.6 - e };
   }
   const qualify = phase === "Qualify";
   const best = qualify ? 15.41 + e * 0.1 - (e === 3 ? 0.4 : 0) : 15.5 + e * 0.1;
@@ -50,9 +52,18 @@ function overviewFor(e, phase, state) {
   const round3 = qualify
     ? { longest_run_laps: 3, longest_run_pace_loss_s: null, timed_lap_1_s: 15.61 + e * 0.1, timed_lap_2_s: e === 4 ? null : best }
     : { longest_run_laps: 9 + e, longest_run_pace_loss_s: e === 5 ? null : ([0.21, -0.08, 0.34, 0.05, 0.12][e] ?? 0.1), timed_lap_1_s: 16.02 + e * 0.1, timed_lap_2_s: 15.81 + e * 0.1 };
+  // Round 4 (#55): the official place over the field size, from the race recording; a practice-only event (e % 3 === 2) has no later
+  // recording, so only the recorded position. Event 0's qualifying ended P2 when its recording stopped and was classified P5 of 24.
+  const later = e % 3 !== 2;
+  const recorded = qualify ? 2 + e : 5 + e;
+  const official = later ? (qualify && e === 0 ? 5 : recorded) : null;
   return {
     ...round3,
-    final_position: qualify ? 2 + e : 5 + e,
+    field_size: later ? 24 : null,
+    results_position: official,
+    start_position: null,
+    fuel_per_lap_gal: null,
+    final_position: recorded,
     recorded_laps: 20 + e,
     green_laps_estimated: qualify ? 3 : 20 + e,
     caution_laps_estimated: 0,

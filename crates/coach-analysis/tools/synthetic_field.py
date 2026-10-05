@@ -46,6 +46,10 @@ session at 10 Hz on a closed track, shaped to reach the branches of
   than two usable odometers).
 * ``field-few``: four short laps at 2 Hz with no finite latitude (groove: too few
   samples; geometry: no point to normalise).
+* ``field-surface``: the centreline rule (clean-racing-laps-v1) with PlayerTrackSurface
+  recorded: pit approach on surface 2, an off-track excursion, a tow (not in world) and a
+  slow green lap are all left out of the main path.
+* ``field-no-lap``: no Lap channel, so the centreline falls back to every off-pit sample.
 
 Trigonometry here uses only IEEE arithmetic (a Taylor series), never the C
 library, so the decoded tables are bit-identical on Windows and Linux and any
@@ -548,6 +552,41 @@ def field_few(base: dict[str, Any]) -> dict[str, Any]:
     return _session(base, Track(100.0, 40.0), laps=4, seed=53, rate=2, edit=edit)
 
 
+def field_surface(base: dict[str, Any]) -> dict[str, Any]:
+    """Centreline rule (clean-racing-laps-v1): PlayerTrackSurface recorded, with an off-track
+    excursion (lap 4), a tow (lap 5, not in world), a slow green lap (lap 6, driven at caution
+    speed with the caution bits cleared) and pit approach on surface 2 around the stop."""
+
+    def edit(columns: dict[str, list[Any]], laps: list[int], pct: list[float]) -> None:
+        surface = []
+        for index, lap in enumerate(laps):
+            if columns["PlayerCarInPitStall"][index]:
+                value = 1
+            elif columns["OnPitRoad"][index]:
+                value = 2
+            elif lap == 4 and 0.30 <= pct[index] < 0.34:
+                value = 0
+                columns["Lat"][index] += 25.0 / EARTH_RADIUS_M * (180.0 / PI)
+            elif lap == 5 and pct[index] >= 0.70:
+                value = -1
+            else:
+                value = 3
+            surface.append(value)
+            if lap == 6:
+                columns["SessionFlags"][index] = GREEN
+        columns["PlayerTrackSurface"] = surface
+
+    return _session(base, Track(400.0, 143.0), laps=8, seed=61, pit_after=(2,),
+                    caution=lambda lap, pct: lap == 6, edit=edit,
+                    extra={"PlayerTrackSurface": (I32, "irsdk_TrkLoc")})
+
+
+def field_no_lap(base: dict[str, Any]) -> dict[str, Any]:
+    """No Lap channel: the centreline falls back to every off-pit sample."""
+
+    return _session(base, Track(300.0, 100.0), laps=4, seed=67, pit_after=(2,), exclude=("Lap",))
+
+
 BUILDERS: tuple[tuple[str, Callable[[dict[str, Any]], dict[str, Any]]], ...] = (
     ("field-oval", field_oval),
     ("field-road", field_road),
@@ -562,4 +601,6 @@ BUILDERS: tuple[tuple[str, Callable[[dict[str, Any]], dict[str, Any]]], ...] = (
     ("field-two-laps", field_two_laps),
     ("field-coverage", field_coverage),
     ("field-few", field_few),
+    ("field-surface", field_surface),
+    ("field-no-lap", field_no_lap),
 )

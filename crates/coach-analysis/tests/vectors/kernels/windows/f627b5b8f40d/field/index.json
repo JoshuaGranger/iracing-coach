@@ -1,0 +1,16 @@
+{
+ "calls": {
+  "analysis_engine.analyze_groove_evolution": 1,
+  "analysis_engine.build_track_geometry": 1
+ },
+ "files": {
+  "analysis_engine.analyze_groove_evolution/00000.ccs": "279e48ba052ce5cf69dbda308339bdd5c2331cb7a17bc745ebdd188ea201ba61",
+  "analysis_engine.analyze_groove_evolution/00000.json": "2964723739e871299bf2a424ab19a242effdb015200d998820ab1fae52fff51f",
+  "analysis_engine.build_track_geometry/00000.json": "087ed2dfed5744cacf5f68d3cc413ec73eaa92ad40e054cad8a00a39d3a23cd6"
+ },
+ "platform": "windows",
+ "python": "3.12.14",
+ "recording": "synthetic:sections-flat",
+ "sha256": "f627b5b8f40d8987037984fc1012d6e6b574cec23a7c9e15540b21e4999274db",
+ "target_hz": null
+}

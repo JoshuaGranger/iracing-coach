@@ -66,17 +66,24 @@ fn line(value: Option<&Value>) -> Value {
 }
 
 /// `AnalysisGeometryTransform.IsUsable`: finite bounds with max >= min and a positive finite scale.
+/// `longitude_scale` (profile v24: the geometry's x is longitude times this factor) is carried
+/// when positive and finite; without it the geometry predates the factor and x is longitude.
 pub(crate) fn transform(value: Option<&Value>) -> Option<Value> {
     let map = value?.as_object()?;
     let bounds = obj(map, "source_bounds")?;
     let (min_x, max_x) = (num(bounds, "minimum_x")?, num(bounds, "maximum_x")?);
     let (min_y, max_y) = (num(bounds, "minimum_y")?, num(bounds, "maximum_y")?);
     let scale = num(map, "normalization_scale")?;
+    let longitude_scale = num(map, "longitude_scale").filter(|k| *k > 0.0);
     (scale > 0.0 && max_x >= min_x && max_y >= min_y).then(|| {
-        json!({
+        let mut out = json!({
             "source_bounds": {"minimum_x": min_x, "maximum_x": max_x, "minimum_y": min_y, "maximum_y": max_y},
             "normalization_scale": scale
-        })
+        });
+        if let Some(k) = longitude_scale {
+            out["longitude_scale"] = json!(k);
+        }
+        out
     })
 }
 
@@ -230,6 +237,21 @@ mod tests {
     fn transform_must_be_usable() {
         let ok = json!({"source_bounds": {"minimum_x": 0.0, "maximum_x": 2.0, "minimum_y": 1.0, "maximum_y": 3.0}, "normalization_scale": 2.0});
         assert!(transform(Some(&ok)).is_some());
+        assert!(
+            transform(Some(&ok))
+                .unwrap()
+                .get("longitude_scale")
+                .is_none()
+        );
+        let scaled = json!({"source_bounds": {"minimum_x": 0.0, "maximum_x": 2.0, "minimum_y": 1.0, "maximum_y": 3.0}, "normalization_scale": 2.0, "longitude_scale": 0.81});
+        assert_eq!(transform(Some(&scaled)).unwrap()["longitude_scale"], 0.81);
+        let zero = json!({"source_bounds": {"minimum_x": 0.0, "maximum_x": 2.0, "minimum_y": 1.0, "maximum_y": 3.0}, "normalization_scale": 2.0, "longitude_scale": 0.0});
+        assert!(
+            transform(Some(&zero))
+                .unwrap()
+                .get("longitude_scale")
+                .is_none()
+        );
         let bad = json!({"source_bounds": {"minimum_x": 3.0, "maximum_x": 2.0, "minimum_y": 1.0, "maximum_y": 3.0}, "normalization_scale": 2.0});
         assert!(transform(Some(&bad)).is_none());
         assert!(transform(Some(&json!({}))).is_none());

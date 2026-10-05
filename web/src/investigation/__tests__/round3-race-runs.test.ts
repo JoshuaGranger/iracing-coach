@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { VNode } from "preact";
 import { theme } from "../../gen/theme";
-import { buildRound3Analysis, ROUND3_SLIP_LAPS } from "../fixtures/round3";
+import { buildRound3Analysis } from "../fixtures/round3";
 import { inRaceStops, pitStops, TIRE_CORNERS, type PitStop } from "../geometry/rail-model";
 import { parseInvestigation } from "../investigation-model";
 import { inspectSectionEntry } from "../ui/comparison-model";
 import { PitCard } from "../ui/PitPictogram";
 import { availableLayers, lapContexts, layerReadout, layersReadout, parseLayers, readLayers, writeLayers } from "../ui/race-layers";
-import { chartLaps, paceTopMargin, seriesSegments } from "../ui/RaceView";
-import { fitOnLaps, fitSegment, paceFitText, runIdentities, runLine, runSpan, shadeColour, slopeText, smoothPath, toggleRun } from "../ui/runs-model";
+import { paceTopMargin } from "../ui/RaceView";
+import { fitOnLaps, fitSegment, runIdentities, shadeColour, smoothPath, toggleRun } from "../ui/runs-model";
 import type { RaceViewData } from "../types";
 
 const analysis = buildRound3Analysis();
@@ -70,26 +70,6 @@ describe("run identity by tire set (#42)", () => {
   });
 });
 
-describe("one line per run under the Race chart (#43, #45)", () => {
-  it("reads `Run · span · slope · fuel at start` from the backend's fit and run", () => {
-    const ids = runIdentities([1, 2, 3], stops);
-    const [one, two, three] = inv.runs;
-    expect(runSpan(one!)).toBe("L3–24");
-    expect(runLine(one!, ids.get(1), runs)).toBe(`Run 1 · L3–24 · +0.033 s/lap · ${(60 / 3.785411784).toFixed(1)} gal`);
-    expect(runLine(two!, ids.get(2), runs)).toBe(`Run 2 · L31–52 · +0.029 s/lap · ${(59.2 / 3.785411784).toFixed(1)} gal`);
-    // No fit: no slope; the span is the run's laps.
-    expect(runLine(three!, ids.get(3), runs)).toBe(`Run 3 · same tires · L57–82 · ${(52.1 / 3.785411784).toFixed(1)} gal`);
-    expect(runLine(one!, undefined, [])).toBe("Run 1 · L3–24 · +0.033 s/lap");
-    expect(slopeText(three!)).toBeNull();
-  });
-
-  it("says once how many drawn laps the fits used", () => {
-    const plotted = chartLaps(inv.laps).pace.length;
-    expect(paceFitText(inv, plotted)).toBe(`Pace fit: 39 of ${plotted} laps`);
-    expect(paceFitText(inv, 0)).toBeNull();
-  });
-});
-
 describe("the fit is the only line (#44)", () => {
   it("evaluates the backend's line at each lap's reported exposure inside the fitted span only", () => {
     const run = inv.runs[0]!;
@@ -133,49 +113,42 @@ describe("run toggles on Runs (#47)", () => {
   });
 });
 
-describe("context layers (#46): what the race view reports per lap", () => {
+describe("context layers (#46, round 4 #60–#62): what the race view reports per lap", () => {
   const contexts = lapContexts(analysis.race);
 
   it("reads the backend's per-lap fields and offers only layers with figures", () => {
-    expect(contexts.get(10)).toMatchObject({ trackTempF: 99.8, traffic: 0.62, usagePct: null, slip: { spinS: 0, lockS: 0 } });
-    expect(contexts.get(ROUND3_SLIP_LAPS[0])!.slip).toEqual({ spinS: 0.4, lockS: 0.1 });
+    expect(contexts.get(10)).toEqual({ lap: 10, trackTempF: 99.8, usagePct: null, fuelGal: expect.any(Number) });
     expect(contexts.get(1)!.fuelGal).toBeCloseTo(60 / 3.785411784, 9);
-    expect(availableLayers(contexts).map((layer) => layer.key)).toEqual(["temp", "traffic", "slip", "fuel"]);
+    // No traffic and no slip layer, though the race view carries both fields (#61, #62).
+    expect(availableLayers(contexts).map((layer) => layer.key)).toEqual(["temp", "fuel"]);
     const withUsage = { ...analysis.race, laps: (analysis.race.laps as Record<string, unknown>[]).map((lap) => ({ ...lap, conditions: { track_usage_percent: 34 + (lap.lap as number) * 0.1 } })) } as unknown as RaceViewData;
-    expect(availableLayers(lapContexts(withUsage)).map((layer) => layer.key)).toEqual(["usage", "traffic", "slip", "fuel"]);
+    expect(availableLayers(lapContexts(withUsage)).map((layer) => layer.key)).toEqual(["usage", "fuel"]);
     expect(availableLayers(lapContexts({ ...analysis.race, laps: [] } as RaceViewData))).toEqual([]);
     // Out-of-range figures are not figures.
     const bad = { ...analysis.race, laps: [{ lap: 1, conditions: { track_usage_percent: 140 }, clean_context: { traffic_proximity_fraction: 3 } }] } as unknown as RaceViewData;
-    expect(lapContexts(bad).get(1)).toMatchObject({ usagePct: null, traffic: null });
+    expect(lapContexts(bad).get(1)).toMatchObject({ usagePct: null });
   });
 
-  it("reads out each layer with its evidence label", () => {
-    const lap = contexts.get(ROUND3_SLIP_LAPS[0])!;
+  it("reads out each layer with a short evidence tag, and a missing figure as `no reading`", () => {
+    const lap = contexts.get(15)!;
     expect(layerReadout("temp", lap)).toBe(`Track ${lap.trackTempF!.toFixed(1)} °F`);
-    expect(layerReadout("traffic", contexts.get(10))).toBe("Traffic 62 %");
-    expect(layerReadout("slip", lap)).toBe("Spin 0.4 s · lock 0.1 s");
-    expect(layerReadout("usage", lap)).toBeNull();
-    expect(layersReadout(["fuel", "traffic"], contexts.get(10))).toEqual(["Traffic 62 % derived", `Fuel ${contexts.get(10)!.fuelGal!.toFixed(1)} gal measured`]);
-    expect(layersReadout(["temp"], undefined)).toEqual([]);
+    expect(layerReadout("usage", lap)).toBe("Usage no reading");
+    expect(layersReadout(["fuel", "temp"], contexts.get(10))).toEqual([`Track ${contexts.get(10)!.trackTempF!.toFixed(1)} °F · measured`, `Fuel ${contexts.get(10)!.fuelGal!.toFixed(1)} gal · measured`]);
+    expect(layersReadout(["temp"], undefined)).toEqual(["Track no reading"]);
+    for (const text of layersReadout(["temp", "usage", "fuel"], lap)) expect(text).not.toMatch(/derived|proxy|not |unavailable/i);
   });
 
   it("remembers the layers on the device, off by default", () => {
     const store = new Map<string, string>();
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => void store.set(key, value) };
     expect(readLayers(storage)).toEqual([]);
-    writeLayers(storage, ["traffic", "temp"]);
-    expect(readLayers(storage)).toEqual(["traffic", "temp"]);
+    writeLayers(storage, ["fuel", "temp"]);
+    expect(readLayers(storage)).toEqual(["fuel", "temp"]);
+    // A device that remembered the dropped layers keeps only what is left.
+    expect(parseLayers('["traffic","slip","temp"]')).toEqual(["temp"]);
     expect(parseLayers("not json")).toEqual([]);
     expect(parseLayers('["temp","bogus","temp"]')).toEqual(["temp"]);
     expect(readLayers({ getItem: () => { throw new Error("blocked"); } })).toEqual([]);
-  });
-
-  it("breaks a line at a missing lap, a run change and a refill", () => {
-    const series = [1, 2, 3, 5, 6].map((lap) => ({ lap, value: 10 - lap, run: lap < 6 ? 1 : 2 }));
-    expect(seriesSegments(series).map((s) => s.map((p) => p.lap))).toEqual([[1, 2, 3], [5], [6]]);
-    const refill = [{ lap: 1, value: 5, run: 1 }, { lap: 2, value: 4, run: 1 }, { lap: 3, value: 15, run: 1 }];
-    expect(seriesSegments(refill, true).map((s) => s.length)).toEqual([2, 1]);
-    expect(seriesSegments(refill).map((s) => s.length)).toEqual([3]);
   });
 });
 

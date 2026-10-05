@@ -386,6 +386,34 @@
           ],
           "description": "The second such lap; null when the phase has fewer than two. Always sent."
         },
+        "field_size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Cars in the session's official results (`SessionInfo.Sessions[].ResultsPositions`, one per `CarIdx`), read from a recording of a later session of the same event, the only place the sim has written them final. Sent with `results_position`; null without such a recording (the last session of an event, offline sessions). Always sent."
+        },
+        "results_position": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "The driver's overall place in those results, counted by `Position` (never `ClassPosition`). It can differ from `final_position`, the last recorded position, when the session went on after the recording ended (a lone qualifying run). Null exactly when `field_size` is. Always sent."
+        },
+        "start_position": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Races only: the official starting position, the driver's overall place in the grid (`QualifyResultsInfo.Results`) of a recording of this race or a later session; without one, the backend's position at the green flag (`starting_position`). A finish change is measured against it. Null for other sessions. Always sent."
+        },
+        "fuel_per_lap_gal": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Burn per green lap, US gallons: the backend's `strategy.measured_green_fuel_gal_per_lap` (the median of its runs' green-lap burn over laps with fuel readings), never recomputed. Null when the backend measured none. Always sent."
+        },
         "pace_consistency_percent": {
           "type": [
             "number",
@@ -1848,7 +1876,7 @@
     },
     "GeometryTransform": {
       "type": "object",
-      "description": "Maps recorded GPS into the geometry's space: x = (longitude - source_bounds.minimum_x) / normalization_scale, y = (source_bounds.maximum_y - latitude) / normalization_scale (race_foundations.py:226-247; C# AnalysisGeometryTransform.TryNormalize).",
+      "description": "Maps recorded GPS into the geometry's space: x = (longitude * longitude_scale - source_bounds.minimum_x) / normalization_scale, y = (source_bounds.maximum_y - latitude) / normalization_scale (race_foundations._normalize_geometry; longitude_scale is 1 when absent).",
       "required": [
         "source_bounds",
         "normalization_scale"
@@ -1880,6 +1908,11 @@
         "normalization_scale": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "longitude_scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "cos(latitude) of the track's GPS centre (analysis profile v24, centreline rule clean-racing-laps-v1): the geometry's x is longitude times this factor, so the outline keeps its real proportions. Absent on older geometry, whose x is longitude."
         }
       }
     },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { silhouetteOf } from "./silhouette";
+import { isCurrentCentreline } from "./track-silhouette";
 import { lastTab, rememberTab } from "./tab-memory";
 import { matches } from "../ui/multi-select";
 
@@ -39,6 +40,23 @@ describe("track silhouette", () => {
     const { x, y } = oval();
     const half = silhouetteOf(x.slice(0, 100), y.slice(0, 100))!;
     expect(half.d.endsWith("Z")).toBe(false);
+  });
+
+  it("keeps the track's proportions: a long narrow oval stays long and narrow", () => {
+    const n = 200;
+    const x = Array.from({ length: n }, (_, i) => 0.5 + 0.5 * Math.cos((i / n) * Math.PI * 2));
+    const y = Array.from({ length: n }, (_, i) => 0.5 + 0.1 * Math.sin((i / n) * Math.PI * 2));
+    const s = silhouetteOf(x, y)!;
+    const nums = [...s.d.matchAll(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
+    const w = Math.max(...nums.map((p) => p[0])) - Math.min(...nums.map((p) => p[0]));
+    const h = Math.max(...nums.map((p) => p[1])) - Math.min(...nums.map((p) => p[1]));
+    expect(w / h).toBeCloseTo(5, 0);
+  });
+
+  it("stores only the current centreline's outline", () => {
+    expect(isCurrentCentreline({ transform: { source_bounds: { minimum_x: 0, maximum_x: 1, minimum_y: 0, maximum_y: 1 }, normalization_scale: 1, longitude_scale: 0.81 } })).toBe(true);
+    expect(isCurrentCentreline({ transform: { source_bounds: { minimum_x: 0, maximum_x: 1, minimum_y: 0, maximum_y: 1 }, normalization_scale: 1 } })).toBe(false);
+    expect(isCurrentCentreline({ transform: null })).toBe(false);
   });
 
   it("draws nothing without geometry that can be a circuit", () => {

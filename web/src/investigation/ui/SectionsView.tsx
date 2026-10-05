@@ -1,19 +1,28 @@
-import { useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useElementSize } from "../../core/element-size";
 import { theme } from "../../gen/theme";
+import type { TelemetryCursor } from "../cursor/telemetry-cursor";
 import { n, percentText, seconds, signedText } from "../format";
 import type { MapGeometry, MapPoint } from "../geometry/map-model";
+import type { TraceData } from "../geometry/trace-model";
 import type { Investigation, Section } from "../investigation-model";
 import { deltaBar, lapsToOpen, shadedLaps, type SectionLapEntry, type SectionLaps, type ShadedLap } from "./section-laps";
+import { projectOnSection, SECTION_SIGNALS, sectionPointAt, sectionTrackPoints, tracedLaps } from "./section-traces-model";
+import { SectionTraces, type SectionTraceLap, type SectionTraceStatus } from "./SectionTraces";
 import { scaleFor, useRemPx } from "./unit";
 import "./sections.css";
 
 /**
- * Sections (backlog #48, #49): per detected section, the three fastest and three slowest clean laps by that section's time, the
+ * Sections (backlog #48, #49, #64): per detected section, the three fastest and three slowest clean laps by that section's time, the
  * section's median as zero, green shades faster and red shades slower. The map draws them as six strands along the section; the
- * tab strip picks the section; the lap rows select the laps `Open in Traces` opens with the cursor at the section start. Every
- * figure is the projector's (`section_laps`); this view ranks nothing.
+ * tab strip picks the section; the lap rows select the laps the telemetry draws and `Open in Traces` opens with the cursor at the
+ * section start. The right panel draws those laps' speed, throttle, brake and steering over the section with the median lap in
+ * grey, cursor-synced with a marker on the section segment. Every figure is the projector's (`section_laps`, the CCOL traces); this
+ * view ranks nothing.
  */
+
+/** The median lap's line: the chart reference grey. */
+const MEDIAN_STROKE = "var(--color-chart-reference)";
 
 function mapPath(points: readonly { x: number; y: number }[]): string {
   return points.map((point, index) => `${index === 0 ? "M" : "L"}${n(point.x)},${n(point.y)}`).join(" ");
@@ -52,6 +61,13 @@ export interface SectionsViewProps {
   sectionLaps: SectionLaps | null;
   onSelectSection(id: string): void;
   onOpenTraces(request: SectionsOpenRequest): void;
+  /**
+   * The analysis's trace store with these channels present (the loader's `ensureSignals`: the Traces tab's data, fetched once per
+   * analysis, missing channels only). Called when the view first needs telemetry and on Retry, never on pointer movement.
+   */
+  traces?(ids: readonly string[]): Promise<TraceData>;
+  /** Identifies the analysis (the cursor key and the trace load). */
+  analysisKey?: string;
 }
 
 const OPEN_SIGNALS = ["speed", "throttle", "brake", "steering"];
@@ -80,7 +96,25 @@ function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; selected:
   );
 }
 
-export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, onOpenTraces }: SectionsViewProps) {
+/** The viewBox numbers of the map (`x y w h`). */
+function viewBoxOf(map: MapGeometry): [number, number, number, number] {
+  const parts = map.viewBox.split(/[\s,]+/).map(Number);
+  return parts.length === 4 && parts.every(Number.isFinite) ? (parts as [number, number, number, number]) : map.bounds;
+}
+
+/** Element pixels of a map point in an element of `width x height` showing `box` with `preserveAspectRatio` meet (centred). */
+export function mapPixel(box: readonly [number, number, number, number], width: number, height: number, x: number, y: number): { px: number; py: number } {
+  const scale = Math.min(width / box[2], height / box[3]);
+  return { px: (width - box[2] * scale) / 2 + (x - box[0]) * scale, py: (height - box[3] * scale) / 2 + (y - box[1]) * scale };
+}
+
+/** The map point under element pixels (the inverse of `mapPixel`). */
+export function mapUnits(box: readonly [number, number, number, number], width: number, height: number, px: number, py: number): { x: number; y: number } {
+  const scale = Math.min(width / box[2], height / box[3]) || 1;
+  return { x: box[0] + (px - (width - box[2] * scale) / 2) / scale, y: box[1] + (py - (height - box[3] * scale) / 2) / scale };
+}
+
+export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, onOpenTraces, traces, analysisKey = "" }: SectionsViewProps) {
   const sections = inv.sections.sections;
   const entry: SectionLapEntry | null = section ? sectionLaps?.get(section.id) ?? null : null;
   const { fastest, slowest } = useMemo(() => shadedLaps(entry), [entry]);
@@ -92,6 +126,8 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   const opens = lapsToOpen(listed.map((lap) => lap.lap), selected);
 
   const svgRef = useRef<SVGSVGElement>(null);
+  const overlayRef = useRef<SVGSVGElement>(null);
+  const markerRef = useRef<HTMLDivElement>(null);
   const mapSize = useElementSize(svgRef);
   const k = scaleFor(useRemPx());
   const placed = useMemo(() => sectionMapPoints(map), [map]);
@@ -103,6 +139,8 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   const labelRadius = labelFont * 0.9;
   /** Half the strand band (sections.css `.ri-sl-segment`, 1.625 rem) plus a pixel, in map units. */
   const band = 14 * k * unitsPerPx;
+  /** A label's tap target: 44 px across on screen. */
+  const hitRadius = 22 * k * unitsPerPx;
   const labels = useMemo(() => {
     const out: { id: string; text: string; x: number; y: number; ax: number; ay: number }[] = [];
     if (!map || placed.length < 3) return out;
@@ -128,6 +166,82 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   }, [map, placed, sections, labelRadius, band]);
   const segment = useMemo(() => (section ? placed.filter((point) => point.percent >= section.startPct - 1e-9 && point.percent <= section.endPct + 1e-9) : []), [placed, section]);
   const strandGap = STRAND_PX * k * unitsPerPx;
+
+  // Telemetry: the trace store, loaded once when the section first has laps to draw (and on Retry); section and lap changes only redraw.
+  const [loaded, setLoaded] = useState<{ key: string; status: SectionTraceStatus; data: TraceData | null }>({ key: analysisKey, status: "loading", data: null });
+  const traceState = loaded.key === analysisKey ? loaded : { key: analysisKey, status: "loading" as const, data: null };
+  const [attempt, setAttempt] = useState(0);
+  const wantsTraces = traces !== undefined && listed.length > 0;
+  const tracesRef = useRef(traces);
+  tracesRef.current = traces;
+  useEffect(() => {
+    if (!wantsTraces || !tracesRef.current) return undefined;
+    let live = true;
+    setLoaded((current) => (current.key === analysisKey && current.status === "ready" ? current : { key: analysisKey, status: "loading", data: null }));
+    tracesRef.current(SECTION_SIGNALS).then(
+      (data) => { if (live) setLoaded({ key: analysisKey, status: "ready", data }); },
+      () => { if (live) setLoaded({ key: analysisKey, status: "failed", data: null }); },
+    );
+    return () => { live = false; };
+  }, [analysisKey, wantsTraces, attempt]);
+
+  const selectedKey = [...selected].sort((a, b) => a - b).join(",");
+  const drawnLaps: SectionTraceLap[] = useMemo(() => {
+    const { laps, median } = tracedLaps(listed.map((lap) => lap.lap), selected, entry?.medianLap ?? null);
+    const shade = new Map(listed.map((lap) => [lap.lap, lap.shade] as const));
+    return [
+      ...laps.map((lap) => ({ lap, stroke: `var(--sl-${shade.get(lap)})`, median: false })),
+      ...(median !== null ? [{ lap: median, stroke: MEDIAN_STROKE, median: true }] : []),
+    ];
+  }, [listed, selectedKey, entry?.medianLap]);
+
+  // The cursor across the section and its marker on the section segment. The map moves the cursor through `setFraction`; the cursor
+  // moves the marker through `onFraction`. Pointer movement writes a transform and a canvas, never a request.
+  const cursorRef = useRef<TelemetryCursor | null>(null);
+  const fractionRef = useRef(0.5);
+  const sectionPoints = useMemo(() => (section && placed.length > 1 ? sectionTrackPoints(placed, section) : []), [placed, section?.id, section?.startPct, section?.endPct]);
+  const pointsRef = useRef(sectionPoints);
+  pointsRef.current = sectionPoints;
+  const mapRef = useRef(map);
+  mapRef.current = map;
+  const sizeRef = useRef(mapSize);
+  sizeRef.current = mapSize;
+  const placeMarker = (local: number): void => {
+    const marker = markerRef.current;
+    const current = mapRef.current;
+    if (!marker || !current) return;
+    const point = sectionPointAt(pointsRef.current, local);
+    if (!point || sizeRef.current.width <= 0) {
+      marker.style.visibility = "hidden";
+      return;
+    }
+    const { px, py } = mapPixel(viewBoxOf(current), sizeRef.current.width, sizeRef.current.height, point.x, point.y);
+    marker.style.transform = `translate3d(${px.toFixed(1)}px,${py.toFixed(1)}px,0)`;
+    marker.style.visibility = "";
+  };
+  useEffect(() => { placeMarker(fractionRef.current); }, [sectionPoints, mapSize.width, mapSize.height]);
+  const zoneRect = useRef<DOMRect | null>(null);
+  useEffect(() => {
+    const drop = (): void => { zoneRect.current = null; };
+    window.addEventListener("scroll", drop, { capture: true, passive: true });
+    window.addEventListener("resize", drop, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", drop, true);
+      window.removeEventListener("resize", drop);
+    };
+  }, []);
+  const drive = (event: PointerEvent): void => {
+    const overlay = overlayRef.current;
+    const current = mapRef.current;
+    if (!overlay || !current || pointsRef.current.length < 2) return;
+    zoneRect.current ??= overlay.getBoundingClientRect();
+    const rect = zoneRect.current;
+    const { x, y } = mapUnits(viewBoxOf(current), rect.width, rect.height, event.clientX - rect.left, event.clientY - rect.top);
+    const local = projectOnSection(pointsRef.current, x, y);
+    fractionRef.current = local;
+    if (cursorRef.current) cursorRef.current.setFraction(local);
+    else placeMarker(local);
+  };
 
   if (sections.length === 0) {
     return (
@@ -158,6 +272,15 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   );
   const range = section ? `${percentText(section.startPct)}–${percentText(section.endPct)}` : "";
   const strands = segment.length > 1 ? listed : [];
+  const head = (
+    <>
+      <h2>Section {section?.label} <small>{range} % lap</small></h2>
+      <div class="ri-sl-facts">
+        <span>Median<b>{entry?.medianS != null ? `${seconds(entry.medianS)} s` : "—"}</b></span>
+        <span>Clean laps<b>{entry ? entry.cleanLapCount : "—"}</b></span>
+      </div>
+    </>
+  );
 
   return (
     <div class="ri-sl" data-ri-view="sections">
@@ -170,29 +293,41 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
           {!map && <span>not recorded</span>}
         </div>
         {map && map.points.length > 2 ? (
-          <svg ref={svgRef} class="ri-sl-svg" data-sl-map viewBox={map.viewBox} role="group" aria-label={`Track map · section ${section?.label ?? ""}`}>
-            <path d={mapPath(map.points)} class="ri-sl-track" />
-            {segment.length > 1 && <path d={mapPath(segment)} class="ri-sl-segment" />}
-            {strands.map((lap, i) => (
-              <path key={lap.lap} d={offsetPath(segment, (i - (strands.length - 1) / 2) * strandGap)} class={`ri-sl-strand${hot === lap.lap ? " hot" : ""}${selected.has(lap.lap) ? " selected" : ""}`}
-                style={`--lap:var(--sl-${lap.shade})`} data-strand={lap.lap} data-shade={lap.shade}
-                onPointerEnter={() => setHot(lap.lap)} onPointerLeave={() => setHot(null)}>
-                <title>{`L${lap.lap} · ${seconds(lap.sectionS)} s · ${signedText(lap.deltaS)} s`}</title>
-              </path>
-            ))}
-            {map.startFinish && <line x1={n(map.startFinish.x1)} y1={n(map.startFinish.y1)} x2={n(map.startFinish.x2)} y2={n(map.startFinish.y2)} class="ri-sl-start" />}
-            {labels.map((label) => {
-              const isSelected = label.id === section?.id;
-              return (
-                <g key={label.id} class={`ri-sl-label${isSelected ? " selected" : ""}`} role="button" tabIndex={0} aria-label={`Section ${label.text}`} aria-pressed={isSelected} data-map-section={label.id}
-                  onClick={() => onSelectSection(label.id)} onKeyDown={(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectSection(label.id); } }}>
-                  <line x1={n(label.ax)} y1={n(label.ay)} x2={n(label.x)} y2={n(label.y)} class="ri-sl-leader" />
-                  <circle cx={n(label.x)} cy={n(label.y)} r={n(labelRadius)} />
-                  <text x={n(label.x)} y={n(label.y + labelFont * 0.33)} text-anchor="middle" font-size={n(labelFont)}>{label.text}</text>
+          <div class="ri-sl-stage" data-sl-map>
+            <svg ref={svgRef} class="ri-sl-svg" viewBox={map.viewBox} aria-hidden="true">
+              <path d={mapPath(map.points)} class="ri-sl-track" />
+              {segment.length > 1 && <path d={mapPath(segment)} class="ri-sl-segment" />}
+              {map.startFinish && <line x1={n(map.startFinish.x1)} y1={n(map.startFinish.y1)} x2={n(map.startFinish.x2)} y2={n(map.startFinish.y2)} class="ri-sl-start" />}
+            </svg>
+            {/* Over the map with the same box: the strands and the scrub band along the section (pointer there moves the cursor), then the labels. */}
+            <svg ref={overlayRef} class="ri-sl-over" viewBox={map.viewBox} role="group" aria-label={`Track map · section ${section?.label ?? ""}`}>
+              {segment.length > 1 && (
+                <g class="ri-sl-zone" data-sl-zone aria-hidden="true" onPointerEnter={drive} onPointerMove={drive} onPointerDown={drive} onPointerLeave={() => { zoneRect.current = null; }}>
+                  <path d={mapPath(segment)} class="ri-sl-scrub" />
+                  {strands.map((lap, i) => (
+                    <path key={lap.lap} d={offsetPath(segment, (i - (strands.length - 1) / 2) * strandGap)} class={`ri-sl-strand${hot === lap.lap ? " hot" : ""}${selected.has(lap.lap) ? " selected" : ""}`}
+                      style={`--lap:var(--sl-${lap.shade})`} data-strand={lap.lap} data-shade={lap.shade}
+                      onPointerEnter={() => setHot(lap.lap)} onPointerLeave={() => setHot(null)}>
+                      <title>{`L${lap.lap} · ${seconds(lap.sectionS)} s · ${signedText(lap.deltaS)} s`}</title>
+                    </path>
+                  ))}
                 </g>
-              );
-            })}
-          </svg>
+              )}
+              {labels.map((label) => {
+                const isSelected = label.id === section?.id;
+                return (
+                  <g key={label.id} class={`ri-sl-label${isSelected ? " selected" : ""}`} role="button" tabIndex={0} aria-label={`Section ${label.text}`} aria-pressed={isSelected} data-map-section={label.id}
+                    onClick={() => onSelectSection(label.id)} onKeyDown={(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectSection(label.id); } }}>
+                    <line x1={n(label.ax)} y1={n(label.ay)} x2={n(label.x)} y2={n(label.y)} class="ri-sl-leader" />
+                    <circle cx={n(label.x)} cy={n(label.y)} r={n(Math.max(labelRadius, hitRadius))} class="ri-sl-hit" />
+                    <circle cx={n(label.x)} cy={n(label.y)} r={n(labelRadius)} />
+                    <text x={n(label.x)} y={n(label.y + labelFont * 0.33)} text-anchor="middle" font-size={n(labelFont)}>{label.text}</text>
+                  </g>
+                );
+              })}
+            </svg>
+            <div ref={markerRef} class="ri-map-marker ri-sl-marker" data-sl-marker aria-hidden="true" style="visibility:hidden"><i /></div>
+          </div>
         ) : (
           <div class="ri-unavailable">Not recorded</div>
         )}
@@ -222,14 +357,18 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
       </div>
 
       <div class="ri-sl-open">
-        <h2>Section {section?.label} <small>{range} % lap</small></h2>
-        <div class="ri-sl-facts">
-          <span>Median<b>{entry?.medianS != null ? `${seconds(entry.medianS)} s` : "—"}</b></span>
-          <span>Clean laps<b>{entry ? entry.cleanLapCount : "—"}</b></span>
-        </div>
-        <output class="ri-sl-read" data-sl-read>{hotLap ? `L${hotLap.lap} · ${seconds(hotLap.sectionS)} s · ${signedText(hotLap.deltaS)} s` : ""}</output>
+        {section && listed.length > 0 && traces ? (
+          <SectionTraces
+            data={traceState.data} status={traceState.status} onRetry={() => setAttempt((value) => value + 1)}
+            section={{ id: section.id, startPct: section.startPct, endPct: section.endPct }} laps={drawnLaps} hot={hot}
+            fractionRef={fractionRef} cursorRef={cursorRef} onFraction={placeMarker} analysisKey={analysisKey} head={head}
+          />
+        ) : (
+          <div class="ri-st-head">{head}</div>
+        )}
         <div class="ri-sl-action">
           <span>{opens.length ? `${opens.length} ${opens.length === 1 ? "lap" : "laps"}` : ""}</span>
+          <output class="ri-sl-read" data-sl-read>{hotLap ? `L${hotLap.lap} · ${seconds(hotLap.sectionS)} s · ${signedText(hotLap.deltaS)} s` : ""}</output>
           <button type="button" class="ri-pill-button primary" disabled={!section || opens.length === 0}
             onClick={() => section && onOpenTraces({ laps: opens, startPct: section.startPct, endPct: section.endPct, signalKeys: OPEN_SIGNALS, cursorPct: section.startPct })}>
             Open in Traces

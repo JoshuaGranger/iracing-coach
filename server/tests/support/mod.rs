@@ -53,8 +53,11 @@ pub struct FakeParser;
 /// disk header's times and the summary fields of its session (`offline_sessions::stint_of`).
 fn fake_header(meta: &Value) -> Value {
     // `lap_last`: the last `Lap` sample (null when the fake recording names none)
+    // `results`: the session info's results summary (`overview::results_summary`), null when the
+    // fake recording names none
     let mut header = json!({"buffer_length": 512, "variable_count": 12, "lap_last": meta["lap_last"],
-                            "summary": {"is_fixed_setup": meta["fixed_setup"].as_bool()}});
+                            "summary": {"is_fixed_setup": meta["fixed_setup"].as_bool()},
+                            "results": meta["results"]});
     if let Some(date) = meta["session_start_date"].as_i64() {
         let (clock, end) = (
             meta["session_start_time"].as_f64().unwrap_or(0.0),

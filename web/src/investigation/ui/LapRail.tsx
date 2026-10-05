@@ -1,7 +1,5 @@
 import { useMemo, useRef, useState } from "preact/hooks";
 import { lapTime, reasonsText, runDash } from "../format";
-import type { Comparison } from "../investigation-model";
-import type { GroupRole } from "./comparison-model";
 import {
   conditionsText,
   passesFilters,
@@ -23,11 +21,11 @@ export { passesFilters } from "../geometry/rail-model";
 
 /**
  * The lap rail: a strict grid with one column track per field (swatch, lap chip, flag, time, Δ, sectors, fuel, incidents, pit);
- * the header row uses the same template and rows never wrap, so nothing can misalign. The lap chip carries the backend's screening
- * (hollow: not used in the run's pace fit; dashed: partial) with its reasons; the fuel cell holds the figure or `—`, nothing else.
- * Lap colour is race progress over the full phase, its endpoints in the rail's toolbar. One state model: selected (lap-colour edge
- * and tint, lit swatch, `aria-pressed`), spotlight (selected plus a lap-colour outline and number plate), hover (surface colour
- * only) and keyboard focus (`:focus-visible` only, cleared by any pointer use, so a click never leaves a box behind).
+ * the header row uses the same template and rows never wrap, so nothing can misalign. The lap number is plain on every lap (#58): a
+ * lap screened out of the pace fit shows the chart's hollow dot in the flag column, and the backend's reason is the row's hover; the
+ * fuel cell holds the figure or `—`, nothing else. Lap colour is race progress over the full phase, its endpoints in the rail's
+ * toolbar. One state model: selected (lap-colour edge and tint, lit swatch, `aria-pressed`), spotlight (selected plus a lap-colour
+ * outline on the row), hover (surface colour only) and keyboard focus (`:focus-visible` only, cleared by any pointer use).
  */
 
 export interface LapRailProps {
@@ -47,15 +45,13 @@ export interface LapRailProps {
   onBestThree(): void;
   onClear(): void;
   onShowAll(): void;
-  /** The selected comparison's groups by lap: the rail marks them. */
-  groups?: ReadonlyMap<number, GroupRole>;
-  comparison?: Comparison | null;
 }
 
 const SECTOR_TITLE: Record<SectorCell["state"], string> = { sb: "session best", pb: "personal best", n: "", nc: "lap not clean", na: "not recorded" };
 
-function Flag({ flag }: { flag: LapFlag }) {
-  if (flag === "green") return <i class="ri-dot-mark green" title="Green" />;
+function Flag({ flag, screened }: { flag: LapFlag; screened: string | null }) {
+  // A green lap the fit did not use: the chart's hollow dot, its reason on hover.
+  if (flag === "green") return screened ? <i class="ri-dot-mark green hollow" title={screened} data-screened /> : <i class="ri-dot-mark green" title="Green" />;
   if (flag === "caution") return <i class="ri-dot-mark caution" title="Caution" />;
   if (flag === "white" || flag === "checkered") {
     return (
@@ -93,7 +89,6 @@ export function LapRail(props: LapRailProps) {
   // Run identity by tire set, as on Race and Runs: same hue after a stop that changed no tires, a lighter shade.
   // Every run of the phase, not only the filtered groups, so a filter never recolours a run.
   const identities = useMemo(() => runIdentities(props.runs.map((run) => (run as { run_number?: unknown }).run_number).filter((run): run is number => typeof run === "number"), props.pitStops), [props.runs, props.pitStops]);
-  const groupColor = (role: GroupRole): string => identityColour(identities, role === "earlier" ? props.comparison?.baseline.runNumber : props.comparison?.compared.runNumber);
 
   // Arrow keys move between rows; any pointer use hides the focus ring until the keyboard is used again.
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -169,7 +164,6 @@ export function LapRail(props: LapRailProps) {
                   key={meta.lap} data={data} meta={meta} selected={selected.has(meta.lap)} spotlight={spotlight === meta.lap}
                   zero={zeroMeta} incidents={incidents.get(meta.lap) ?? null} cells={sectors.get(meta.lap) ?? null} sectorCount={sectorCount}
                   stop={stops.get(meta.lap) ?? null} onToggle={props.onToggle}
-                  group={props.groups?.get(meta.lap) ?? null} groupColor={groupColor}
                   onPitEnter={showPit} onPitLeave={() => setPitHover(null)}
                 />
               ))}
@@ -202,11 +196,9 @@ interface LapRowProps {
   onToggle(lap: number): void;
   onPitEnter(stop: PitStop, element: HTMLElement): void;
   onPitLeave(): void;
-  group: GroupRole | null;
-  groupColor(role: GroupRole): string;
 }
 
-/** The lap chip's status: screened out of the pace fit (hollow) or partial (dashed), with the backend's reasons; null when used. */
+/** A lap's screening for the row's hover: screened out of the pace fit or partial, with the backend's reasons; null when used. */
 export function lapChipStatus(meta: TraceLapData): { kind: "partial" | "screened"; text: string } | null {
   const chip = statusChip(meta);
   if (!chip) return null;
@@ -215,7 +207,7 @@ export function lapChipStatus(meta: TraceLapData): { kind: "partial" | "screened
   return chip.kind === "partial" ? { kind: "partial", text: `Partial lap${why}` } : { kind: "screened", text: `Not used in ${run}${why}` };
 }
 
-function LapRow({ data, meta, selected, spotlight, zero, incidents, cells, sectorCount, stop, onToggle, onPitEnter, onPitLeave, group, groupColor }: LapRowProps) {
+function LapRow({ data, meta, selected, spotlight, zero, incidents, cells, sectorCount, stop, onToggle, onPitEnter, onPitLeave }: LapRowProps) {
   const points = incidents?.points ?? 0;
   const clean = isCleanLap(meta, points);
   const fastest = data.fastestLap === meta.lap;
@@ -226,18 +218,18 @@ function LapRow({ data, meta, selected, spotlight, zero, incidents, cells, secto
   const conditions = conditionsText(meta);
   const fuel = typeof meta.fuel_used_gal === "number" ? meta.fuel_used_gal.toFixed(3) : "—";
   const severity = points >= 4 ? "p4" : points >= 2 ? "p2" : "p1";
-  const label = [`Lap ${meta.lap}`, lapTime(meta.lap_time_s), delta !== "—" && zero ? `Δ ${delta}` : null, chip ? chip.text : null, group ? (group === "earlier" ? "Earlier group" : "Later group") : null, incidents ? `x${points}` : null, stop ? pitLabel(stop) : null]
+  const label = [`Lap ${meta.lap}`, lapTime(meta.lap_time_s), delta !== "—" && zero ? `Δ ${delta}` : null, chip ? chip.text : null, incidents ? `x${points}` : null, stop ? pitLabel(stop) : null]
     .filter(Boolean)
     .join(", ");
   return (
     <button
       type="button" class={`ri-lap-row ri-lgrid${selected ? " selected" : ""}${spotlight ? " spotlight" : ""}${clean ? "" : " unclean"}`}
-      style={`--lap:${lapColor(data, meta.lap)}${group ? `;--grp:${groupColor(group)}` : ""}`} aria-pressed={selected} aria-label={label} data-lap={meta.lap} data-group={group ?? undefined}
+      style={`--lap:${lapColor(data, meta.lap)}`} aria-pressed={selected} aria-label={label} title={chip?.text} data-lap={meta.lap} data-screening={chip?.kind}
       onClick={() => onToggle(meta.lap)}
     >
       <span class="ri-sw" aria-hidden="true" />
-      <span class={`ri-n${chip ? ` ${chip.kind}` : ""}`} title={chip?.text} data-lap-chip={chip?.kind ?? "used"}>{meta.lap}</span>
-      <span class="ri-fl"><Flag flag={flag} /></span>
+      <span class="ri-n">{meta.lap}</span>
+      <span class="ri-fl"><Flag flag={flag} screened={chip?.kind === "screened" ? chip.text : null} /></span>
       <span class={`ri-tm${fastest ? " best" : ""}`} title={conditions || undefined}>{lapTime(meta.lap_time_s)}</span>
       <span class="ri-dl">{delta}</span>
       <span class="ri-secs" aria-hidden="true">
@@ -258,7 +250,6 @@ function LapRow({ data, meta, selected, spotlight, zero, incidents, cells, secto
         )}
         {pitRoad !== null && <span class="ri-pit-road-mark" title={`Pit road · ${pitRoad.toFixed(1)} s`}>{pitRoad > 0 ? pitRoad.toFixed(1) : "Pit"}</span>}
       </span>
-      {group && <i class={`ri-grp-mark ${group}`} aria-hidden="true" />}
     </button>
   );
 }

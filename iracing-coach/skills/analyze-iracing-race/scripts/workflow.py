@@ -2221,8 +2221,20 @@ def _analysis_pipeline_sha256() -> str:
 # Iowa race, practice, Offline Testing) is now byte-identical between Windows
 # and Linux. analysis_id moves with the bundle digest, as it does for every
 # analyzer-source change.
+# Review 2026-10-04 (track geometry, backlog #65): v24 retires v23 because the
+# track_geometry main path changes. It was the per-bin median of every off-pit
+# sample in raw longitude/latitude degrees, so pit approach and exit samples
+# (off pit road, on the in and out laps) bent the line into a jagged stretch and
+# an unscaled longitude stretched every map east-west by 1/cos(latitude) (Iowa
+# and New Hampshire drawn lopsided). The centreline now comes from the clean
+# racing-speed laps (race_foundations.CENTRELINE_RULE), every layer is drawn in
+# longitude * cos(latitude) (transform.longitude_scale), and a complete loop is
+# smoothed by a seven-point circular moving average; track_geometry.centreline
+# states the rule, the source and the laps. The per-track cache ranks the
+# current rule above older geometry whatever its coverage. The native
+# build_track_geometry kernel carries the same rule byte for byte.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "f313b4ed265ebe46ebaee2ac49873bfbfe22eb1fefe7546dc66afc90494297fc"
+    "8ebbe80bfdd1bae800711f308084ef9e589d4c371e515d57fe1a05071ec70a4a"
 )
 
 

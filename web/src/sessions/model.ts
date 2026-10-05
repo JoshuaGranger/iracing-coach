@@ -310,11 +310,20 @@ export function formatPosition(p: number | null | undefined): string {
   return p == null ? NONE : `P${p}`;
 }
 
+/**
+ * The official starting position a race finish is measured against (`SessionOverview.start_position`: the grid, else the
+ * backend's position at the green flag). Never the first recorded position (backlog #56). Null outside a race.
+ */
+export function startPosition(s: Session): number | null {
+  if (phaseOf(s.session_type).code !== "R") return null;
+  const v: unknown = s.overview.start_position;
+  return finite(v) && v > 0 ? v : null;
+}
+
 /** `P12 → P4`, or `P4` when only one end is known. */
 export function resultText(s: Session): string {
-  const o = s.overview;
-  const from = o.starting_position;
-  const to = o.final_position;
+  const from = startPosition(s);
+  const to = s.overview.final_position;
   if (from != null && to != null) return `P${from} → P${to}`;
   return to != null ? `P${to}` : from != null ? `P${from} → ${NONE}` : NONE;
 }
@@ -328,10 +337,30 @@ export interface PositionChange {
 
 /** Race only: qualifying and practice show their classification and no change. */
 export function positionChange(s: Session): PositionChange | null {
-  if (phaseOf(s.session_type).code !== "R") return null;
-  const { starting_position: from, final_position: to } = s.overview;
+  const from = startPosition(s);
+  const to = s.overview.final_position;
   if (from == null || to == null) return null;
   return { from, to, gained: from - to };
+}
+
+/**
+ * Practice and qualifying place: the official one with the field size when a later recording of the event lists the results
+ * (`results_position`, `field_size`, sent together), else the last recorded position alone. Never a recorded place over an
+ * official field.
+ */
+export function classification(s: Session): { position: number; field: number | null } | null {
+  const o = s.overview;
+  const official: unknown = o.results_position;
+  const field: unknown = o.field_size;
+  if (finite(official) && official > 0) return { position: official, field: finite(field) && field > 0 ? field : null };
+  const recorded = o.final_position;
+  return recorded == null ? null : { position: recorded, field: null };
+}
+
+/** Burn per green lap, gallons (`fuel_per_lap_gal`, the backend's strategy figure); null when it measured none. */
+export function burnPerLap(s: Session): number | null {
+  const v: unknown = s.overview.fuel_per_lap_gal;
+  return finite(v) && v > 0 ? v : null;
 }
 
 export function isWin(s: Session): boolean {
@@ -355,7 +384,9 @@ const FIGURE_FIELDS = [
   "pit_stops_detected",
   "longest_green_run",
   "fuel_used_gal",
+  "fuel_per_lap_gal",
   "final_position",
+  "results_position",
   "longest_run_laps",
   "longest_run_pace_loss_s",
   "timed_lap_1_s",
@@ -426,7 +457,7 @@ export function eventPhaseOptions(sessionId: number, sessions: readonly Session[
  * The labelled slots of a phase cell, in reading order. A race has seven (`pos` to `run`); practice has position, best, its longest
  * run and the pace lost over it (`loss`); qualifying has position and its first two timed laps (`lap1`, `lap2`).
  */
-export type SlotKey = "pos" | "laps" | "best" | "pace" | "stops" | "fuel" | "run" | "loss" | "lap1" | "lap2";
+export type SlotKey = "pos" | "laps" | "best" | "pace" | "stops" | "burn" | "run" | "loss" | "lap1" | "lap2";
 
 /**
  * What a phase cell is (backlog #33): the race is the row's subject, practice and qualifying its preamble. A test or a warmup reads
@@ -440,10 +471,10 @@ export function cellKind(s: Session): CellKind {
 }
 
 /**
- * Colour budget of the cell: gain or loss on a supported position change, caution on a caution count above zero, nothing else.
- * `unit` and `sep` are muted text, not colour carriers.
+ * Colour budget of the cell: gain or loss on a supported position change, the green-flag colour on the green-lap count, caution on a
+ * caution count above zero, nothing else. `unit` and `sep` are muted text, not colour carriers.
  */
-export type PartTone = "gain" | "loss" | "caution" | "unit" | "sep";
+export type PartTone = "gain" | "loss" | "green" | "caution" | "unit" | "sep";
 export interface SlotPart {
   text: string;
   tone?: PartTone;
@@ -489,8 +520,9 @@ function lapText(seconds: number): string {
 
 /**
  * The seven slots of one phase, every one present so a missing value reads `—` in its place. The finish is a plain figure (no win
- * flag); a supported position change (race only) is the one gain or loss colour; cautions above zero are the one caution colour;
- * best, pace, stops, fuel and run carry no colour.
+ * flag); a position change (race only, against the official start, which `from P12` names) is the one gain or loss colour; the
+ * green-lap count is in the green-flag colour, cautions above zero in the caution colour; best, pace, stops, burn and the long run
+ * carry no colour.
  */
 export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
   const o = s.overview;
@@ -503,7 +535,8 @@ export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
     const parts: SlotPart[] = [{ text: formatPosition(final) }];
     const change = positionChange(s);
     if (change && change.gained !== 0) parts.push({ text: `${change.gained > 0 ? "▲" : "▼"}${Math.abs(change.gained)}`, tone: change.gained > 0 ? "gain" : "loss" });
-    out.push({ key: "pos", label, title: change ? `Finished P${final}, started P${change.from}` : `Classified P${final}`, parts, missing: false });
+    if (change) parts.push({ text: `from P${change.from}`, tone: "unit" });
+    out.push({ key: "pos", label, title: change ? `Finished P${final}, started P${change.from}` : `Finished P${final}`, parts, missing: false });
   }
 
   const green = count(o.green_laps_estimated);
@@ -514,7 +547,11 @@ export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
       key: "laps",
       label: "Grn · Cau",
       title: "Green · caution laps",
-      parts: [{ text: green === null ? NONE : String(green) }, { text: "·", tone: "sep" }, caution === null ? { text: NONE } : { text: String(caution), tone: caution > 0 ? "caution" : undefined }],
+      parts: [
+        green === null ? { text: NONE } : { text: String(green), tone: green > 0 ? "green" : undefined },
+        { text: "·", tone: "sep" },
+        caution === null ? { text: NONE } : { text: String(caution), tone: caution > 0 ? "caution" : undefined },
+      ],
       missing: false,
     });
 
@@ -539,15 +576,12 @@ export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
   const stops = count(o.pit_stops_detected);
   out.push(stops === null ? missingSlot("stops", "Stops", "Pit stops") : { key: "stops", label: "Stops", title: "Pit stops", parts: [{ text: String(stops) }], missing: false });
 
-  const fuel = o.fuel_used_gal;
-  out.push(
-    finite(fuel)
-      ? { key: "fuel", label: "Fuel", title: "Fuel used, gallons", parts: [{ text: fuel.toFixed(1) }, { text: "gal", tone: "unit" }], missing: false }
-      : missingSlot("fuel", "Fuel", "Fuel used, gallons"),
-  );
+  const burn = burnPerLap(s);
+  const burnTitle = "Fuel burn per green lap, gallons";
+  out.push(burn === null ? missingSlot("burn", "Burn", burnTitle) : { key: "burn", label: "Burn", title: burnTitle, parts: [{ text: burn.toFixed(2) }, { text: "gal/lap", tone: "unit" }], missing: false });
 
   const run = count(o.longest_green_run);
-  out.push(run === null ? missingSlot("run", "Run", "Longest green run, laps") : { key: "run", label: "Run", title: "Longest green run, laps", parts: [{ text: String(run) }], missing: false });
+  out.push(run === null ? missingSlot("run", "Long run", "Longest green run, laps") : { key: "run", label: "Long run", title: "Longest green run, laps", parts: [{ text: String(run) }], missing: false });
   return out;
 }
 
@@ -560,9 +594,13 @@ export function formatDelta(seconds: number | null | undefined): string {
   return r > 0 ? `+${body}` : `−${body}`;
 }
 
+/** Practice and qualifying place, `P3 / 24` with the field size when the official results give it (backlog #55). */
 function positionSlot(s: Session): Slot {
-  const final = s.overview.final_position;
-  return final == null ? missingSlot("pos", "Pos", "Classification") : { key: "pos", label: "Pos", title: `Classified P${final}`, parts: [{ text: formatPosition(final) }], missing: false };
+  const c = classification(s);
+  if (c === null) return missingSlot("pos", "Pos", "Classification");
+  const parts: SlotPart[] = [{ text: formatPosition(c.position) }];
+  if (c.field !== null) parts.push({ text: `/ ${c.field}`, tone: "unit" });
+  return { key: "pos", label: "Pos", title: c.field !== null ? `Classified P${c.position} of ${c.field}` : `Last recorded P${c.position}`, parts, missing: false };
 }
 
 /** A lap time slot; `eventBest` marks it by weight when it is the event's fastest lap. */
@@ -584,7 +622,7 @@ export function practiceSlots(s: Session, eventBest: number | null): Slot[] {
   return [
     positionSlot(s),
     lapSlot("best", "Best", "Fastest clean lap", bestLap(s), eventBest),
-    runLaps === null ? missingSlot("run", "Run", "Longest run without a reset, laps") : { key: "run", label: "Run", title: "Longest run without a reset, laps", parts: [{ text: String(runLaps) }, { text: "laps", tone: "unit" }], missing: false },
+    runLaps === null ? missingSlot("run", "Long run", "Longest run without a reset, laps") : { key: "run", label: "Long run", title: "Longest run without a reset, laps", parts: [{ text: String(runLaps) }, { text: "laps", tone: "unit" }], missing: false },
     finite(loss) ? { key: "loss", label: "Fall-off", title: lossTitle, parts: [{ text: formatDelta(loss) }, { text: "s", tone: "unit" }], missing: false } : missingSlot("loss", "Fall-off", lossTitle),
   ];
 }
@@ -601,9 +639,9 @@ export function cellSlots(s: Session, eventBest: number | null): Slot[] {
   return kind === "race" ? phaseSlots(s, eventBest) : kind === "qualify" ? qualifySlots(s, eventBest) : practiceSlots(s, eventBest);
 }
 
-/** Coloured figures in one cell: the budget is at most two (one position change, one caution count). */
+/** Coloured figures in one cell: the budget is at most three (one position change, the green count, one caution count). */
 export function colouredFigures(slots: readonly Slot[]): number {
-  return slots.reduce((n, s) => n + s.parts.filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "caution").length, 0);
+  return slots.reduce((n, s) => n + s.parts.filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "green" || p.tone === "caution").length, 0);
 }
 
 /** The column a phase takes: a test shares practice's. */

@@ -29,22 +29,28 @@ import {
 import { openingTab } from "./tab-memory";
 import { TrackSilhouette } from "./track-silhouette";
 
-/** Fixed or Open: the one constraint chip of an event (the chip rule). A phase that differs from its event carries its own. */
-export function SetupBadge({ type }: { type: SetupType }) {
+export const SETUP_WORDS: Record<SetupType, string> = { Fixed: "Fixed setup", Open: "Open setup" };
+
+/** The lock alone (backlog #51): closed for a fixed setup, open for an open one. Hidden from assistive technology: its holder names it. */
+export function LockIcon({ type }: { type: SetupType }) {
   return (
-    <Chip variant="constraint" title={type === "Fixed" ? "Fixed setup" : "Open setup"}>
+    <svg class="sx-lock-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <rect x="2.5" y="6" width="9" height="6.5" rx="1.4" fill="currentColor" />
       {type === "Fixed" ? (
-        <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
-          <rect x="2.5" y="6" width="9" height="6.5" rx="1.4" fill="currentColor" />
-          <path d="M4.5 6V4.3a2.5 2.5 0 015 0V6" fill="none" stroke="currentColor" stroke-width="1.5" />
-        </svg>
+        <path d="M4.5 6V4.3a2.5 2.5 0 015 0V6" fill="none" stroke="currentColor" stroke-width="1.5" />
       ) : (
-        <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true">
-          <path d="M9.6 1.4a3.2 3.2 0 00-3.9 4.1L1.6 9.6a1.3 1.3 0 001.8 1.8l4.1-4.1a3.2 3.2 0 004.1-3.9L9.8 5.2 8.3 4.9 8 3.4z" fill="currentColor" />
-        </svg>
+        <path d="M4.5 6V4.3a2.5 2.5 0 014.9-.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
       )}
-      {type}
-    </Chip>
+    </svg>
+  );
+}
+
+/** Fixed or Open as a glyph with its meaning on hover and for assistive technology. */
+export function SetupLock({ type, class: cls }: { type: SetupType; class?: string }) {
+  return (
+    <span class={cls ? `sx-lock ${cls}` : "sx-lock"} role="img" aria-label={SETUP_WORDS[type]} title={SETUP_WORDS[type]} data-setup={type}>
+      <LockIcon type={type} />
+    </span>
   );
 }
 
@@ -127,15 +133,19 @@ export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: 
   const laps = s.overview.recorded_laps;
   const kind = cellKind(s);
   const quiet = kind !== "race";
+  const badge = phase.code === "W" || phase.code === "T" ? "P" : phase.code;
   const body = (
     <>
       <div class="sx-slots" data-figures={figures ? "true" : "false"}>
         <div class="sx-slot sx-head">
-          <span class="sx-l">{[time, s.recording_count > 1 ? `${s.recording_count} rec` : null].filter(Boolean).join(" · ") || NONE}</span>
           <b class={quiet ? "sx-qv sx-phase" : "sx-v sx-phase"}>
+            <span class="sx-badge" aria-hidden="true">
+              {badge}
+            </span>
             {phase.label}
-            {type !== null && type !== ev.setupType ? <SetupBadge type={type} /> : null}
+            {type !== null && type !== ev.setupType ? <SetupLock type={type} /> : null}
           </b>
+          <span class="sx-l">{[time, s.recording_count > 1 ? `${s.recording_count} rec` : null].filter(Boolean).join(" · ") || NONE}</span>
         </div>
         {figures ? (
           cellSlots(s, ev.bestLapS).map((slot) => <SlotView key={slot.key} slot={slot} quiet={quiet} />)
@@ -167,8 +177,8 @@ export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: 
 }
 
 /**
- * One compact row per event, three blocks: identity at the left behind a divider, then each phase its own panel across a gutter, the
- * race widest (stacked rows on a phone).
+ * One card per event (backlog #50), a gap between cards: identity at the left behind a divider, then each phase its own panel across
+ * a gutter, the race widest (stacked rows on a phone); the setup lock in the card's top-right corner (#51).
  */
 export function EventRow({ ev, customerId, colors, now, layout }: { ev: EventGroup; customerId: number; colors: ReadonlyMap<string, number>; now: Date; layout: readonly ColumnCode[] }) {
   const head = ev.head;
@@ -179,7 +189,8 @@ export function EventRow({ ev, customerId, colors, now, layout }: { ev: EventGro
   const analysisId = ev.sessions.find((s) => isOpenable(s) && s.analysis_id)?.analysis_id ?? null;
   const { columns, tracks } = phaseColumns(ev.sessions, layout);
   return (
-    <section class="sx-event" data-car={car} aria-label={trackKey}>
+    <section class="sx-event" data-car={car} data-setup={ev.setupType ?? undefined} aria-label={trackKey}>
+      {ev.setupType ? <SetupLock type={ev.setupType} class="sx-card-lock" /> : null}
       <div class="sx-row">
         <header class="sx-id">
           <div class="sx-id-title">
@@ -188,7 +199,6 @@ export function EventRow({ ev, customerId, colors, now, layout }: { ev: EventGro
           </div>
           <div class="sx-meta">
             <span>{[head.track_config, day].filter(Boolean).join(" · ")}</span>
-            {ev.setupType ? <SetupBadge type={ev.setupType} /> : null}
           </div>
           <div class="sx-car">
             <i class="sx-stripe" aria-hidden="true" />
