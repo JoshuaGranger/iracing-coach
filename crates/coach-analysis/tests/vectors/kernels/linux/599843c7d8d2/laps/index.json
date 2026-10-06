@@ -1,0 +1,17 @@
+{
+ "calls": {
+  "analysis_engine._disrupted_sample_indices": 1,
+  "analysis_engine._lap_summaries": 1,
+  "analysis_engine._service_events": 1
+ },
+ "files": {
+  "analysis_engine._disrupted_sample_indices/00000.json": "aa27c4a737acafe1775d09ab203a3a8029b06bd20cb649b248080bdd2f247d40",
+  "analysis_engine._lap_summaries/00000.json": "338f9eb4ac532b1bc773fcf947b6b7f5cbba692139622522f0f607a6845df6b8",
+  "analysis_engine._service_events/00000.json": "b1541f86151474f9f69f6b97b2caadf334b3b5b4535621776d59844796f2dbc1"
+ },
+ "platform": "linux",
+ "python": "3.12.3",
+ "recording": "synthetic:laps-traffic-sides",
+ "sha256": "599843c7d8d2b90d8aeb2349c91b50dfedce8d5311b5bb4c6e4f90618073f01f",
+ "target_hz": null
+}

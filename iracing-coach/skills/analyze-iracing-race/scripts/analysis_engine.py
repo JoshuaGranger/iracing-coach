@@ -75,7 +75,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v24"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v25"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -1572,6 +1572,48 @@ def _on_track(location: float | None) -> bool:
     return location is not None and int(location) == 3  # irsdk_TrkLoc::OnTrack
 
 
+# The close-traffic screen's share of a lap (clean_context.traffic_rule).
+CLOSE_TRAFFIC_FRACTION = 0.10
+
+
+def _traffic_sides(
+    near_time: float, ahead_time: float, behind_time: float, observed_time: float
+) -> dict[str, Any]:
+    """Which side a lap's close traffic was on, for clean_context.
+
+    Each side's fraction is the share of the observed lap time with a car
+    inside that side's distance of the traffic rule; the screen's own
+    traffic_proximity_fraction counts a sample once when both sides are
+    close. The side is None without traffic (no distance channels, or a zero
+    fraction); "both" when each side alone reaches the screen's 10%; else the
+    side that does; else (only the union reaches it, or the lap is under it)
+    the side with the larger share, "both" when the shares are equal. The
+    rounded fractions decide, as the screen compares its rounded fraction.
+    """
+
+    def fraction(time: float) -> float | None:
+        return _round(time / observed_time if observed_time > 0.0 else None, 4)
+
+    near, ahead, behind = fraction(near_time), fraction(ahead_time), fraction(behind_time)
+    side = None
+    if near and ahead is not None and behind is not None:
+        ahead_close = ahead >= CLOSE_TRAFFIC_FRACTION
+        behind_close = behind >= CLOSE_TRAFFIC_FRACTION
+        if ahead_close and behind_close:
+            side = "both"
+        elif ahead_close or behind_close:
+            side = "ahead" if ahead_close else "behind"
+        elif ahead != behind:
+            side = "ahead" if ahead > behind else "behind"
+        else:
+            side = "both"
+    return {
+        "traffic_ahead_fraction": ahead,
+        "traffic_behind_fraction": behind,
+        "traffic_side": side,
+    }
+
+
 def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     # Every channel is read through a cached column view that records access
     # exactly as the get()/has() calls it replaces. Per-sample predicates are
@@ -1667,23 +1709,32 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
     on_track = _distinct_map(_on_track, track_location) if has_track_location else None
     # max(0.0, _finite(v) or 0.0) and max(_finite(v) or 0.0, 0.0) both equal:
     positive_speed = [value if value is not None and value > 0.0 else 0.0 for value in speed]
-    traffic_near = (
+    # Close traffic per sample, each side on its own: a car ahead within
+    # max(25 m, 0.75 s), a car behind within max(15 m, 0.40 s). traffic_near,
+    # either side, is the lap screen's predicate; the sides say where it was.
+    traffic_ahead = (
         [
-            (
-                ahead is not None
-                and ahead > 0.0
-                and ahead <= max(25.0, speed_mps * 0.75)
-            )
-            or (
-                behind is not None
-                and behind > 0.0
-                and behind <= max(15.0, speed_mps * 0.40)
-            )
-            for ahead, behind, speed_mps in zip(
-                car_distance_ahead, car_distance_behind, positive_speed
-            )
+            ahead is not None
+            and ahead > 0.0
+            and ahead <= max(25.0, speed_mps * 0.75)
+            for ahead, speed_mps in zip(car_distance_ahead, positive_speed)
         ]
         if has_traffic_distance
+        else None
+    )
+    traffic_behind = (
+        [
+            behind is not None
+            and behind > 0.0
+            and behind <= max(15.0, speed_mps * 0.40)
+            for behind, speed_mps in zip(car_distance_behind, positive_speed)
+        ]
+        if has_traffic_distance
+        else None
+    )
+    traffic_near = (
+        list(map(or_, traffic_ahead, traffic_behind))
+        if traffic_ahead is not None and traffic_behind is not None
         else None
     )
     pit_entries = [pit[0]] + [
@@ -1735,10 +1786,14 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
             track_location_time = reduce(add, compress(lap_dts, take(located)), 0.0)
             on_track_time = reduce(add, compress(lap_dts, take(on_track)), 0.0)
         traffic_proximity_time = 0.0
+        traffic_ahead_time = 0.0
+        traffic_behind_time = 0.0
         traffic_observed_time = 0.0
         if traffic_near is not None:
             traffic_observed_time = reduce(add, lap_dts, 0.0)
             traffic_proximity_time = reduce(add, compress(lap_dts, take(traffic_near)), 0.0)
+            traffic_ahead_time = reduce(add, compress(lap_dts, take(traffic_ahead)), 0.0)
+            traffic_behind_time = reduce(add, compress(lap_dts, take(traffic_behind)), 0.0)
         classified = "mixed"
         running_time = max(caution_time + green_time, 1e-9)
         if caution_time / running_time >= 0.5:
@@ -1840,6 +1895,12 @@ def _lap_summaries(table: TelemetryTable) -> list[dict[str, Any]]:
                     "traffic_rule": (
                         "car ahead within max(25 m, 0.75 s) or behind within "
                         "max(15 m, 0.40 s) for at least 10% of observed lap time"
+                    ),
+                    **_traffic_sides(
+                        traffic_proximity_time,
+                        traffic_ahead_time,
+                        traffic_behind_time,
+                        traffic_observed_time,
                     ),
                 },
                 "speed": {
@@ -2455,6 +2516,161 @@ def _lap_trace_payload(
                 "speed, and lateral acceleration; it is not per-lap tread wear"
             ),
         },
+        "traces": traces,
+    }
+
+
+# Trace chart density (backlog #77): about 0.16 % of a lap per bin, under 2 m
+# on a 1.1 km oval and about 7 m on a 4.3 km road course. lap_traces stays at
+# 160 bins: the investigation, the trials and the section times read it.
+TRACE_COLUMN_BINS = 640
+# Laps per _lap_trace_payload call: bounds the point dicts alive at once.
+TRACE_COLUMN_CHUNK_LAPS = 8
+# A bin-centre crossing is read only over a plausible sample step (the
+# race_inspection.MAX_POINT_STEP and MAX_POINT_SECONDS rule) and kept only
+# within this many seconds of the bin's own median sample time.
+TRACE_COLUMN_CROSSING_SECONDS = 1.0
+# The lap_traces point keys the columns carry, lap_pct first.
+TRACE_COLUMN_KEYS = (
+    "lap_pct",
+    "session_time_s",
+    "speed_mph",
+    "throttle",
+    "brake",
+    "steering_rad",
+    "steering_abs_peak_rad",
+    "slip_angle_deg",
+    "yaw_rate_deg_s",
+    "lateral_g",
+    "longitudinal_g",
+    "gear",
+    "rpm",
+    "latitude",
+    "longitude",
+    "tire_stress_proxy",
+)
+
+
+def _bin_centre_times(
+    lap_distance: Sequence[float | None],
+    session_time: Sequence[float | None],
+    start: int,
+    end: int,
+    bins: int,
+) -> dict[int, float]:
+    """Session time at each bin centre a lap's samples pass, by bin.
+
+    Linear between the two consecutive samples either side of the centre,
+    over a plausible step only (lap distance rising by at most 0.03 lap, time
+    by at most 2 s); the first pass of a centre wins. A centre no such pair
+    spans has no time here.
+    """
+
+    crossings: dict[int, float] = {}
+    previous: tuple[float, float] | None = None
+    for index in range(start, end + 1):
+        pct = lap_distance[index]
+        time = session_time[index]
+        if pct is None or time is None or pct < -0.01 or pct > 1.01:
+            previous = None
+            continue
+        if previous is not None:
+            p0, t0 = previous
+            if 0.0 < pct - p0 <= 0.03 and 0.0 < time - t0 <= 2.0:
+                first = max(0, math.floor(p0 * bins - 0.5) + 1)
+                last = min(bins - 1, math.floor(pct * bins - 0.5))
+                for bucket in range(first, last + 1):
+                    if bucket not in crossings:
+                        centre = (bucket + 0.5) / bins
+                        crossings[bucket] = t0 + (centre - p0) / (pct - p0) * (time - t0)
+        previous = (pct, time)
+    return crossings
+
+
+def _lap_trace_columns(
+    table: TelemetryTable,
+    laps: Sequence[Mapping[str, Any]],
+    *,
+    maximum_bins: int = TRACE_COLUMN_BINS,
+    steering_basis: SteeringBasis | None = None,
+    chunk_laps: int = TRACE_COLUMN_CHUNK_LAPS,
+) -> dict[str, Any]:
+    """The lap traces at chart density, one list per point key.
+
+    Each lap is ``_lap_trace_payload`` at ``maximum_bins``: the same reducers
+    over the same recorded samples, in narrower bins. One value differs:
+    ``session_time_s`` is the time the car passed the bin's centre, linear
+    between the two samples either side of it (``_bin_centre_times``), where
+    the payload keeps the median time of the bin's samples. With two or three
+    samples a bin, that median sits up to half a sample interval (8 ms at
+    60 Hz) off the centre, which a time delta between laps would show as
+    noise. Where no sample pair spans the centre, or the crossing lies more
+    than ``TRACE_COLUMN_CROSSING_SECONDS`` from the median (a bin holding
+    samples from both ends of a lap), the median stays. A bin no sample fell
+    in has no entry, as in the payload. Additional signals are lists too,
+    ``None`` where a bin has no value. Laps go through the payload a few at a
+    time so only a few laps' point dicts are alive at once.
+    """
+
+    basis = steering_basis or _steering_basis(table)
+    lap_distance = table.normalized("LapDistPct")[0]
+    session_time = table.normalized("SessionTime", "SessionTimeOfDay")[0]
+    step = max(1, int(chunk_laps))
+    traces: list[dict[str, Any]] = []
+    for start in range(0, len(laps), step):
+        chunk = list(laps[start : start + step])
+        payload = _lap_trace_payload(table, chunk, maximum_bins=maximum_bins, steering_basis=basis)
+        spans: dict[Any, tuple[int, int] | None] = {}
+        for lap in chunk:
+            first = int(_finite(lap.get("start_index")) or 0)
+            last = min(int(_finite(lap.get("end_index")) or -1), table.length - 1)
+            # A lap number seen twice has no span: its bins keep the median.
+            spans[lap.get("lap")] = None if lap.get("lap") in spans else (first, last)
+        for trace in payload["traces"]:
+            points = trace["points"]
+            span = spans.get(trace["lap"])
+            crossings = (
+                _bin_centre_times(lap_distance, session_time, span[0], span[1], maximum_bins)
+                if span is not None and lap_distance and session_time
+                else {}
+            )
+            times: list[float | None] = []
+            for point in points:
+                median = point["session_time_s"]
+                crossing = crossings.get(int(round(point["lap_pct"] * maximum_bins - 0.5)))
+                times.append(
+                    round(crossing, 6)
+                    if crossing is not None
+                    and median is not None
+                    and abs(crossing - median) <= TRACE_COLUMN_CROSSING_SECONDS
+                    else median
+                )
+            additional_ids = list(
+                dict.fromkeys(key for point in points for key in point["additional_signals"])
+            )
+            traces.append(
+                {
+                    "lap": trace["lap"],
+                    "points": len(points),
+                    "columns": {
+                        key: times if key == "session_time_s" else [point[key] for point in points]
+                        for key in TRACE_COLUMN_KEYS
+                    },
+                    "additional_signals": {
+                        signal_id: [point["additional_signals"].get(signal_id) for point in points]
+                        for signal_id in additional_ids
+                    },
+                }
+            )
+        del payload
+    return {
+        "schema_version": 1,
+        "distance_bins_per_lap": maximum_bins,
+        "definition": (
+            "lap_traces reduced in narrower lap-distance bins for the trace chart; "
+            "each value comes from the recorded samples in its bin, and session_time_s "
+            "is the time at the bin centre, linear between the two samples either side"
+        ),
         "traces": traces,
     }
 
@@ -8688,6 +8904,7 @@ def analyze_telemetry(
     setup_telemetry = _setup_telemetry(table, setup_series)
     track_profile = _track_profile(table, setup_series=setup_series)
     lap_traces = _lap_trace_payload(table, laps, steering_basis=steering_basis)
+    lap_trace_columns = _lap_trace_columns(table, laps, steering_basis=steering_basis)
     groove_channel_names = (
         "Lat",
         "Lon",
@@ -8974,6 +9191,7 @@ def analyze_telemetry(
         "runs": runs,
         "laps": laps,
         "lap_traces": lap_traces,
+        "lap_trace_columns": lap_trace_columns,
         "track_profile": track_profile,
         "track_geometry": track_geometry,
         "race_replay": race_replay,

@@ -6,7 +6,8 @@ one-sample and negative laps, scored lap times (accepted, rejected by more
 than 1 s, zero), caution and black/white/checkered flags, an Offline Testing
 session with one-lap-to-green, pit stops with fuel, tyre counters and odometer
 resets, repair timers and fast repairs, wheel-speed slip and lock proxies,
-traffic distances, positions, weather, NaN and infinity in float channels,
+traffic distances (close ahead, behind, both and under the screen; one side
+recorded alone), positions, weather, NaN and infinity in float channels,
 text channels, a float Lap channel, missing SessionTime, and both steering
 bases. Values are exactly what the decoder yields for each SDK type (an f32
 channel holds widened f32 values), so ``table.ccs`` reproduces them bit for bit.
@@ -409,8 +410,89 @@ def _laps_no_laps(base: dict[str, Any]) -> dict[str, Any]:
     return _laps_table(base, columns)
 
 
+def _laps_traffic_sides(base: dict[str, Any]) -> dict[str, Any]:
+    """Close traffic ahead, behind, on both sides and under the screen: every branch of the side.
+
+    200 samples a lap at 40 m/s (one sample is 0.5 % of a lap; close is within 30 m ahead and
+    16 m behind), laps 0 to 10 one case of ``_traffic_sides`` each; lap 11 repeats lap 10's
+    distances at 10 m/s (floors of 25 m and 15 m), lap 12 holds 30 m ahead and 20 m behind over
+    a 20 to 60 m/s ramp, and a partial lap 13 has a car close behind.
+    """
+
+    far = 500.0
+
+    def close(first: int, last: int, distance: float) -> dict[int, float]:
+        return {offset: distance for offset in range(first, last)}
+
+    limits_ahead = {**close(0, 20, 30.0), **close(20, 40, 30.5), **close(40, 60, 0.0), **close(60, 80, -1.0),
+                    **close(80, 100, NAN), **close(100, 104, INF)}
+    limits_behind = {**close(100, 120, 16.0), **close(120, 140, 16.5), **close(140, 160, 0.0), **close(160, 162, -INF)}
+    plan: list[tuple[dict[int, float], dict[int, float]]] = [
+        ({}, {}),  # open air: no side
+        (close(0, 60, 10.0), {}),  # 30 % ahead
+        ({}, close(100, 150, 8.0)),  # 25 % behind
+        (close(0, 40, 10.0), close(100, 130, 8.0)),  # 20 % and 15 %, apart: both
+        (close(50, 74, 10.0), close(50, 74, 8.0)),  # the same 12 % on each side: both, counted once
+        (close(0, 20, 10.0), close(100, 118, 8.0)),  # exactly 10 % ahead, 9 % behind: ahead
+        (close(0, 12, 10.0), close(100, 110, 8.0)),  # 6 % + 5 %: only the union screens; ahead
+        (close(0, 8, 10.0), close(100, 114, 8.0)),  # 4 % + 7 %: behind
+        (close(0, 6, 10.0), {}),  # 3 %, under the screen: ahead
+        (close(0, 8, 10.0), close(100, 108, 8.0)),  # 4 % each, equal: both
+        (limits_ahead, limits_behind),  # the limits themselves are close; beyond, zero, negative, NaN not
+        (limits_ahead, limits_behind),  # the same at 10 m/s: nothing close
+        ({offset: 30.0 for offset in range(200)}, {offset: 20.0 for offset in range(200)}),  # speed ramp
+    ]
+    n = 200 * len(plan) + 30
+    lap, pct, speed, ahead, behind = [], [], [], [], []
+    for number, (near_ahead, near_behind) in enumerate(plan):
+        for offset in range(200):
+            lap.append(number)
+            pct.append(offset / 200.0)
+            if number == len(plan) - 2:
+                speed.append(10.0)
+            elif number == len(plan) - 1:
+                speed.append(20.0 + 40.0 * offset / 199.0)  # 30 m ahead closes at 40 m/s, 20 m behind at 50 m/s
+            else:
+                speed.append(40.0)
+            ahead.append(near_ahead.get(offset, far))
+            behind.append(near_behind.get(offset, far))
+    for offset in range(30):  # a partial last lap with a car close behind
+        lap.append(len(plan))
+        pct.append(offset / 200.0)
+        speed.append(40.0)
+        ahead.append(far)
+        behind.append(8.0)
+    columns: dict[str, tuple[int, str, list[Any]]] = {
+        "SessionTime": (5, "s", [index / 60.0 for index in range(n)]),
+        "Lap": (2, "", lap),
+        "LapDistPct": (4, "%", pct),
+        "Speed": (4, "m/s", speed),
+        "CarDistAhead": (4, "m", ahead),
+        "CarDistBehind": (4, "m", behind),
+    }
+    return _laps_table(base, columns)
+
+
+def _laps_traffic_behind_only(base: dict[str, Any]) -> dict[str, Any]:
+    """CarDistBehind recorded without CarDistAhead: the traffic screen runs, nothing is ever ahead."""
+
+    n = 600
+    behind = [8.0 if index % 200 < 30 else 500.0 for index in range(n)]
+    behind[205:225] = [NAN] * 20  # lap 2: a missing distance is not close
+    columns: dict[str, tuple[int, str, list[Any]]] = {
+        "SessionTime": (5, "s", [index / 60.0 for index in range(n)]),
+        "Lap": (2, "", [1 + index // 200 for index in range(n)]),
+        "LapDistPct": (4, "%", [(index % 200) / 200.0 for index in range(n)]),
+        "Speed": (4, "m/s", [35.0 + 10.0 * _sin(index / 25.0) for index in range(n)]),
+        "CarDistBehind": (4, "m", behind),
+    }
+    return _laps_table(base, columns)
+
+
 BUILDERS = (
     ("laps-race", _laps_race),
     ("laps-offline-text", _laps_offline_text),
     ("laps-no-laps", _laps_no_laps),
+    ("laps-traffic-sides", _laps_traffic_sides),
+    ("laps-traffic-behind-only", _laps_traffic_behind_only),
 )

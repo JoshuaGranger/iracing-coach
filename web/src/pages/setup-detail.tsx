@@ -1,4 +1,4 @@
-import { useMemo, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { type Schemas, api, paths, request } from "../core/api";
 import { formatDate, formatDateTime, plural } from "../core/format";
 import { useJobRun } from "../core/jobs";
@@ -7,7 +7,8 @@ import { uuid4 } from "../core/uuid";
 import { href, navigate } from "../core/router";
 import { Chip, ErrorLine, Loading, Notice } from "../ui/kit";
 import { NotesPanel } from "../ui/notes";
-import { carColors, racedCountOf } from "../setups/library";
+import { carAccent } from "../core/palette";
+import { racedCountOf } from "../setups/library";
 import { RacedMark } from "../setups/glyphs";
 import { VersionBoard } from "../setups/version-board";
 import { SOURCE_LABEL, type Setup, classifyCompare, comparePicks, groupSetupValues, sameNameAs, seenSpan, setupTitle, tuneTarget } from "../setups/model";
@@ -99,7 +100,6 @@ function fileLabels(s: Setup): string[] {
 
 export default function SetupDetailPage({ customerId, setupId }: { customerId: number; setupId: number }) {
   const res = useResource(paths.setup(setupId), (signal) => api.setup(setupId, { signal }));
-  const options = useResource(paths.carsAndTracks(customerId), () => api.carsAndTracks(customerId));
   const detail = res.data;
   const car = detail?.setup.car_path ?? null;
   const siblings = useResource(car ? paths.setups(customerId, { car_path: car, limit: 200 }) : null, () => api.setups(customerId, { car_path: car!, limit: 200 }));
@@ -107,7 +107,6 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   const compare = useJobRun<Result>();
   const [tuneError, setTuneError] = useState<string | null>(null);
   const [allSightings, setAllSightings] = useState(false);
-  const colors = useMemo(() => carColors((options.data?.cars ?? []).map((c) => c.car_path), car ? [car] : []), [options.data, car]);
 
   if (!detail) return res.error ? <ErrorLine error={res.error} /> : <Loading what="setup" />;
   const s = detail.setup;
@@ -116,7 +115,7 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   const others = picks.map((p) => p.setup);
   const twins = sameNameAs(s, others);
   const other = others.find((x) => x.setup_id === otherId);
-  const color = colors.get(s.car_path.toLowerCase());
+  const color = carAccent(s.car_path);
 
   function pick(id: number | null) {
     setOtherId(id);

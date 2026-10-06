@@ -309,6 +309,69 @@ def synthetic_race(seed: int, *, variant: str = "full") -> dict[str, Any]:
     }
 
 
+# The per-side traffic keys are newer than the pre-change reference: each lap's
+# clean_context ends with them. They are split off before the stage comparison
+# and checked against a per-sample loop in the reference's own terms.
+TRAFFIC_SIDE_KEYS = ("traffic_ahead_fraction", "traffic_behind_fraction", "traffic_side")
+
+
+def split_traffic_sides(laps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove the per-side traffic keys from each lap's clean_context and return them."""
+
+    return [{key: lap["clean_context"].pop(key) for key in TRAFFIC_SIDE_KEYS} for lap in laps]
+
+
+def per_sample_traffic_sides(table: Any) -> list[dict[str, Any]]:
+    """The per-side keys of every summarised lap, folded sample by sample as the reference folds."""
+
+    times = table.get("SessionTime", "SessionTimeOfDay", default=None)
+    laps = table.get("Lap", default=None)
+    speed = table.get("Speed", default=None)
+    ahead_values = table.get("CarDistAhead", default=None)
+    behind_values = table.get("CarDistBehind", default=None)
+    screened = table.has("CarDistAhead", "CarDistBehind")
+    rate = engine._finite(table.metadata.get("sample_rate") or table.metadata.get("tick_rate")) or 20.0
+    dts = reference._dt_series(times, rate)
+    groups: dict[int, list[int]] = {}
+    for index, raw_lap in enumerate(laps):
+        lap_value = engine._finite(raw_lap)
+        if lap_value is not None and lap_value >= 0:
+            groups.setdefault(int(lap_value), []).append(index)
+    expected = []
+    for lap_number in sorted(groups):
+        indices = groups[lap_number]
+        if len(indices) < 2:
+            continue
+        near = ahead_time = behind_time = observed = 0.0
+        for index in indices if screened else ():
+            ahead = engine._finite(ahead_values[index])
+            behind = engine._finite(behind_values[index])
+            observed += dts[index]
+            speed_mps = max(0.0, engine._finite(speed[index]) or 0.0)
+            ahead_near = ahead is not None and ahead > 0.0 and ahead <= max(25.0, speed_mps * 0.75)
+            behind_near = behind is not None and behind > 0.0 and behind <= max(15.0, speed_mps * 0.40)
+            if ahead_near or behind_near:
+                near += dts[index]
+            if ahead_near:
+                ahead_time += dts[index]
+            if behind_near:
+                behind_time += dts[index]
+        expected.append({
+            "traffic_proximity_fraction": engine._round(near / observed if observed > 0.0 else None, 4),
+            **engine._traffic_sides(near, ahead_time, behind_time, observed),
+        })
+    return expected
+
+
+def traffic_sides_of(reference_laps: list[dict[str, Any]], sides: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The reference's combined fraction beside the engine's per-side keys, lap by lap."""
+
+    return [
+        {"traffic_proximity_fraction": lap["clean_context"]["traffic_proximity_fraction"], **side}
+        for lap, side in zip(reference_laps, sides, strict=True)
+    ]
+
+
 VARIANTS = (
     (11, "full"),
     (12, "units"),
@@ -511,8 +574,15 @@ class StageEquivalenceTests(unittest.TestCase):
                 old_table, new_table = self.tables(seed, variant)
                 old_laps = reference._lap_summaries(old_table)
                 new_laps = engine._lap_summaries(new_table)
+                sides = split_traffic_sides(new_laps)
                 self.assertGreater(len(old_laps), 3)
                 self.assert_stage("laps", old_laps, new_laps, old_table, new_table)
+                assert_identical(
+                    self,
+                    per_sample_traffic_sides(engine.TelemetryTable(synthetic_race(seed, variant=variant))),
+                    traffic_sides_of(old_laps, sides),
+                    "traffic sides",
+                )
                 # 160 bins (the default) leaves ~1 sample per bin here; coarser
                 # bins hold many samples, like real laps (~11 per bin at 60 Hz).
                 for bins in (160, 16, 7):
@@ -538,7 +608,15 @@ class StageEquivalenceTests(unittest.TestCase):
             with self.subTest(lap=lap):
                 telemetry = {"samples": {"Lap": lap, "LapDistPct": [0.0, 0.2, 0.5, 0.9, 1.0], "Speed": [20.0] * 5}}
                 old_table, new_table = engine.TelemetryTable(telemetry), engine.TelemetryTable(telemetry)
-                self.assert_stage("laps", reference._lap_summaries(old_table), engine._lap_summaries(new_table), old_table, new_table)
+                old_laps, new_laps = reference._lap_summaries(old_table), engine._lap_summaries(new_table)
+                sides = split_traffic_sides(new_laps)
+                self.assert_stage("laps", old_laps, new_laps, old_table, new_table)
+                assert_identical(
+                    self,
+                    per_sample_traffic_sides(engine.TelemetryTable(telemetry)),
+                    traffic_sides_of(old_laps, sides),
+                    "traffic sides",
+                )
 
     def test_setup_series_telemetry_and_track_profile(self) -> None:
         for seed, variant in VARIANTS:

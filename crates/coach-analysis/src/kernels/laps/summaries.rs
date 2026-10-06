@@ -37,6 +37,67 @@ fn on_track(location: Option<f64>) -> bool {
     matches!(location, Some(x) if x.trunc() == 3.0)
 }
 
+/// `CLOSE_TRAFFIC_FRACTION`: the close-traffic screen's share of a lap.
+const CLOSE_TRAFFIC_FRACTION: f64 = 0.10;
+
+/// What `_traffic_sides` adds to `clean_context`: each side's fraction of the observed lap and the
+/// side the traffic was on.
+#[derive(Debug, PartialEq)]
+struct TrafficSides {
+    ahead: Option<f64>,
+    behind: Option<f64>,
+    side: Option<&'static str>,
+}
+
+/// `_traffic_sides(near_time, ahead_time, behind_time, observed_time)`: each time over the
+/// observed time, `_round(.., 4)`; the side from the rounded fractions (`None` without traffic,
+/// `"both"` when each side alone reaches the screen's 10 %, else the side that does, else the
+/// larger share, `"both"` when the shares are equal).
+fn traffic_sides(
+    near_time: f64,
+    ahead_time: f64,
+    behind_time: f64,
+    observed_time: f64,
+) -> Result<TrafficSides, KernelError> {
+    // _round(time / observed_time if observed_time > 0.0 else None, 4)
+    let fraction = |time: f64| -> Result<Option<f64>, KernelError> {
+        if observed_time > 0.0 {
+            let share = time / observed_time;
+            if share.is_finite() {
+                return Ok(Some(num::round_ndigits(share, 4)?));
+            }
+        }
+        Ok(None)
+    };
+    let (near, ahead, behind) = (
+        fraction(near_time)?,
+        fraction(ahead_time)?,
+        fraction(behind_time)?,
+    );
+    let side = match (near, ahead, behind) {
+        // `if near and ...`: a zero or missing fraction names no side.
+        (Some(near), Some(ahead), Some(behind)) if near != 0.0 => {
+            let ahead_close = ahead >= CLOSE_TRAFFIC_FRACTION;
+            let behind_close = behind >= CLOSE_TRAFFIC_FRACTION;
+            Some(if ahead_close && behind_close {
+                "both"
+            } else if ahead_close || behind_close {
+                if ahead_close { "ahead" } else { "behind" }
+            } else if ahead != behind {
+                if ahead > behind { "ahead" } else { "behind" }
+            } else {
+                "both"
+            })
+        }
+        _ => None,
+    };
+    Ok(TrafficSides {
+        ahead,
+        behind,
+        side,
+    })
+}
+
 /// `_count_corrections(values, threshold)` over finite values.
 fn count_corrections(values: &[f64], threshold: f64) -> i64 {
     let mut signs: Vec<i8> = Vec::new();
@@ -174,6 +235,8 @@ pub fn lap_summaries(table: &Table, basis: &SteeringBasis) -> Result<PyValue, Ke
         let mut track_location_time = 0.0;
         let mut traffic_observed_time = 0.0;
         let mut traffic_proximity_time = 0.0;
+        let mut traffic_ahead_time = 0.0;
+        let mut traffic_behind_time = 0.0;
         let mut pit_entry = false;
         let mut pit_exit = false;
         let mut brake_energy = 0.0;
@@ -218,12 +281,17 @@ pub fn lap_summaries(table: &Table, basis: &SteeringBasis) -> Result<PyValue, Ke
             };
             if has_traffic_distance {
                 traffic_observed_time += dt;
-                let ahead = car_distance_ahead.get(i);
-                let behind = car_distance_behind.get(i);
-                let near = matches!(ahead, Some(a) if a > 0.0 && a <= py_max2(25.0, positive_speed * 0.75))
-                    || matches!(behind, Some(b) if b > 0.0 && b <= py_max2(15.0, positive_speed * 0.40));
-                if near {
+                // traffic_ahead[i], traffic_behind[i]; traffic_near[i] is either.
+                let ahead = matches!(car_distance_ahead.get(i), Some(a) if a > 0.0 && a <= py_max2(25.0, positive_speed * 0.75));
+                let behind = matches!(car_distance_behind.get(i), Some(b) if b > 0.0 && b <= py_max2(15.0, positive_speed * 0.40));
+                if ahead || behind {
                     traffic_proximity_time += dt;
+                }
+                if ahead {
+                    traffic_ahead_time += dt;
+                }
+                if behind {
+                    traffic_behind_time += dt;
                 }
             }
             let entering = if i == 0 {
@@ -322,6 +390,12 @@ pub fn lap_summaries(table: &Table, basis: &SteeringBasis) -> Result<PyValue, Ke
             };
         let first = |values: &[f64]| values.first().copied();
         let last = |values: &[f64]| values.last().copied();
+        let sides = traffic_sides(
+            traffic_proximity_time,
+            traffic_ahead_time,
+            traffic_behind_time,
+            traffic_observed_time,
+        )?;
         let clean_context = Dict::new()
             .with(
                 "on_track_fraction",
@@ -339,7 +413,10 @@ pub fn lap_summaries(table: &Table, basis: &SteeringBasis) -> Result<PyValue, Ke
                 )?,
             )
             .with("traffic_screened", has_traffic_distance)
-            .with("traffic_rule", TRAFFIC_RULE);
+            .with("traffic_rule", TRAFFIC_RULE)
+            .with("traffic_ahead_fraction", sides.ahead)
+            .with("traffic_behind_fraction", sides.behind)
+            .with("traffic_side", sides.side);
         let mph = 2.236936;
         let speed_summary = Dict::new()
             .with(
@@ -445,6 +522,48 @@ mod tests {
         assert!(!racing_state(None));
         assert!(on_track(Some(3.2)));
         assert!(!on_track(Some(-3.0)));
+    }
+
+    #[test]
+    fn traffic_sides_name_the_side_from_the_rounded_fractions() {
+        let sides = |near: f64, ahead: f64, behind: f64| {
+            traffic_sides(near, ahead, behind, 100.0).expect("finite fractions")
+        };
+        // No distance channels (nothing observed) or no traffic: no side.
+        assert_eq!(
+            traffic_sides(0.0, 0.0, 0.0, 0.0).unwrap(),
+            TrafficSides {
+                ahead: None,
+                behind: None,
+                side: None
+            }
+        );
+        assert_eq!(
+            sides(0.0, 0.0, 0.0),
+            TrafficSides {
+                ahead: Some(0.0),
+                behind: Some(0.0),
+                side: None
+            }
+        );
+        // One side alone, both sides at the screen's 10 % (overlapping or not), the boundary.
+        assert_eq!(sides(30.0, 30.0, 0.0).side, Some("ahead"));
+        assert_eq!(sides(25.0, 0.0, 25.0).side, Some("behind"));
+        assert_eq!(sides(35.0, 20.0, 15.0).side, Some("both"));
+        assert_eq!(sides(12.0, 12.0, 12.0).side, Some("both"));
+        assert_eq!(sides(10.0, 10.0, 10.0).side, Some("both"));
+        assert_eq!(sides(14.0, 10.0, 9.0).side, Some("ahead"));
+        // Only the union reaches 10 %, or the lap is under it: the larger share; equal is both.
+        assert_eq!(sides(11.0, 6.0, 5.0).side, Some("ahead"));
+        assert_eq!(sides(11.0, 4.0, 7.0).side, Some("behind"));
+        assert_eq!(sides(3.0, 3.0, 0.0).side, Some("ahead"));
+        assert_eq!(sides(8.0, 4.0, 4.0).side, Some("both"));
+        // Rounded to four digits before comparing: 0.099996 is 0.1 and reaches the screen.
+        let rounded = sides(19.9996, 9.9996, 9.9996);
+        assert_eq!(
+            (rounded.ahead, rounded.behind, rounded.side),
+            (Some(0.1), Some(0.1), Some("both"))
+        );
     }
 
     #[test]

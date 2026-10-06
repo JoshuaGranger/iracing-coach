@@ -6,9 +6,11 @@ import { incidentPointsByLap, inRaceStops, pitStops, type PitStop } from "../geo
 import { fastestCleanLap } from "../geometry/trace-model";
 import { asArray, asRecord, type RaceViewData, type TraceLapData } from "../types";
 import { useElementSize } from "./hooks";
+import { LapDot, markRadius } from "./LapDot";
 import { PitCard, PitGlyph, pitLabel } from "./PitPictogram";
 import { availableLayers, fuelPath, lapContexts, layersReadout, readLayers, refills, seriesSegments, writeLayers, type LapContext, type LayerKey } from "./race-layers";
 import { fitDrawn, fitOnLaps, identityColour, runIdentities, runLineParts, runLineReadout, smoothPath, type RunIdentity } from "./runs-model";
+import { lapKind, lapTraffic, trafficText, type LapTraffic } from "./traffic";
 import { scaleFor, useRemPx } from "./unit";
 
 /** `green` everywhere except Offline Testing, where laps are counted as clean (audit R7). */
@@ -23,15 +25,22 @@ export function fitStatus(lap: Pick<InvestigationLap, "eligible" | "exclusionRea
   return `Not in pace fit${why ? ` · ${why}` : ""}`;
 }
 
-/** A lap's readout: `Lap 36 · 28.559 s · P7 · Run 2 · 36.0 green · Not in pace fit · close traffic`. */
-export function lapLabel(lap: InvestigationLap, word = "green"): string {
+/**
+ * A lap's readout: `Lap 36 · 28.559 s · P7 · Run 2 · 36.0 green · Not in pace fit · caution`. A lap screened for close traffic alone
+ * ends with its traffic instead (#67): `Lap 20 · 29.466 s · P4 · Run 1 · 20.0 green · traffic 75 % of lap`.
+ */
+export function lapLabel(lap: InvestigationLap, word = "green", traffic?: LapTraffic | null): string {
   const parts = [`Lap ${lap.lap}`, `${lapTime(lap.lapTimeS)} s`];
   if (lap.position !== null) parts.push(`P${lap.position}`);
   if (lap.flagState === "caution") parts.push("Caution");
   if (lap.runNumber !== null) parts.push(`Run ${lap.runNumber}`);
   if (lap.greenExposure !== null) parts.push(exposureText(lap.greenExposure, word));
-  const status = lap.flagState === "caution" ? null : fitStatus(lap);
-  if (status) parts.push(status);
+  if (lapKind(lap) === "traffic") {
+    parts.push(trafficText(traffic));
+  } else {
+    const status = lap.flagState === "caution" ? null : fitStatus(lap);
+    if (status) parts.push(status);
+  }
   return parts.join(" · ");
 }
 
@@ -109,13 +118,15 @@ interface ChartProps {
   word: string;
   identities: ReadonlyMap<number, RunIdentity>;
   contexts: ReadonlyMap<number, LapContext>;
+  /** The backend's traffic share per lap (and the side, when it names one), for the traffic laps' readout. */
+  traffic: ReadonlyMap<number, LapTraffic>;
   layers: readonly LayerKey[];
   header: ComponentChildren;
   /** The readout while no chart mark is under the pointer (a run line's hover or tap). */
   note?: string;
 }
 
-function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, layers, header, note }: ChartProps) {
+function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, traffic, layers, header, note }: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
   const k = scaleFor(useRemPx());
@@ -267,20 +278,16 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
             </circle>
           );
         })}
-        {plotted.map((lap) => {
-          const color = colour(lap.runNumber);
-          return (
-            <circle
-              key={lap.lap} cx={n(pace.x(lap.lap))} cy={n(dotY(lap))} r={n(dotRadius)}
-              fill={lap.eligible ? color : "var(--ri-card)"} stroke={color}
-              class={`ri-dot${lap.eligible ? "" : " excluded"}`} tabIndex={0} data-lap={lap.lap}
-              onPointerEnter={lapHover(lap)} onFocus={lapHover(lap)} onClick={lapHover(lap)} aria-label={lapLabel(lap, word)}
-            ><title>{lapLabel(lap, word)}</title></circle>
-          );
-        })}
-        {/* The fastest lap: a magenta ring around its dot. */}
+        {/* Open air: the plain dot. Screened for close traffic alone: a double ring. Screened for anything else: the hollow dot (#67). */}
+        {plotted.map((lap) => (
+          <LapDot
+            key={lap.lap} lap={lap.lap} kind={lapKind(lap)} side={traffic.get(lap.lap)?.side ?? null} cx={pace.x(lap.lap)} cy={dotY(lap)} r={dotRadius} colour={colour(lap.runNumber)}
+            label={lapLabel(lap, word, traffic.get(lap.lap))} onSelect={lapHover(lap)}
+          />
+        ))}
+        {/* The fastest lap: a magenta ring around its mark. */}
         {fastestLap !== null && lapAt.has(fastestLap) && (
-          <circle cx={n(pace.x(fastestLap))} cy={n(dotY(lapAt.get(fastestLap)!))} r={n(dotRadius + 2.6)} class="ri-best-ring" data-fastest={fastestLap} />
+          <circle cx={n(pace.x(fastestLap))} cy={n(dotY(lapAt.get(fastestLap)!))} r={n(markRadius(lapKind(lapAt.get(fastestLap)!), traffic.get(fastestLap)?.side ?? null, dotRadius) + 2.6)} class="ri-best-ring" data-fastest={fastestLap} />
         )}
         {posScale && (
           <g class="ri-position-band" data-position-band>
@@ -314,7 +321,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
     );
   })();
   const lapReadout = (lap: InvestigationLap): string => {
-    const parts = [lapLabel(lap, word)];
+    const parts = [lapLabel(lap, word, traffic.get(lap.lap))];
     if (lap.lap === fastestLap) parts.push("Fastest");
     parts.push(...layersReadout(layers, contexts.get(lap.lap)));
     return parts.join(" · ");
@@ -414,6 +421,7 @@ export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
   const fastestLap = useMemo(() => raceFastestLap(inv.laps, race), [inv, race]);
   const identities = useMemo(() => runIdentities(inv.runs.map((run) => run.runNumber), allStops), [inv, allStops]);
   const contexts = useMemo(() => lapContexts(race), [race]);
+  const traffic = useMemo(() => lapTraffic(race), [race]);
   const offered = useMemo(() => availableLayers(contexts), [contexts]);
   const [stored, toggleLayer] = useLayers();
   const layers = stored.filter((key) => offered.some((layer) => layer.key === key));
@@ -441,7 +449,7 @@ export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
   return (
     <div class="ri-race-view" data-ri-view="race">
       <div class="ri-card ri-fill">
-        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} layers={layers} header={header} note={note ?? undefined} />
+        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} traffic={traffic} layers={layers} header={header} note={note ?? undefined} />
         {lines.length > 0 && (
           <ul class="ri-run-lines" aria-label="Runs">
             {lines.map(({ run, parts }) => {

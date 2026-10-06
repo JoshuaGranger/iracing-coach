@@ -1,13 +1,13 @@
 import { useState } from "preact/hooks";
 import { api } from "../core/api";
 import { trackLabel } from "../core/format";
+import { carAccent } from "../core/palette";
 import { waitForJob } from "../core/jobs";
 import { invalidate } from "../core/resource";
 import { href } from "../core/router";
 import { Chip } from "../ui/kit";
 import { localDay, localDayTime, localTime } from "./dates";
 import {
-  type ColumnCode,
   type EventGroup,
   NONE,
   type Session,
@@ -18,10 +18,8 @@ import {
   carName,
   cellKind,
   cellSlots,
-  gridTemplate,
   hasFigures,
   isOpenable,
-  phaseColumns,
   phaseOf,
   seriesLabel,
   setupTypeOf,
@@ -66,7 +64,7 @@ function SlotView({ slot, quiet }: { slot: Slot; quiet: boolean }) {
       <span class="sx-l">{slot.label}</span>
       <b class={slot.eventBest ? `${v} event-best` : v} data-event-best={slot.eventBest ? "true" : undefined}>
         {slot.parts.map((part, i) => (
-          <span key={i} class={part.tone ? `${p} ${part.tone}` : p}>
+          <span key={i} class={part.tone ? `${p} ${part.tone}` : p} title={part.title} role={part.title ? "img" : undefined} aria-label={part.title}>
             {part.text}
           </span>
         ))}
@@ -118,11 +116,13 @@ function tileHref(customerId: number, s: Session): string {
 }
 
 /**
- * One phase of an event, its own panel: a header slot and the labelled slots of its kind (race seven in a 4 x 2 grid; practice four
- * and qualifying three, in quieter type). The whole cell opens the investigation when it can. A session with no figures shows its
- * lap count and the one exception that explains it.
+ * One phase of an event as a full-width line (backlog #72): the badge, the phase name and its time on one baseline at the left, then
+ * the labelled figures of its kind evenly spaced across the line (race seven, practice four, qualifying three; practice and
+ * qualifying in quieter type). Below a line's own width of 56 rem the head takes its own row and the figures wrap under it. The
+ * whole line opens the investigation when it can. A session with no figures shows its lap count and the one exception that
+ * explains it.
  */
-export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: EventGroup; customerId: number; now: Date; column: number }) {
+export function PhaseLine({ s, ev, customerId, now }: { s: Session; ev: EventGroup; customerId: number; now: Date }) {
   const phase = phaseOf(s.session_type);
   const type = setupTypeOf(s);
   const time = localTime(s.start_time_utc);
@@ -162,13 +162,13 @@ export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: 
     </>
   );
   return (
-    <li class="session-row sx-cell" data-state={s.analysis_state} data-phase={phase.code} data-kind={kind} data-session={s.session_id} style={{ "--col": column + 1 }}>
+    <li class="session-row sx-line" data-state={s.analysis_state} data-phase={phase.code} data-kind={kind} data-session={s.session_id}>
       {open ? (
-        <a class="sx-cell-body sx-open" href={tileHref(customerId, s)} aria-label={name}>
+        <a class="sx-line-body sx-open" href={tileHref(customerId, s)} aria-label={name}>
           {body}
         </a>
       ) : (
-        <div class="sx-cell-body" role="group" aria-label={name}>
+        <div class="sx-line-body" role="group" aria-label={name}>
           {body}
         </div>
       )}
@@ -177,37 +177,39 @@ export function PhaseCell({ s, ev, customerId, now, column }: { s: Session; ev: 
 }
 
 /**
- * One card per event (backlog #50), a gap between cards: identity at the left behind a divider, then each phase its own panel across
- * a gutter, the race widest (stacked rows on a phone); the setup lock in the card's top-right corner (#51).
+ * One card per event (backlog #50), a gap between cards: the identity block at the left behind a divider, vertically centred against
+ * the phase lines (#71, #72) it sits beside (above them when the card is under 62 rem wide); the phases are full-width lines stacked
+ * in session order, a missing phase has no line (#72). The identity is the silhouette beside three lines on one left edge: the track,
+ * `config · date`, the car behind its colour bar; the setup lock sits in the block's top-right corner (#69).
  */
-export function EventRow({ ev, customerId, colors, now, layout }: { ev: EventGroup; customerId: number; colors: ReadonlyMap<string, number>; now: Date; layout: readonly ColumnCode[] }) {
+export function EventRow({ ev, customerId, now }: { ev: EventGroup; customerId: number; now: Date }) {
   const head = ev.head;
-  const car = colors.get(carKey(head)) ?? 0;
   const series = seriesLabel(head);
   const day = localDay(ev.start, now);
   const trackKey = trackLabel(head.track, head.track_config);
   const analysisId = ev.sessions.find((s) => isOpenable(s) && s.analysis_id)?.analysis_id ?? null;
-  const { columns, tracks } = phaseColumns(ev.sessions, layout);
   return (
-    <section class="sx-event" data-car={car} data-setup={ev.setupType ?? undefined} aria-label={trackKey}>
-      {ev.setupType ? <SetupLock type={ev.setupType} class="sx-card-lock" /> : null}
+    <section class="sx-event" style={`--car:${carAccent(carKey(head))}`} data-setup={ev.setupType ?? undefined} aria-label={trackKey}>
       <div class="sx-row">
         <header class="sx-id">
-          <div class="sx-id-title">
+          {ev.setupType ? <SetupLock type={ev.setupType} class="sx-card-lock" /> : null}
+          <div class="sx-id-body">
             {head.track ? <TrackSilhouette trackKey={trackKey} analysisId={analysisId} /> : null}
-            <h2>{head.track ?? "Track unknown"}</h2>
-          </div>
-          <div class="sx-meta">
-            <span>{[head.track_config, day].filter(Boolean).join(" · ")}</span>
-          </div>
-          <div class="sx-car">
-            <i class="sx-stripe" aria-hidden="true" />
-            <span title={series ? `${carName(head)} · ${series}` : undefined}>{carName(head)}</span>
+            <div class="sx-id-text">
+              <h2>{head.track ?? "Track unknown"}</h2>
+              <div class="sx-meta">
+                <span>{[head.track_config, day].filter(Boolean).join(" · ")}</span>
+              </div>
+              <div class="sx-car">
+                <i class="sx-stripe" aria-hidden="true" />
+                <span title={series ? `${carName(head)} · ${series}` : undefined}>{carName(head)}</span>
+              </div>
+            </div>
           </div>
         </header>
-        <ul class="sx-cells" style={{ "--tracks": gridTemplate(tracks) }}>
-          {ev.sessions.map((s, i) => (
-            <PhaseCell key={s.session_id} s={s} ev={ev} customerId={customerId} now={now} column={columns[i] ?? i} />
+        <ul class="sx-lines">
+          {ev.sessions.map((s) => (
+            <PhaseLine key={s.session_id} s={s} ev={ev} customerId={customerId} now={now} />
           ))}
         </ul>
       </div>

@@ -52,7 +52,8 @@ for (const device of ROUND2_DEVICES) {
       const rows = page.locator(".ri-sl-list [data-lap]");
       await expect(rows).toHaveCount(6);
       const expected = listed("B");
-      await expect(rows).toHaveText(expected.map((lap) => new RegExp(`^${lap.lap}${lap.section_s.toFixed(3)}[+−]${Math.abs(lap.delta_s).toFixed(3)}$`)));
+      // (Round 5, #75: the laps on the tires and the traffic share follow the delta; sections-u3.spec.ts checks them.)
+      await expect(rows).toHaveText(expected.map((lap) => new RegExp(`^${lap.lap}${lap.section_s.toFixed(3)}[+−]${Math.abs(lap.delta_s).toFixed(3)}(\\d+|—)`)));
       expect(await rows.evaluateAll((els) => els.map((el) => el.getAttribute("data-shade")))).toEqual(["g1", "g2", "g3", "r3", "r2", "r1"]);
       await expect(page.locator("[data-sl-median]")).toContainText(entry("B").median_s.toFixed(3));
       // The comparison column and reference are gone.
@@ -66,10 +67,10 @@ for (const device of ROUND2_DEVICES) {
       const rgb = (text: string) => text.match(/[\d.]+/g)!.map(Number);
       for (const c of colours.slice(0, 3)) expect(rgb(c)[1]!).toBeGreaterThan(rgb(c)[0]!);
       for (const c of colours.slice(3)) expect(rgb(c)[0]!).toBeGreaterThan(rgb(c)[1]!);
-      // The map draws the same six laps along the section, in the same shades.
-      const strands = page.locator("[data-sl-map] [data-strand]");
-      await expect(strands).toHaveCount(6);
-      expect(await strands.evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-strand"))))).toEqual(expected.map((lap) => lap.lap));
+      // The map draws the same six laps' recorded racing lines through the section, in the same shades (round 5, #76).
+      const lines = page.locator("[data-sl-map] [data-sl-line]");
+      await expect(lines).toHaveCount(6);
+      expect(await lines.evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-sl-line"))))).toEqual(expected.map((lap) => lap.lap));
       await expectNoHorizontalScroll(page);
     });
 
@@ -85,7 +86,7 @@ for (const device of ROUND2_DEVICES) {
       if (device.touch) await row.focus();
       else await row.hover();
       await expect(page.locator("[data-sl-read]")).toHaveText(`L${lap.lap} · ${lap.section_s.toFixed(3)} s · −${Math.abs(lap.delta_s).toFixed(3)} s`);
-      await expect(page.locator(`[data-strand="${lap.lap}"]`)).toHaveClass(/hot/);
+      await expect(page.locator(`[data-sl-line="${lap.lap}"]`)).toHaveClass(/hot/);
       expect(requests).toEqual([]);
     });
 
@@ -237,12 +238,12 @@ for (const device of ROUND2_DEVICES) {
       expect(early).toBeGreaterThan(42);
       expect(late).toBeGreaterThan(early + 4);
       expect(late).toBeLessThan(58);
-      // The marker sits on the section segment: within a few pixels of the middle strand's path.
+      // The marker sits on the section segment: within a few pixels of the segment's path.
       const onSegment = await page.evaluate(() => {
         const marker = document.querySelector<HTMLElement>("[data-sl-marker] i")!.getBoundingClientRect();
         const cx = marker.left + marker.width / 2;
         const cy = marker.top + marker.height / 2;
-        const strand = document.querySelectorAll<SVGPathElement>("[data-strand]")[2]!;
+        const strand = document.querySelector<SVGPathElement>(".ri-sl-scrub")!;
         const ctm = strand.getScreenCTM()!;
         const total = strand.getTotalLength();
         let best = Infinity;
@@ -256,14 +257,14 @@ for (const device of ROUND2_DEVICES) {
       // Map -> traces: a point a fifth of the way along the segment sets the cursor there.
       await page.mouse.move(2, 2);
       const target = await page.evaluate(() => {
-        const strand = document.querySelectorAll<SVGPathElement>("[data-strand]")[2]!;
+        const strand = document.querySelector<SVGPathElement>(".ri-sl-scrub")!;
         const p = strand.getPointAtLength(strand.getTotalLength() * 0.2).matrixTransform(strand.getScreenCTM()!);
         return { x: p.x, y: p.y };
       });
       const mapBox = (await page.locator("[data-sl-map]").boundingBox())!;
       if (target.y < 0 || target.y > page.viewportSize()!.height) await page.locator("[data-sl-map]").scrollIntoViewIfNeeded();
       const again = await page.evaluate(() => {
-        const strand = document.querySelectorAll<SVGPathElement>("[data-strand]")[2]!;
+        const strand = document.querySelector<SVGPathElement>(".ri-sl-scrub")!;
         const p = strand.getPointAtLength(strand.getTotalLength() * 0.2).matrixTransform(strand.getScreenCTM()!);
         return { x: p.x, y: p.y };
       });
@@ -296,7 +297,7 @@ for (const device of ROUND2_DEVICES) {
       mkdirSync(SHOTS, { recursive: true });
       await open(page, "?section=B");
       await expect(page.locator(".ri-sl-list [data-lap]")).toHaveCount(6);
-      await expect(page.locator("[data-sl-map] [data-strand]")).toHaveCount(6);
+      await expect(page.locator("[data-sl-map] [data-sl-line]")).toHaveCount(6);
       await expect(page.locator("[data-sl-traces]")).toHaveAttribute("data-status", "ready");
       await expect(page.locator('[data-sl-row="speed"] [data-sl-trace]')).toHaveCount(7);
       if (!device.touch) await page.locator(`.ri-sl-list [data-lap="${listed("B")[0]!.lap}"]`).hover();

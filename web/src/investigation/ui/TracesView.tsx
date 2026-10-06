@@ -3,8 +3,8 @@ import type { RefObject } from "preact";
 import type { TelemetryCursor, TrackField } from "../cursor/telemetry-cursor";
 import { createTraceLayoutEditor, type TraceLayoutEditor } from "../cursor/trace-layout-editor";
 import type { MapGeometry, MapMode } from "../geometry/map-model";
-import { incidentsByLap, inRaceStops, passesFilters, pitStops, runWearInputs } from "../geometry/rail-model";
-import { bestThree, fastestLap, hasUsableLapTime, isCompleteLap, resolve, sectorStarts, setLapContext, zeroLapFor, type TraceData } from "../geometry/trace-model";
+import { incidentsByLap, inRaceStops, passesFilters, pitStops, railGroups, runWearInputs } from "../geometry/rail-model";
+import { bestThree, fastestLap, hasUsableLapTime, isCompleteLap, lapColor, resolve, sectorStarts, setLapContext, zeroLapFor, type TraceData } from "../geometry/trace-model";
 import type { TraceLapData } from "../types";
 import { lapTime } from "../format";
 import { applyLayoutAction, insertSignalRow, moveRow, placeSignal, removeRow, removeSignal, validateAndRepair, type LayoutAction } from "../layout-model";
@@ -14,6 +14,7 @@ import type { Comparison } from "../investigation-model";
 import { LapRail } from "./LapRail";
 import { TraceChart } from "./TraceChart";
 import { TraceToolbox, type LayoutCommandRequest } from "./TraceToolbox";
+import { SingleSelect, type SelectOption } from "../../ui/single-select";
 import { TrackPanel, type TrackRefs } from "./TrackPanel";
 
 export { incidentPointsByLap } from "../geometry/rail-model";
@@ -64,14 +65,12 @@ export function missingChannels(data: TraceData, rows: readonly TraceRowSpec[], 
 }
 
 /**
- * Laps the Spotlight list offers: complete timed laps that pass the active Green and Clean filters, so spotlighting never adds a
- * lap the filtered rail hides (review finding 5).
+ * The Spotlight list (#79): the laps the chart draws now, in the rail's order (run by run, lap by lap), each with its time. A lap
+ * that is not on the chart is not offered, so spotlighting never adds a trace.
  */
-export function spotlightChoices(data: TraceData, greenOnly: boolean, cleanOnly: boolean, points: ReadonlyMap<number, number>): TraceLapData[] {
-  return data.laps
-    .map((lap) => data.lapMeta.get(lap))
-    .filter((meta): meta is TraceLapData => !!meta && isCompleteLap(meta) && hasUsableLapTime(meta) && passesFilters(meta, greenOnly, cleanOnly, points.get(meta.lap) ?? 0))
-    .sort((a, b) => a.lap - b.lap);
+export function spotlightLaps(data: TraceData, runs: readonly unknown[], selected: readonly number[]): TraceLapData[] {
+  const drawn = new Set(selected);
+  return railGroups(data, runs, (meta) => drawn.has(meta.lap)).flatMap((group) => group.laps);
 }
 
 export function TracesView(props: TracesViewProps) {
@@ -205,7 +204,18 @@ export function TracesView(props: TracesViewProps) {
     setSelected(data.laps.filter((lap) => allowed(lap, greenOnly, cleanOnly)).sort((a, b) => a - b));
   };
 
-  const spotlightCandidates = useMemo(() => spotlightChoices(data, greenOnly, cleanOnly, points), [data, greenOnly, cleanOnly, points]);
+  const spotlightOptions = useMemo<SelectOption[]>(
+    () => [
+      { key: "", label: "None" },
+      ...spotlightLaps(data, props.runs, selected).map((meta) => ({
+        key: String(meta.lap),
+        label: `L${meta.lap} · ${lapTime(meta.lap_time_s)}`,
+        hint: meta.lap === data.fastestLap ? "fastest" : undefined,
+        mark: <i class="swl" style={`--lap:${lapColor(data, meta.lap)}`} aria-hidden="true" />,
+      })),
+    ],
+    [data, props.runs, selected],
+  );
   const edit = (next: TraceLayoutBody | null): void => {
     if (next) props.onLayoutChange(next);
   };
@@ -253,21 +263,16 @@ export function TracesView(props: TracesViewProps) {
                     <button type="button" class="ri-pill-button primary" onClick={props.onClearFocus}>My traces</button>
                   </>
                 )}
-                <label class="ri-pill-select" style={spotlight !== null ? `--lap:${data.colors.get(spotlight) ?? "transparent"}` : undefined}>
-                  <span class="ri-pill-label">Spotlight</span>
-                  {spotlight !== null && <i class="ri-swl" aria-hidden="true" />}
-                  <select aria-label="Spotlight lap" value={spotlight ?? ""} onChange={(event) => { const value = (event.currentTarget as HTMLSelectElement).value; setSpotlight(value === "" ? null : Number(value)); if (value !== "" && !selected.includes(Number(value))) setSelected((current) => [...current, Number(value)].sort((a, b) => a - b)); }}>
-                    <option value="">None</option>
-                    {spotlightCandidates.map((meta) => <option key={meta.lap} value={meta.lap}>L{meta.lap} · {lapTime(meta.lap_time_s)}{meta.lap === data.fastestLap ? " · fastest" : ""}</option>)}
-                  </select>
-                </label>
+                <SingleSelect
+                  class="end" label="Spotlight" value={spotlight === null ? "" : String(spotlight)} options={spotlightOptions}
+                  mark={spotlight !== null ? <i class="swl" style={`--lap:${lapColor(data, spotlight)}`} aria-hidden="true" /> : undefined}
+                  onChange={(key) => { setSpotlight(key === "" ? null : Number(key)); if (key !== "" && !selected.includes(Number(key))) setSelected((current) => [...current, Number(key)].sort((x, y) => x - y)); }}
+                />
                 {!props.focus && props.layoutSet.layouts.length > 1 && (
-                  <label class="ri-pill-select">
-                    <span class="ri-pill-label">Layout</span>
-                    <select aria-label="Chart layout" value={active.id} onChange={(event) => props.onLayoutCommand({ type: "select", id: (event.currentTarget as HTMLSelectElement).value })}>
-                      {props.layoutSet.layouts.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
-                    </select>
-                  </label>
+                  <SingleSelect
+                    class="end" label="Layout" value={active.id} options={props.layoutSet.layouts.map((entry) => ({ key: entry.id, label: entry.name }))}
+                    onChange={(id) => props.onLayoutCommand({ type: "select", id })}
+                  />
                 )}
                 <button type="button" class={`ri-pill-button${editing ? " on" : ""}`} disabled={props.focus !== null} aria-expanded={editing} aria-controls="analysis-trace-toolbox" aria-label="Customize" title="Customize" onClick={() => setEditing((value) => !value)}>
                   <svg class="ri-btn-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h7M13 4h1M2 12h1M7 12h7M11 2v4M5 10v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>

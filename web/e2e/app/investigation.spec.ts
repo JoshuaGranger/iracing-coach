@@ -4,8 +4,9 @@ import path from "node:path";
 import { raceProgressColour } from "../../src/core/palette";
 import { routeSynthetic } from "../../src/investigation/fixtures/api";
 import { ROUND2_COMPARISONS } from "../../src/investigation/fixtures/round2";
-import { buildRound4Analysis, ROUND4_NO_FUEL_LAP, ROUND4_SERVICE_LAP } from "../../src/investigation/fixtures/round4";
-import { DEVICES, DRIVER, appTest, expectNoHorizontalScroll, hash, mockState } from "./helpers";
+import { ROUND4_NO_FUEL_LAP, ROUND4_SERVICE_LAP } from "../../src/investigation/fixtures/round4";
+import { OFF_TRACK_LAP, OPEN_AIR_LAP, RESTART_LAP, TRAFFIC_AND_OFF_TRACK_LAP, TRAFFIC_LAP, TRAFFIC_ONLY_LAPS, buildTrafficAnalysis } from "../../src/investigation/fixtures/traffic";
+import { DEVICES, DRIVER, appTest, expectNoHorizontalScroll, hash, mockState, resetMock } from "./helpers";
 import { ROUND2_DEVICES } from "./round2-shared";
 
 // The shell around the workspace (W8's own view checks follow, on the round-2 fixture).
@@ -82,10 +83,29 @@ for (const device of DEVICES) {
 
 // Web rounds 2 to 4, Investigation (web-round-2-plan.md): the acceptance lines at 1440, 1024 and 390, on the synthetic race served
 // in place of session 103's analysis (the round-2 race, round 3's per-lap context and no-tire stop, round 4's Vegas-shaped stop,
-// one absent fuel reading and a fit under half its run's green laps).
-const ANALYSIS = buildRound4Analysis("an-103");
+// one absent fuel reading and a fit under half its run's green laps, and #67's traffic, traffic-and-other and other screens).
+const ANALYSIS = buildTrafficAnalysis("an-103");
 // RI_SHOTS names another release record's folder (relative to web/); the default is round 4's S2.
 const SHOTS = path.resolve(process.cwd(), process.env.RI_SHOTS ?? path.join("target", "round4", "S2"));
+// The traffic marker's own screenshots (#67): RI_T67_SHOTS, else round 4's T67.
+const T67_SHOTS = path.resolve(process.cwd(), process.env.RI_T67_SHOTS ?? path.join("target", "round4", "T67"));
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/** The smallest box around the chart marks of laps `from` to `to` (the `selector` marks), padded by `pad` px. */
+async function marksBox(page: Page, selector: string, from: number, to: number, pad: number): Promise<Box> {
+  return page.evaluate(([sel, lo, hi, p]) => {
+    const rects = [...document.querySelectorAll(sel as string)].filter((el) => {
+      const lap = Number(el.getAttribute("data-lap"));
+      return lap >= (lo as number) && lap <= (hi as number);
+    }).map((el) => el.getBoundingClientRect());
+    const x1 = Math.min(...rects.map((r) => r.left)) - (p as number);
+    const y1 = Math.min(...rects.map((r) => r.top)) - (p as number);
+    const x2 = Math.max(...rects.map((r) => r.right)) + (p as number);
+    const y2 = Math.max(...rects.map((r) => r.bottom)) + (p as number);
+    return { x: Math.max(0, x1), y: Math.max(0, y1), width: x2 - Math.max(0, x1), height: y2 - Math.max(0, y1) };
+  }, [selector, from, to, pad] as const);
+}
 
 type RawLap = { lap: number; lap_time_s: number | null; run_number: number | null; plot_pace: boolean };
 /** The run line read straight off the fixture's lap rows: the run's last green lap time less its first, over the laps between. */
@@ -131,11 +151,16 @@ for (const device of ROUND2_DEVICES) {
       await expect(page.locator("[data-legend=screened]")).toHaveCount(0);
       await expect(page.locator("[data-pace-fit]")).toHaveCount(0);
       await expect(page.locator(".ri-chart-head")).not.toContainText(/pace fit/i);
-      await point(page, ".ri-dot[data-lap='10']");
-      await expect(page.locator("[data-race-readout]")).toContainText("Not in pace fit · close traffic");
+      // A hollow dot is a lap screened for something other than traffic alone; its hover names the fit and the backend's reasons (#67).
+      await point(page, `.ri-dot[data-lap='${RESTART_LAP}']`);
+      await expect(page.locator("[data-race-readout]")).toContainText("Not in pace fit · restart");
+      await page.locator(`.ri-dot[data-lap='${TRAFFIC_AND_OFF_TRACK_LAP}']`).focus();
+      await expect(page.locator("[data-race-readout]")).toContainText(`Lap ${TRAFFIC_AND_OFF_TRACK_LAP}`);
+      await expect(page.locator("[data-race-readout]")).toContainText("Not in pace fit · off track, close traffic");
+      // A traffic lap reads its traffic instead (#67, the Race traffic test below).
       await page.locator(".ri-dot[data-lap='11']").focus();
       await expect(page.locator("[data-race-readout]")).toContainText("Lap 11");
-      await expect(page.locator("[data-race-readout]")).toContainText("Not in pace fit");
+      await expect(page.locator("[data-race-readout]")).toContainText("traffic 62 % of lap");
       // Caution laps: actual lap times as subdued dots in the band; the dash row is gone.
       await expect(page.locator("[data-caution-dot]")).toHaveCount(3);
       await expect(page.locator(".ri-caution")).toHaveCount(0);
@@ -206,8 +231,8 @@ for (const device of ROUND2_DEVICES) {
       await expect(page.locator(".ri-dot[data-lap='70']")).toHaveAttribute("stroke", /^color-mix\(in srgb, var\(--run-2\) \d+%, white\)$/);
       const [run2, run3] = await page.evaluate(() => ["40", "70"].map((lap) => getComputedStyle(document.querySelector(`.ri-dot[data-lap='${lap}']`)!).stroke));
       expect(run3, "lighter shade, not the same colour").not.toBe(run2);
-      // Hollow dots stay for screened laps; the fastest lap carries the magenta ring and says so on hover.
-      await expect(page.locator(".ri-dot.excluded[data-lap='10']")).toHaveAttribute("fill", "var(--ri-card)");
+      // Hollow dots stay for laps screened for anything but traffic alone; the fastest lap carries the magenta ring and says so on hover.
+      await expect(page.locator(`.ri-dot.excluded[data-lap='${RESTART_LAP}']`)).toHaveAttribute("fill", "var(--ri-card)");
       const fastest = page.locator("[data-fastest]");
       await expect(fastest).toHaveCount(1);
       await point(page, `.ri-dot[data-lap='${await fastest.getAttribute("data-fastest")}']`);
@@ -219,6 +244,126 @@ for (const device of ROUND2_DEVICES) {
       await expect(card).toContainText("+8.0");
       await expect(card).not.toContainText(/extract|repair|penalt/i);
       await expect(page.locator("[data-pit-unextracted]")).toHaveCount(0);
+    });
+
+    test("Race (#67): a lap screened for close traffic alone is a double ring in its run colour; open air stays the plain dot, any other screen the hollow dot", async ({ page }) => {
+      const requests: string[] = [];
+      await open(page, "race");
+      await expect(page.locator(".ri-dot").first()).toBeVisible();
+      const dot = (lap: number) => page.locator(`.ri-dot[data-lap='${lap}']`);
+      const ring = (lap: number) => page.locator(`[data-traffic-ring='${lap}']`);
+      const readout = page.locator("[data-race-readout]");
+      // Traffic alone: the dot outer ring (it takes the pointer) and an inner ring (decoration), both the run colour, the hole the card.
+      for (const lap of TRAFFIC_ONLY_LAPS) {
+        await expect(dot(lap)).toHaveAttribute("data-mark", "traffic");
+        await expect(dot(lap)).toHaveAttribute("fill", "var(--ri-card)");
+        await expect(ring(lap)).toHaveCount(1);
+        await expect(ring(lap)).toHaveAttribute("fill", "none");
+        await expect(ring(lap)).toHaveAttribute("stroke", (await dot(lap).getAttribute("stroke"))!);
+        await expect(ring(lap)).toHaveAttribute("aria-hidden", "true");
+      }
+      await expect(page.locator(".ri-dot[data-mark=traffic]")).toHaveCount(TRAFFIC_ONLY_LAPS.length);
+      await expect(page.locator("[data-traffic-ring]")).toHaveCount(TRAFFIC_ONLY_LAPS.length);
+      await expect(dot(10)).toHaveAttribute("stroke", "var(--run-1)");
+      await expect(dot(TRAFFIC_LAP)).toHaveAttribute("stroke", "var(--run-1)");
+      await expect(dot(79)).toHaveAttribute("stroke", /^color-mix\(in srgb, var\(--run-2\) \d+%, white\)$/);
+      // Open air: the plain filled dot, nothing around it, though the recording carries the distance channels.
+      await expect(dot(OPEN_AIR_LAP)).toHaveAttribute("data-mark", "open");
+      await expect(dot(OPEN_AIR_LAP)).toHaveAttribute("fill", "var(--run-1)");
+      await expect(ring(OPEN_AIR_LAP)).toHaveCount(0);
+      // Screened for anything else, with traffic or without: the hollow dot.
+      const hollow = [1, TRAFFIC_AND_OFF_TRACK_LAP, RESTART_LAP, OFF_TRACK_LAP, 57];
+      for (const lap of hollow) {
+        await expect(dot(lap)).toHaveAttribute("data-mark", "screened");
+        await expect(dot(lap)).toHaveAttribute("fill", "var(--ri-card)");
+        await expect(ring(lap)).toHaveCount(0);
+      }
+      await expect(page.locator(".ri-dot[data-mark=screened]")).toHaveCount(hollow.length);
+      // Sizes: the ring stands off the plain dot, the inner ring sits inside it, and they share a centre.
+      const geometry = (lap: number) => page.evaluate((n) => {
+        const outer = document.querySelector(`.ri-dot[data-lap='${n}']`)!;
+        const inner = document.querySelector(`[data-traffic-ring='${n}']`);
+        const read = (el: Element) => ({ r: Number(el.getAttribute("r")), cx: Number(el.getAttribute("cx")), cy: Number(el.getAttribute("cy")) });
+        return { ...read(outer), inner: inner ? read(inner) : null };
+      }, lap);
+      const plain = (await geometry(OPEN_AIR_LAP)).r;
+      expect((await geometry(RESTART_LAP)).r, "the hollow dot is the plain dot size").toBe(plain);
+      const traffic = await geometry(TRAFFIC_LAP);
+      expect(traffic.r).toBeGreaterThan(plain);
+      expect(traffic.inner!.r).toBeLessThan(plain);
+      expect([traffic.inner!.cx, traffic.inner!.cy]).toEqual([traffic.cx, traffic.cy]);
+      // The legend lists the runs only; no dot kind is a legend item.
+      await expect(page.locator(".ri-progress .ri-legend .ri-run-key")).toHaveText(["Run 1", "Run 2", "Run 3 · same tires"]);
+      await expect(page.locator(".ri-progress .ri-legend")).not.toContainText(/traffic|open|screen/i);
+      // Hover, tap or focus: the lap, its time and the share of the lap in traffic; no side (the backend names none), no fit sentence.
+      await point(page, `.ri-dot[data-lap='${TRAFFIC_LAP}']`);
+      await expect(readout).toHaveText(/^Lap 20 · \d+\.\d{3} s · P4 · Run 1 · 20\.0 green · traffic 75 % of lap$/);
+      await expect(readout).not.toContainText(/ahead|behind|pace fit/i);
+      await expect(dot(TRAFFIC_LAP)).toHaveAttribute("aria-label", /traffic 75 % of lap$/);
+      await point(page, ".ri-dot[data-lap='10']");
+      await expect(readout).toContainText("traffic 62 % of lap");
+      // A lap screened for traffic and something else reads its reasons as before.
+      await point(page, `.ri-dot[data-lap='${TRAFFIC_AND_OFF_TRACK_LAP}']`);
+      await expect(readout).toContainText("Not in pace fit · off track, close traffic");
+      await expect(readout).not.toContainText("traffic 40 %");
+      // The pointer finds the lap through the middle of the double ring: the outer ring answers, the inner ring never intercepts.
+      const centre = (await dot(TRAFFIC_LAP).boundingBox())!;
+      const hit = await page.evaluate(([x, y]) => {
+        const el = document.elementFromPoint(x!, y!);
+        return { lap: el?.getAttribute("data-lap") ?? null, ring: el?.hasAttribute("data-traffic-ring") ?? false };
+      }, [centre.x + centre.width / 2, centre.y + centre.height / 2]);
+      expect(hit, "the element under the middle of the double ring").toEqual({ lap: String(TRAFFIC_LAP), ring: false });
+      // The pace fit and the run lines do not change: run 1 fit still spans green laps 3-24, the lines still read the fall-off.
+      await expect(page.locator("[data-fit-run='1']")).toHaveAttribute("data-fit-span", "3-24");
+      await expect(page.locator("[data-run-line='1'] [data-part=falloff]")).toHaveText(/^fall-off [+\u2212]?\d\.\d\d s\/lap$/);
+      // The fastest lap ring clears the mark it surrounds, whichever mark that is.
+      const best = await page.evaluate(() => {
+        const ringEl = document.querySelector("[data-fastest]")!;
+        const lap = ringEl.getAttribute("data-fastest");
+        const mark = document.querySelector(`.ri-dot[data-lap='${lap}']`)!;
+        return { lap: Number(lap), r: Number(ringEl.getAttribute("r")), outer: Number(mark.getAttribute("r")), kind: mark.getAttribute("data-mark") };
+      });
+      expect(best.r - best.outer, `fastest lap ${best.lap} (${best.kind}): ring over the mark`).toBeGreaterThanOrEqual(2.5);
+      // Pointer movement over the chart makes no request.
+      page.on("request", (request) => requests.push(request.url()));
+      if (!touch) {
+        const box = (await page.locator(".ri-plot-svg").boundingBox())!;
+        for (let i = 0; i <= 40; i++) await page.mouse.move(box.x + (box.width * i) / 40, box.y + box.height * 0.3);
+      }
+      expect(requests, "requests under pointer movement").toEqual([]);
+      await expectNoHorizontalScroll(page);
+    });
+
+    test("Runs (#67): the chart dots and the run card sparklines draw the same traffic ring and hollow dot", async ({ page }) => {
+      await open(page, "runs");
+      await expect(page.locator(".ri-runs .ri-dot").first()).toBeVisible();
+      const dot = (lap: number) => page.locator(`.ri-runs .ri-dot[data-lap='${lap}']`);
+      for (const lap of TRAFFIC_ONLY_LAPS) {
+        await expect(dot(lap)).toHaveAttribute("data-mark", "traffic");
+        await expect(dot(lap)).toHaveAttribute("fill", "var(--ri-card)");
+        await expect(page.locator(`.ri-runs [data-traffic-ring='${lap}']`)).toHaveCount(1);
+      }
+      await expect(dot(TRAFFIC_LAP)).toHaveAttribute("data-run", "1");
+      await expect(dot(TRAFFIC_LAP)).toHaveAttribute("stroke", "var(--run-1)");
+      await expect(dot(79)).toHaveAttribute("data-run", "3");
+      await expect(dot(OPEN_AIR_LAP)).toHaveAttribute("data-mark", "open");
+      await expect(dot(OPEN_AIR_LAP)).toHaveAttribute("fill", "var(--run-1)");
+      const hollow = [1, TRAFFIC_AND_OFF_TRACK_LAP, RESTART_LAP, OFF_TRACK_LAP, 57];
+      for (const lap of hollow) {
+        await expect(dot(lap)).toHaveAttribute("data-mark", "screened");
+        await expect(dot(lap)).toHaveAttribute("fill", "var(--ri-card)");
+      }
+      await expect(page.locator(".ri-runs [data-traffic-ring]")).toHaveCount(TRAFFIC_ONLY_LAPS.length);
+      // The same readout as Race.
+      await point(page, `.ri-runs .ri-dot[data-lap='${TRAFFIC_LAP}']`);
+      await expect(page.locator("[data-runs-readout]")).toHaveText(/^Lap 20 · \d+\.\d{3} s · P4 · Run 1 · 20\.0 green · traffic 75 % of lap$/);
+      await point(page, `.ri-runs .ri-dot[data-lap='${OFF_TRACK_LAP}']`);
+      await expect(page.locator("[data-runs-readout]")).toContainText("Not in pace fit · off track");
+      // The card sparklines: a dot in a ring for traffic, a hollow dot for any other screen, a plain dot for open air.
+      await expect(page.locator("[data-spark-traffic]")).toHaveCount(TRAFFIC_ONLY_LAPS.length);
+      await expect(page.locator(".ri-spark-ring")).toHaveCount(TRAFFIC_ONLY_LAPS.length);
+      await expect(page.locator(".ri-spark-dot.hollow")).toHaveCount(hollow.length);
+      await expectNoHorizontalScroll(page);
     });
 
     test("Race (#41): every top-edge marker keeps its glow inside the chart", async ({ page }) => {
@@ -377,7 +522,8 @@ for (const device of ROUND2_DEVICES) {
       await expect(lap(12).locator("[data-screened]")).toHaveCount(0);
       await expect(page.locator("[data-lap-chip]")).toHaveCount(0);
       await lap(12).click();
-      await page.getByRole("combobox", { name: "Spotlight lap" }).selectOption("12");
+      await page.getByRole("button", { name: /Spotlight/ }).click();
+      await page.getByRole("option", { name: /^L12 · / }).click();
       const boxed = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".ri-lap-row .ri-n")].filter((el) => {
         const style = getComputedStyle(el);
         const clear = (colour: string) => colour === "rgba(0, 0, 0, 0)" || colour === "transparent";
@@ -483,6 +629,48 @@ for (const device of ROUND2_DEVICES) {
       await page.locator("[data-run-card]").first().click();
       await page.waitForTimeout(200);
       await page.screenshot({ path: path.join(SHOTS, `runs-run1-hidden-${width}.png`), fullPage: width < 700 });
+    });
+
+    test("screenshots of the traffic marker on Race and Runs for the release record (#67)", async ({ page }) => {
+      mkdirSync(T67_SHOTS, { recursive: true });
+      // Race with a traffic lap read out, then the marks of laps 8 to 31 (open air, traffic, traffic and off track, restart, off track).
+      await open(page, "race");
+      await page.locator(".ri-dot").first().waitFor();
+      await point(page, `.ri-dot[data-lap='${TRAFFIC_LAP}']`);
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(T67_SHOTS, `race-traffic-${width}.png`), fullPage: width < 700 });
+      // Runs with the same lap read out.
+      await open(page, "runs");
+      await page.locator(".ri-runs .ri-dot").first().waitFor();
+      await point(page, `.ri-runs .ri-dot[data-lap='${TRAFFIC_LAP}']`);
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(T67_SHOTS, `runs-traffic-${width}.png`), fullPage: width < 700 });
+    });
+  });
+}
+
+// The marks at three times the device pixels, so the rings read at the size they are drawn: laps 8 to 31 of Race (open air, traffic,
+// traffic and off track, restart, off track) and the run cards' sparklines.
+for (const device of ROUND2_DEVICES) {
+  test.describe(`${device.name} close-ups`, () => {
+    test.use({ viewport: device.viewport, hasTouch: device.touch, deviceScaleFactor: 3 });
+    test.beforeEach(async ({ request, page }) => {
+      await resetMock(request);
+      await serveRound2(page);
+    });
+
+    test("close-ups of the traffic marker for the release record (#67)", async ({ page }) => {
+      mkdirSync(T67_SHOTS, { recursive: true });
+      const w = device.viewport.width;
+      await open(page, "race");
+      await page.locator(".ri-dot").first().waitFor();
+      await page.waitForTimeout(250);
+      await page.screenshot({ path: path.join(T67_SHOTS, `race-traffic-marks-${w}.png`), clip: await marksBox(page, ".ri-dot", 8, 31, 14) });
+      await open(page, "runs");
+      await page.locator("[data-run-card]").first().waitFor();
+      await page.waitForTimeout(250);
+      const card = (await page.locator("[data-run-card='1']").boundingBox())!;
+      await page.screenshot({ path: path.join(T67_SHOTS, `runs-traffic-card-${w}.png`), clip: card });
     });
   });
 }

@@ -837,7 +837,7 @@ Epoch marker (W3): `first_of_epoch` marks an engine state, but the collector sen
 Reads one `analysis.json` (streaming, only the needed subtrees) and writes the bounded view files the server serves. Accepted input: the worker's persisted document, flat (`analysis_id`, `schema_version` 2 and the analysis_view keys at the top level), or the analyze-result form `{analysis_id, analysis_view}` whose `analysis_view.schema_version` is 1; `race_investigation.schema_version` must be 2. Anything else is `IncompatibleVersion`. Copies backend values; the only rules it applies are the C# mapping rules named in `api.openapi.yaml` descriptions (tuning identity and map, lap exclusion reasons, representative runs). Non-finite numbers and legacy `Infinity`/`NaN` tokens become null.
 
 ```rust
-pub const PROJECTION_VERSION: u32 = 3;
+pub const PROJECTION_VERSION: u32 = 4;
 
 /// Writes every view file into `out_dir` (`/data/views/<analysis_id>/p<PROJECTION_VERSION>/`),
 /// which must not exist: files go to a sibling `<out_dir>.tmp-<random>` that is fsynced and
@@ -851,7 +851,7 @@ pub struct ProjectionSummary {
     pub schema_version: i64,           // analysis_view schema the views carry: always 1 (ViewEnvelope.schema_version)
     pub profile_version: String,       // analysis_profile_version; "" when the backend left it null
     pub lap_count: u32,                // laps[] length
-    pub bins_per_lap: u32,             // lap_traces distance bins (160 today)
+    pub bins_per_lap: u32,             // traces.ccol distance bins: lap_trace_columns (640) when the analysis has them, else lap_traces (160)
     pub trace_channels: Vec<String>,   // TraceSignal ids in catalog order
     pub files: Vec<ViewFile>,          // files actually written
     pub nonfinite_nulled: u64,         // numbers replaced by null

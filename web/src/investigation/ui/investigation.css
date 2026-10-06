@@ -101,14 +101,8 @@
 .ri-icon-pill.small { width: var(--control-height); }
 .ri-icon-pill.on { border-color: var(--ri-ice); color: var(--ri-t1); }
 .ri-icon-pill:disabled { color: var(--ri-t4); cursor: default; }
-.ri-pill-select { position: relative; display: inline-flex; align-items: center; gap: 0.5rem; min-height: var(--control-height); padding: 0 0.25rem 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: 1.1875rem; background: var(--ri-card2); max-width: 100%; }
-.ri-pill-label { color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-control); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
-.ri-pill-select select { min-width: 0; max-width: 16rem; min-height: var(--control-height); margin: -1px 0; border: 0; background: transparent; color: var(--ri-t1); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; text-overflow: ellipsis; cursor: pointer; }
-.ri-pill-select select option { background: var(--ri-card2); color: var(--ri-t1); }
 .ri-swl { display: inline-block; width: 1.125rem; height: 0.375rem; border-radius: 3px; background: var(--lap); box-shadow: 0 0 0.5rem var(--lap); }
-.ri-select { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; color: var(--ri-t3); font-size: var(--text-compact); }
-.ri-select select, .ri-search input { min-height: var(--control-height); border: 1px solid var(--ri-line); border-radius: 1.1875rem; padding: 0 var(--space-3); background: var(--ri-card2); color: var(--ri-t1); font: inherit; font-size: var(--text-body); }
-.ri-select.compact select { font-size: var(--text-control); }
+.ri-search input { min-height: var(--control-height); border: 1px solid var(--ri-line); border-radius: 1.1875rem; padding: 0 var(--space-3); background: var(--ri-card2); color: var(--ri-t1); font: inherit; font-size: var(--text-body); }
 @media (hover: hover) {
   .ri-tab:hover:not([aria-selected="true"]), .ri-pill-button:hover:not(:disabled):not(.primary), .ri-pill-toggle:hover:not([aria-pressed="true"]), .ri-icon-pill:hover:not(:disabled):not(.on), .ri-button:hover:not(:disabled) { background: var(--color-surface-hover); }
   .ri-pqr-seg:hover:not(.on):not(:disabled) { background: var(--color-surface-hover); }
@@ -125,9 +119,9 @@
 .ri-flag-pole { stroke: var(--ri-t3); stroke-width: 1.6; stroke-linecap: round; }
 .ri-flag-cloth { fill: #F4F6F8; stroke: var(--color-app); stroke-width: 0.6; }
 .ri-flag-check { fill: var(--color-app); }
-.ri-chip { display: inline-grid; place-items: center; height: 1.625rem; padding: 0 0.5rem; border: 1px solid var(--color-border-strong); border-radius: 0.8125rem; color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-style: normal; font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.07em; text-transform: uppercase; }
+.ri-chip { display: inline-grid; place-items: center; height: var(--chip-height); padding: 0 0.5rem; border: 1px solid var(--color-border-strong); border-radius: 0.8125rem; color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-style: normal; font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.07em; text-transform: uppercase; }
 .ri-chip.partial { border-style: dashed; }
-.ri-inc-chip { display: inline-grid; place-items: center; height: 1.625rem; padding: 0 0.4375rem; border-radius: 0.8125rem; font-family: var(--ri-disp); font-size: var(--text-data); font-style: normal; font-weight: 700; font-stretch: semi-condensed; }
+.ri-inc-chip { display: inline-grid; place-items: center; height: var(--chip-height); padding: 0 0.4375rem; border-radius: 0.8125rem; font-family: var(--ri-disp); font-size: var(--text-data); font-style: normal; font-weight: 700; font-stretch: semi-condensed; }
 .ri-inc-chip.small { height: 1.375rem; margin-right: 0.25rem; }
 .ri-inc-chip.p1 { border: 1.5px solid var(--ri-loss); color: color-mix(in srgb, var(--ri-loss) 55%, white); }
 .ri-inc-chip.p2 { background: var(--ri-loss); color: var(--color-app); box-shadow: 0 0 0.625rem color-mix(in srgb, var(--ri-loss) 55%, transparent); }
@@ -174,6 +168,11 @@
 .ri-fit-halo { fill: none; stroke: var(--color-app); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
 .ri-fit-label { fill: var(--run); paint-order: stroke; stroke: var(--color-app); stroke-width: 3px; font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: 700; font-stretch: semi-condensed; }
 .ri-dot { stroke-width: 1.5; cursor: pointer; outline: none; }
+/* A lap screened for close traffic alone (#67): a double ring in the run's colour, the dot's outer ring and a smaller one inside it; the
+   outer one takes the pointer and the focus, the inner one and the chevron (when the backend names the side) only decorate. */
+.ri-dot.traffic { stroke-width: 1.25; }
+.ri-dot-ring { fill: none; stroke-width: 1.25; pointer-events: none; }
+.ri-dot-chevron { fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .ri-dot:focus-visible { stroke: var(--ri-ice); stroke-width: 2.5; }
 /* The fastest lap: a magenta ring around its run-coloured dot. */
 .ri-best-ring { fill: none; stroke: var(--ri-best); stroke-width: 2; filter: drop-shadow(0 0 0.25rem color-mix(in srgb, var(--ri-best) 70%, transparent)); pointer-events: none; }
@@ -216,6 +215,7 @@
 .ri-spark-fit { stroke: var(--run); stroke-width: 1.75; stroke-linecap: round; }
 .ri-spark-dot { fill: var(--run); stroke: var(--run); stroke-width: 0.8; opacity: 0.75; }
 .ri-spark-dot.hollow { fill: var(--ri-card); }
+.ri-spark-ring { fill: none; stroke: var(--run); stroke-width: 0.8; opacity: 0.75; }
 .ri-facts { grid-area: facts; width: 100%; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--space-1) var(--space-3); }
 .ri-fact { display: flex; flex-direction: column; gap: 0; min-width: 0; }
 .ri-fact-label { color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-stretch: condensed; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
@@ -258,13 +258,13 @@
 .ri-lap-rail { container: rail / inline-size; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .ri-rail-head { display: flex; flex: none; align-items: center; gap: var(--space-3); min-height: 3.375rem; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4); }
 .ri-rail-title { font-family: var(--ri-disp); font-size: 1.375rem; font-weight: 700; font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; }
-.ri-count-chip { display: inline-flex; align-items: center; height: 1.625rem; padding: 0 0.625rem; border-radius: 0.8125rem; background: var(--ri-raise); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.ri-count-chip { display: inline-flex; align-items: center; height: var(--chip-height); padding: 0 0.625rem; border-radius: 0.8125rem; background: var(--ri-raise); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
 .ri-toggles { display: flex; gap: var(--space-2); margin-left: auto; }
 /* One template for the header and every row: swatch, lap, flag, time, Δ, sectors, fuel, status, incidents, pit. */
 .ri-lgrid {
   --ri-secs-w: calc(var(--ri-sector-count, 3) * 1.25rem + (var(--ri-sector-count, 3) - 1) * 0.25rem);
   display: grid;
-  grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 3.75rem var(--ri-secs-w) 3.25rem 2.25rem minmax(4.25rem, 1fr);
+  grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 4.25rem var(--ri-secs-w) 4rem 2.75rem minmax(4.25rem, 1fr);
   column-gap: 0.25rem;
   align-items: center;
   padding: 0 var(--space-3);
@@ -272,7 +272,7 @@
 .ri-rail-bar { position: sticky; top: 0; z-index: 3; display: flex; flex-direction: column; justify-content: flex-end; height: var(--toolbar-height, 3rem); margin: 0; border-top: 1px solid var(--ri-line); border-bottom: 1px solid var(--ri-line); background: var(--ri-card); }
 .ri-progress-key { display: flex; align-items: center; gap: 0.375rem; height: 1.25rem; padding: 0 var(--space-3); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: semi-condensed; }
 .ri-progress-key > span { display: inline-flex; align-items: center; gap: 0.25rem; }
-.ri-progress-bar { flex: 1; max-width: 12rem; height: 0.3125rem; border-radius: 3px; background: linear-gradient(90deg, var(--progress-1), var(--progress-2), var(--progress-3), var(--progress-4), var(--progress-5), var(--progress-6)); }
+.ri-progress-bar { flex: 1; min-width: 0; height: 0.3125rem; border-radius: 3px; background: linear-gradient(90deg, var(--progress-1), var(--progress-2), var(--progress-3), var(--progress-4), var(--progress-5), var(--progress-6)); }
 .ri-progress-key .ri-swl { width: 0.75rem; height: 0.3125rem; box-shadow: none; }
 .ri-rail-cols { flex: none; height: 1.625rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .ri-rail-cols > span { overflow: hidden; }
@@ -298,12 +298,17 @@
 .ri-lap-row + .ri-lap-row { border-top: 1px solid color-mix(in srgb, var(--ri-line) 55%, transparent); }
 .ri-lap-row > span { min-width: 0; overflow: hidden; }
 .ri-sw { width: 1.125rem; height: 0.25rem; border: 1px solid #4E5F6B; border-radius: 2px; }
-.ri-n { display: grid; place-items: center; height: 1.625rem; color: var(--ri-t2); font-size: 1.0625rem; font-weight: 700; }
+.ri-n { display: block; text-align: center; color: var(--ri-t2); font-size: 1.0625rem; font-weight: 700; }
 .ri-fl { display: flex; justify-content: center; }
 .ri-tm { text-align: right; color: var(--ri-t1); font-size: 1.1875rem; }
 .ri-lap-row.unclean .ri-tm { color: var(--ri-t3); }
 .ri-tm.best, .ri-lap-row.unclean .ri-tm.best { color: var(--ri-best); text-shadow: 0 0 0.75rem color-mix(in srgb, var(--ri-best) 65%, transparent); }
 .ri-dl, .ri-fu { text-align: right; color: var(--ri-t3); font-weight: var(--weight-medium); }
+/* Adjacent columns keep a clear gutter (#83): the right-aligned Δ and Fuel columns carry an inset and Inc starts clear of what is left of
+   it, in the header and the rows alike so the columns stay aligned. Checked at 1440, 1024 and 390 by e2e/app/controls-u1.spec.ts. */
+.ri-rail-cols .dl, .ri-dl { padding-right: 0.5rem; }
+.ri-rail-cols .fuel, .ri-fu { padding-right: 0.75rem; }
+.ri-rail-cols .inc, .ri-inc { padding-left: 0.375rem; }
 .ri-secs { display: flex; justify-content: center; gap: 0.25rem; }
 .ri-blk { display: block; flex: none; width: 1.25rem; height: 0.875rem; border-radius: 3px; }
 .ri-blk.sb { background: var(--ri-best); box-shadow: 0 0 0.5625rem color-mix(in srgb, var(--ri-best) 70%, transparent); }
@@ -325,17 +330,16 @@
 .ri-lap-row.spotlight .ri-n { color: var(--ri-t1); }
 .ri-lap-row.spotlight .ri-sw { height: 0.4375rem; border-radius: 3px; }
 @media (hover: hover) { .ri-lap-row:hover:not(.selected) { background: var(--color-surface-hover); } }
-/* Keyboard focus only; any pointer use on the rail clears it until a key is pressed (no box left after a click). */
+/* Keyboard focus only; the shared pointer rule (styles.css, ui/control-behaviour.ts) clears it after any pointer use (no box left after a click). */
 .ri-lap-row:focus-visible { outline: 2px solid var(--ri-ice); outline-offset: -2px; border-radius: 0.375rem; }
-.ri-lap-rail[data-pointer] .ri-lap-row:focus-visible { outline: none; }
 .ri-rail-foot { display: flex; flex: none; align-items: center; gap: var(--space-2); min-height: 3.25rem; padding: 0 var(--space-3); border-top: 1px solid var(--ri-line); }
 /* A narrower rail drops fuel, then the sector blocks, then the status chip; header and rows drop the same column, so they stay aligned. */
-@container rail (max-width: 33rem) {
-  .ri-lgrid { grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 3.75rem var(--ri-secs-w) 2.25rem minmax(4.25rem, 1fr); }
+@container rail (max-width: 34rem) {
+  .ri-lgrid { grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 4.25rem var(--ri-secs-w) 2.75rem minmax(4.25rem, 1fr); }
   .ri-lgrid > :nth-child(7) { display: none; }
 }
-@container rail (max-width: 29rem) {
-  .ri-lgrid { grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 3.75rem 2.25rem minmax(4.25rem, 1fr); }
+@container rail (max-width: 30rem) {
+  .ri-lgrid { grid-template-columns: 1.25rem 2.25rem 1.25rem 5rem 4.25rem 2.75rem minmax(4.25rem, 1fr); }
   .ri-lgrid > :nth-child(6), .ri-lgrid > :nth-child(7) { display: none; }
 }
 
@@ -364,10 +368,13 @@
 .ri-scale.throttle { background: linear-gradient(90deg, rgb(72 79 88), rgb(42 226 126)); }
 .ri-scale.brake { background: linear-gradient(90deg, rgb(72 79 88), rgb(255 69 86)); }
 .ri-scale.stress { background: linear-gradient(90deg, rgb(247 210 74), rgb(247 65 76)); }
-.ri-cursor-readout { display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); min-width: 0; contain: layout paint; }
+/* Layout containment keeps the 100 ms readout updates local; no paint containment, which would clip the Map list that opens below.
+   The panel stacks over the traces card after it, so that list is drawn over the chart, not under it. */
+.ri-cursor-readout { display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); min-width: 0; contain: layout; }
+.ri-track-panel { z-index: 2; }
 .ri-readout-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); min-width: 0; }
 .ri-readout-head strong { font-family: var(--ri-disp); font-size: 1.25rem; font-weight: 700; font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
-.ri-readout-head span { color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.ri-readout-head > span { color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
 .ri-map-tools { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
 .ri-kvs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
 .ri-kv { min-width: 0; overflow: hidden; padding-top: var(--space-2); border-top: 3px solid var(--color-border-strong); white-space: nowrap; }
@@ -390,13 +397,16 @@
 .ri-studio { min-width: 0; min-height: 0; }
 .ri-studio-panel { container: studio / inline-size; display: flex; flex-direction: column; height: 100%; }
 .ri-btn-icon { display: none; }
-/* A narrower traces card keeps its header on one line: the pill labels go and Customize becomes its icon. */
+/* A narrower traces card keeps its header on one line: the dropdown captions go and Customize becomes its icon. */
 @container studio (max-width: 46rem) {
-  .ri-trace-head .ri-pill-label { display: none; }
+  .ri-trace-head .ss-cap { display: none; }
+  /* With no lap spotlighted the pill says what it is instead of `None`; once one is chosen it reads the lap. */
+  .ri-trace-head .ss-pill[data-empty] .ss-cap { display: inline; }
+  .ri-trace-head .ss-pill[data-empty] .ss-val { display: none; }
   .ri-trace-head .ri-btn-text { display: none; }
   .ri-trace-head .ri-btn-icon { display: block; }
   .ri-trace-head .ri-pill-button[aria-controls] { width: var(--control-height); justify-content: center; padding: 0; }
-  .ri-trace-head .ri-pill-select select { max-width: 9rem; }
+  .ri-trace-head .ss-val { max-width: 9rem; }
 }
 .ri-studio-panel.ri-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; }
 .ri-trace-head { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-height: 3.25rem; padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4); }
@@ -488,7 +498,7 @@
   .ri-x-axis { margin-left: 2.5rem; }
 }
 @media (max-width: 900px), (pointer: coarse) {
-  .ri-tab, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-pqr-seg, .ri-select select, .ri-pill-select, .ri-pill-select select { min-height: var(--touch-target); }
+  .ri-tab, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-pqr-seg { min-height: var(--touch-target); }
   .ri-pill-button.small { min-height: var(--touch-target); }
   .ri-icon-pill { width: var(--touch-target); }
   .ri-lap-row, .ri-section, .ri-comparison, .ri-signal-card { min-height: var(--touch-target); }

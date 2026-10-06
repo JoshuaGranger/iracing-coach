@@ -2233,8 +2233,27 @@ def _analysis_pipeline_sha256() -> str:
 # states the rule, the source and the laps. The per-track cache ranks the
 # current rule above older geometry whatever its coverage. The native
 # build_track_geometry kernel carries the same rule byte for byte.
+# Review 2026-10-05 (trace density, backlog #77): v25 retires v24 because the
+# analysis gains lap_trace_columns, the lap traces at 640 bins per lap for the
+# trace chart (_lap_trace_payload at maximum_bins=640, a few laps a call, its
+# points turned into one list per key, session_time_s as the time the car
+# passed each bin centre, linear between the two samples either side).
+# lap_traces stays at 160 bins and every other value is unchanged; a v24
+# analysis has no dense traces and projects at 160 bins.
+# Review 2026-10-05 (traffic side, backlog #67 and #75): no profile bump of
+# its own. Each lap's clean_context gains traffic_ahead_fraction and
+# traffic_behind_fraction (the share of the observed lap time with a car inside
+# that side's distance of the traffic rule) and traffic_side (_traffic_sides:
+# None without traffic, "both" when each side alone reaches the screen's 10%,
+# else that side, else the larger share, "both" when equal).
+# traffic_proximity_fraction, the close-traffic screen and every other value
+# are unchanged (test_analysis_columns pins them to the pre-change reference),
+# so a cached analysis without the keys gives no wrong answer: its consumers
+# read the side as unknown, as with garage_setup_fingerprint and
+# steering_offset. The native _lap_summaries kernel carries the keys byte for
+# byte.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "8ebbe80bfdd1bae800711f308084ef9e589d4c371e515d57fe1a05071ec70a4a"
+    "3de20772109990614e15e536763f4ef1deb66d7cc17141fbd9b31feb1fead263"
 )
 
 

@@ -1,5 +1,6 @@
 import { type Locator, type Page, type Route, expect, test } from "@playwright/test";
-import { DRIVER, appTest, expectNoHorizontalScroll, expectTouchTargets, hash, mockState } from "./helpers";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { DRIVER, appTest, expectNoHorizontalScroll, expectTouchTargets, hash, mockState, resetMock } from "./helpers";
 import { ROUND2_DEVICES } from "./round2-shared";
 
 // The dates and times below are the driver's wall clock: 2026-09-28T18:00:00Z is 1:00 pm in Chicago.
@@ -125,7 +126,7 @@ for (const device of ROUND2_DEVICES) {
     const phone = d.viewport.width < 700;
     const wide = d.viewport.width >= 1400;
 
-    test("one row per event in three blocks: identity behind a divider, each phase its own panel, the race widest", async ({ page }) => {
+    test("one card per event: the identity block, then the phases as full-width lines stacked in session order (#72)", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const row = bristol(page);
       await expect(row.getByRole("heading", { name: "Bristol Motor Speedway" })).toBeVisible();
@@ -138,8 +139,8 @@ for (const device of ROUND2_DEVICES) {
       await expect(page.locator(".sx-events details, .sx-events [aria-expanded]")).toHaveCount(0);
 
       const id = (await row.locator(".sx-id").boundingBox())!;
-      const cells = await Promise.all((await row.locator("li.session-row").all()).map(async (c) => (await c.boundingBox())!));
-      expect(cells).toHaveLength(3);
+      const lines = await Promise.all((await row.locator("li.session-row").all()).map(async (c) => (await c.boundingBox())!));
+      expect(lines).toHaveLength(3);
       // Each phase is a panel: its own border all round and rounded corners.
       for (const c of await row.locator("li.session-row").all()) {
         const st = await c.evaluate((el) => {
@@ -149,50 +150,195 @@ for (const device of ROUND2_DEVICES) {
         expect(st.sides).toEqual(["1px", "1px", "1px", "1px"]);
         expect(st.radius).toBeGreaterThan(0);
       }
+      // The phases are full-width lines stacked top to bottom in session order, a gap between them, none beside another.
+      const area = await row.locator(".sx-lines").evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return { width: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), gap: parseFloat(cs.rowGap) };
+      });
+      for (let i = 1; i < 3; i++) {
+        expect(lines[i]!.y, `line ${i} under line ${i - 1}`).toBeGreaterThanOrEqual(lines[i - 1]!.y + lines[i - 1]!.height + 6);
+        expect(Math.abs(lines[i]!.x - lines[0]!.x)).toBeLessThan(2);
+        expect(Math.abs(lines[i]!.width - lines[0]!.width)).toBeLessThan(2);
+      }
+      expect(Math.abs(lines[0]!.width - area.width), "each line is as wide as the phases area").toBeLessThan(2);
+      expect(area.gap).toBeGreaterThanOrEqual(6);
       // The identity block's divider: a visible rule at its right (wide) or under it (tablet, phone).
       const divider = await row.locator(".sx-id").evaluate((el) => {
         const cs = getComputedStyle(el);
         return { right: cs.borderRightWidth, bottom: cs.borderBottomWidth };
       });
-      if (phone) {
-        // Stacked phase panels: one column, in order, each as wide as the row, with a gutter between them.
-        for (let i = 1; i < 3; i++) {
-          expect(cells[i]!.y).toBeGreaterThanOrEqual(cells[i - 1]!.y + cells[i - 1]!.height + 6);
-          expect(Math.abs(cells[i]!.x - cells[0]!.x)).toBeLessThan(2);
-          expect(Math.abs(cells[i]!.width - cells[0]!.width)).toBeLessThan(2);
-        }
-        expect(divider.bottom).toBe("1px");
+      if (wide) {
+        // Identity at the left behind its divider, the lines beside it; its content is centred against the lines (#71).
+        expect(divider.right).toBe("1px");
+        expect(lines[0]!.x).toBeGreaterThanOrEqual(id.x + id.width + 10);
+        const body = (await row.locator(".sx-id-body").boundingBox())!;
+        const middle = id.y + id.height / 2;
+        expect(Math.abs(body.y + body.height / 2 - middle), "the identity is centred in its block").toBeLessThan(2);
+        expect(Math.abs((lines[0]!.y + lines[2]!.y + lines[2]!.height) / 2 - middle), "the lines are centred beside it").toBeLessThan(2);
       } else {
-        // Inline panels on one line with a real gutter; the race is the widest, qualifying the narrowest.
-        for (let i = 1; i < 3; i++) {
-          expect(Math.abs(cells[i]!.y - cells[0]!.y)).toBeLessThan(2);
-          expect(cells[i]!.x).toBeGreaterThanOrEqual(cells[i - 1]!.x + cells[i - 1]!.width + 10);
-        }
-        const [p, q, r] = cells as [typeof id, typeof id, typeof id];
-        expect(r.width).toBeGreaterThan(p.width * 1.5);
-        expect(p.width).toBeGreaterThan(q.width);
-        if (wide) {
-          // Identity at the left, then the divider, then a gutter before the first panel; the row is about 5.5 rem.
-          expect(divider.right).toBe("1px");
-          expect(cells[0]!.x).toBeGreaterThanOrEqual(id.x + id.width + 10);
-          const box = (await row.locator(".sx-row").boundingBox())!;
-          expect(box.height).toBeGreaterThanOrEqual(80);
-          expect(box.height).toBeLessThanOrEqual(140);
-        } else {
-          // Tablet: identity on its own line above the panels, the divider under it.
-          expect(divider.bottom).toBe("1px");
-          expect(cells[0]!.y).toBeGreaterThanOrEqual(id.y + id.height + 6);
-        }
+        // Tablet and phone: the identity block above the lines, the divider under it.
+        expect(divider.bottom).toBe("1px");
+        expect(lines[0]!.y).toBeGreaterThanOrEqual(id.y + id.height + 6);
       }
       await expectNoHorizontalScroll(page);
       if (d.touch) await expectTouchTargets(page);
+    });
+
+    test("round 4 #70, #72: 0.75 rem inside, one gutter and one row spacing, the head on one baseline, labels and figures on shared baselines, one rhythm on every line", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const row = bristol(page);
+      await expect(row.locator("li.session-row")).toHaveCount(3);
+      const lines = await row.locator("li.session-row").evaluateAll((els) => els.map((li) => {
+        const box = (el: Element) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom, cy: r.y + r.height / 2 };
+        };
+        const body = getComputedStyle(li.querySelector(".sx-line-body")!);
+        const grid = getComputedStyle(li.querySelector(".sx-slots")!);
+        const head = li.querySelector(".sx-head")!;
+        const slots = [...li.querySelectorAll(".sx-slot:not(.sx-head)")].map((s) => ({ ...box(s), label: box(s.querySelector(".sx-l")!), value: box(s.querySelector(".sx-v, .sx-qv")!) }));
+        return {
+          kind: li.getAttribute("data-kind"),
+          pad: [body.paddingTop, body.paddingRight, body.paddingBottom],
+          padLeft: parseFloat(body.paddingLeft),
+          gap: [grid.columnGap, grid.rowGap],
+          line: box(li),
+          head: box(head),
+          badge: box(head.querySelector(".sx-badge")!),
+          name: box(head.querySelector(".sx-phase")!),
+          time: box(head.querySelector(".sx-l")!),
+          slots,
+        };
+      }));
+      const near = (values: number[], tolerance: number, what: string) => expect(Math.max(...values) - Math.min(...values), what).toBeLessThanOrEqual(tolerance);
+      const rowMode = lines[0]!.line.w > 56 * 16;
+      for (const l of lines) {
+        // About 0.75 rem inside, one gutter between columns (1.25 rem; 1 rem on a phone) and one spacing between rows (0.625 rem).
+        expect(l.pad, `${l.kind} padding`).toEqual(["12px", "12px", "12px"]);
+        expect(l.padLeft, `${l.kind} left padding, past the hue edge`).toBe(16);
+        expect(l.gap, `${l.kind} gutters`).toEqual([phone ? "16px" : "20px", "10px"]);
+        // The badge, the name and the time share one row and one baseline.
+        expect(l.head.h, `${l.kind} head is one row`).toBeLessThanOrEqual(26);
+        near([l.badge.cy, l.name.cy, l.time.cy], 3, `${l.kind} head centres`);
+        if (rowMode) {
+          // The head beside the figures, on one row: labels share a baseline, figures share another, the head's is the figures'.
+          near(l.slots.map((s) => s.y), 1, `${l.kind} slot tops`);
+          near(l.slots.map((s) => s.label.bottom), 1, `${l.kind} label baseline`);
+          near(l.slots.map((s) => s.value.bottom), 1, `${l.kind} figure baseline`);
+          expect(Math.abs(l.name.bottom - l.slots[0]!.value.bottom), `${l.kind} head on the figures' baseline`).toBeLessThanOrEqual(4);
+          const gaps = l.slots.slice(1).map((s, i) => s.x - (l.slots[i]!.x + l.slots[i]!.w));
+          near(gaps, 1.5, `${l.kind} gaps between figures`);
+          expect(Math.min(...gaps)).toBeGreaterThanOrEqual(19);
+          if (l.kind === "race") expect(Math.abs(gaps[0]! - 20), "the race's columns are one gutter apart").toBeLessThan(1.5);
+        } else {
+          // The head over the figures; the figures wrap in even columns with one spacing between rows.
+          expect(l.head.bottom).toBeLessThanOrEqual(Math.min(...l.slots.map((s) => s.y)) + 1);
+          const tops = [...new Set(l.slots.map((s) => Math.round(s.y)))].sort((a, b) => a - b);
+          const steps = tops.slice(1).map((y, i) => y - tops[i]!);
+          if (steps.length > 1) near(steps, 1.5, `${l.kind} row steps`);
+          if (l.kind === "race") expect(tops.length, "the race figures wrap to more rows").toBeGreaterThanOrEqual(2);
+          for (const s of l.slots) expect(s.right, `${l.kind} figure inside its line`).toBeLessThanOrEqual(l.line.right - 11);
+        }
+      }
+      if (rowMode) {
+        // Every column lines up from one phase to the next: the first figure and the last end on the same edges.
+        near(lines.map((l) => l.slots[0]!.x), 1, "first figure column");
+        near(lines.map((l) => l.slots[l.slots.length - 1]!.right), 1, "last figure column edge");
+        near(lines.map((l) => l.name.x), 1, "badge and name column");
+      }
+      await expectNoHorizontalScroll(page);
+    });
+
+    test("round 4 #72: a missing phase has no line; a practice-only event is one line with nothing empty above or below it", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const solo = page.getByRole("region", { name: "Lime Rock Park - Grand Prix" });
+      await expect(solo.locator("li.session-row")).toHaveCount(1);
+      await expect(solo.locator("li.session-row")).toHaveAttribute("data-kind", "practice");
+      await expect(solo.locator(".sx-lines > *")).toHaveCount(1);
+      // The line is centred in its area: equal space above and below, none beyond the padding.
+      const space = await solo.evaluate((el) => {
+        const area = el.querySelector(".sx-lines")!;
+        const a = area.getBoundingClientRect();
+        const l = el.querySelector("li.session-row")!.getBoundingClientRect();
+        return { above: l.top - a.top, below: a.bottom - l.bottom, pad: parseFloat(getComputedStyle(area).paddingTop) };
+      });
+      expect(Math.abs(space.above - space.below)).toBeLessThan(2);
+      expect(space.above).toBeGreaterThanOrEqual(space.pad - 1);
+      // Bristol has all three, in session order; no placeholder stands in for a phase an event never ran.
+      await expect(bristol(page).locator("li.session-row")).toHaveCount(3);
+      expect(await page.locator("section.sx-event li.session-row:not([data-session])").count()).toBe(0);
+    });
+
+    test("round 4 #71: a silhouette beside three lines on one left edge, the track name the only display line, the car colour bar on that edge", async ({ page }) => {
+      await serveGeometry(page);
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const card = bristol(page);
+      await expect(card.getByTestId("silhouette")).toBeVisible();
+      const geo = await card.evaluate((el) => {
+        const r = (node: Element) => {
+          const b = node.getBoundingClientRect();
+          return { x: b.x, y: b.y, w: b.width, h: b.height, right: b.right, bottom: b.bottom };
+        };
+        const name = el.querySelector(".sx-id h2")!;
+        const range = document.createRange();
+        range.selectNodeContents(name);
+        const fragments = [...range.getClientRects()];
+        const meta = el.querySelector(".sx-meta")!;
+        const car = el.querySelector(".sx-car")!;
+        const css = (node: Element) => getComputedStyle(node);
+        return {
+          name: r(name),
+          first: { top: fragments[0]!.top, height: fragments[0]!.height },
+          rows: new Set(fragments.map((f) => Math.round(f.top))).size,
+          meta: r(meta),
+          car: r(car),
+          stripe: r(car.querySelector(".sx-stripe")!),
+          carText: r(car.querySelector("span")!),
+          sil: r(el.querySelector("[data-testid=silhouette]")!),
+          display: [css(name).textTransform, css(meta).textTransform, css(car).textTransform],
+          families: [css(name).fontFamily, css(meta).fontFamily, css(car).fontFamily],
+        };
+      });
+      // One left edge for the three lines: the name, the date line and the car's colour bar.
+      expect(Math.abs(geo.name.x - geo.meta.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(geo.name.x - geo.stripe.x)).toBeLessThanOrEqual(1);
+      // The silhouette stands at the left of all three, level with the name's first line.
+      expect(geo.sil.right).toBeLessThanOrEqual(geo.name.x - 4);
+      expect(geo.sil.h).toBeGreaterThanOrEqual(22);
+      expect(geo.sil.h).toBeLessThanOrEqual(26);
+      expect(Math.abs(geo.sil.y + geo.sil.h / 2 - (geo.first.top + geo.first.height / 2)), "silhouette against the first line").toBeLessThanOrEqual(3);
+      // The name: wrapped at most once. Then one secondary line, then the car on its own line.
+      expect(geo.rows).toBeLessThanOrEqual(2);
+      expect(geo.meta.h).toBeLessThanOrEqual(20);
+      expect(geo.car.y).toBeGreaterThanOrEqual(geo.meta.bottom - 1);
+      // The colour bar spans the car's text, on the same edge.
+      expect(Math.abs(geo.stripe.y - geo.car.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(geo.stripe.h - geo.carText.h)).toBeLessThanOrEqual(2);
+      expect(geo.carText.x).toBeGreaterThan(geo.stripe.right);
+      // The track name is the only display-type line.
+      expect(geo.display).toEqual(["uppercase", "none", "none"]);
+      expect(geo.families[0]).not.toBe(geo.families[1]);
+      expect(geo.families[1]).toBe(geo.families[2]);
+      // Every track name in the list fits in at most two lines, whatever the width.
+      const rows = await page.locator(".sx-id h2").evaluateAll((els) => els.map((h) => {
+        const range = document.createRange();
+        range.selectNodeContents(h);
+        return new Set([...range.getClientRects()].map((f) => Math.round(f.top))).size;
+      }));
+      expect(Math.max(...rows)).toBeLessThanOrEqual(2);
+      await expectNoHorizontalScroll(page);
     });
 
     test("seven labelled slots per phase, a dash where the backend reported nothing", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const race = cell(page, 103);
       await expect(race.locator(".sx-slot:not(.sx-head) .sx-l")).toHaveText(["Finish", "Grn · Cau", "Best", "Pace", "Stops", "Burn", "Long run"]);
-      await expect(value(race, "pos")).toHaveText("P4▲8from P12");
+      // The finish keeps its arrow and the places; the grid position is the arrow hover and accessible name, not text (#68).
+      await expect(value(race, "pos")).toHaveText("P4▲8");
+      await expect(race.locator(".sx-p.gain")).toHaveAttribute("title", "up 8 from P12");
+      await expect(race.locator(".sx-p.gain")).toHaveAttribute("aria-label", "up 8 from P12");
+      await expect(race.getByRole("img", { name: "up 8 from P12" })).toHaveCount(1);
+      await expect(race).not.toContainText(/from P\d/);
       await expect(value(race, "laps")).toHaveText("60·20");
       await expect(value(race, "best")).toHaveText("15.234");
       await expect(value(race, "pace")).toHaveText("15.612+0.021");
@@ -217,10 +363,10 @@ for (const device of ROUND2_DEVICES) {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const race = cell(page, 103);
       await expect(race.locator(".sx-p.gain")).toHaveText("▲8");
-      await expect(slot(race, "pos").locator(".sx-p.unit")).toHaveText("from P12");
-      // The reference is muted text, the arrow the one colour.
-      const muted = await slot(race, "pos").locator(".sx-p.unit").evaluate((el) => getComputedStyle(el).color);
-      expect([GAIN, LOSS]).not.toContain(muted);
+      // The reference is the arrow hover, never text (#68): the slot prints the finish and the arrow only.
+      await expect(slot(race, "pos").locator(".sx-p")).toHaveText(["P4", "▲8"]);
+      await expect(slot(race, "pos").locator(".sx-p.unit")).toHaveCount(0);
+      await expect(race.locator(".sx-p.gain")).toHaveAttribute("title", "up 8 from P12");
       // Without an official start there is nothing to measure against: no arrow, no reference.
       await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { ...r.overview, start_position: null } } : r)));
       await page.reload();
@@ -230,7 +376,7 @@ for (const device of ROUND2_DEVICES) {
       await page.unrouteAll({ behavior: "ignoreErrors" });
       await page.reload();
       const v = value(cell(page, 103), "pos");
-      await expect(v).toHaveText("P4▲8from P12");
+      await expect(v).toHaveText("P4▲8");
       expect(await v.evaluate((el) => el.scrollWidth > el.clientWidth + 1), "the finish is clipped").toBe(false);
     });
 
@@ -252,15 +398,16 @@ for (const device of ROUND2_DEVICES) {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const row = bristol(page);
       await expect(row.locator(".sx-badge")).toHaveText(["P", "Q", "R"]);
-      // The badge is the cell's top-left mark.
+      // The badge is the line's left mark: first at its left edge, inside it.
       for (const c of await row.locator("li.session-row").all()) {
         const [cb, bb] = [(await c.boundingBox())!, (await c.locator(".sx-badge").boundingBox())!];
         expect(bb.x - cb.x).toBeLessThan(24);
-        expect(bb.y - cb.y).toBeLessThan(16);
+        expect(bb.y).toBeGreaterThanOrEqual(cb.y + 4);
+        expect(bb.y + bb.height).toBeLessThanOrEqual(cb.y + cb.height - 4);
       }
       const bg = (l: Locator) => l.evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(await Promise.all((await row.locator(".sx-badge").all()).map(bg))).toEqual([PHASE_P, PHASE_Q, PHASE_R]);
-      const edge = (id: number) => cell(page, id).locator(".sx-cell-body").evaluate((el) => getComputedStyle(el).boxShadow);
+      const edge = (id: number) => cell(page, id).locator(".sx-line-body").evaluate((el) => getComputedStyle(el).boxShadow);
       expect(await edge(101)).toContain(PHASE_P);
       expect(await edge(102)).toContain(PHASE_Q);
       expect(await edge(103)).toContain(PHASE_R);
@@ -278,7 +425,7 @@ for (const device of ROUND2_DEVICES) {
       expect(await seg("Qualifying").evaluate((el) => getComputedStyle(el, "::after").backgroundColor)).toBe(PHASE_Q);
     });
 
-    test("round 4: each event its own card with a gap, the setup lock in its top-right corner (#50, #51)", async ({ page }) => {
+    test("round 4: each event its own card with a gap, the setup lock in the top-right corner of the identity block (#50, #51, #69)", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const cards = page.locator("section.sx-event");
       await expect(cards.first()).toBeVisible();
@@ -299,19 +446,37 @@ for (const device of ROUND2_DEVICES) {
       const card = bristol(page);
       const lock = card.getByRole("img", { name: "Fixed setup" });
       await expect(lock).toHaveAttribute("title", "Fixed setup");
-      const [cb, lb] = [(await card.boundingBox())!, (await lock.boundingBox())!];
-      expect(cb.x + cb.width - (lb.x + lb.width)).toBeLessThan(12);
-      expect(lb.y - cb.y).toBeLessThan(12);
+      // #69: the lock is in the identity block, at its top-right corner, not at the far right of the card.
+      await expect(card.locator(".sx-id .sx-card-lock")).toHaveCount(1);
+      await expect(card.locator(".sx-lines .sx-card-lock")).toHaveCount(0);
+      const [ib, lb] = [(await card.locator(".sx-id").boundingBox())!, (await lock.boundingBox())!];
+      expect(lb.x).toBeGreaterThanOrEqual(ib.x);
+      expect(lb.x + lb.width).toBeLessThanOrEqual(ib.x + ib.width);
+      expect(lb.y).toBeGreaterThanOrEqual(ib.y);
+      expect(ib.x + ib.width - (lb.x + lb.width)).toBeLessThan(12);
+      expect(lb.y - ib.y).toBeLessThan(12);
+      if (wide) {
+        // Beside the lines the block is the left column: the lock sits at its right edge, a block away from the card's far right.
+        const cb = (await card.boundingBox())!;
+        expect(cb.x + cb.width - (lb.x + lb.width)).toBeGreaterThan(ib.width);
+      }
       // Closed for fixed, open for open: different glyphs.
       const open = page.getByRole("region", { name: "Indianapolis Raceway Park - Oval" }).first().getByRole("img", { name: "Open setup" });
       await expect(open).toHaveCount(1);
       expect(await lock.locator("path").getAttribute("d")).not.toBe(await open.locator("path").getAttribute("d"));
-      // The lock overlaps no figure.
-      for (const c of await card.locator(".sx-slot").all()) {
-        const b = (await c.boundingBox())!;
-        const overlap = !(b.x + b.width <= lb.x || lb.x + lb.width <= b.x || b.y + b.height <= lb.y || lb.y + lb.height <= b.y);
-        expect(overlap).toBe(false);
-      }
+      await expect(open).toHaveAttribute("title", "Open setup");
+      // The lock covers no text: not the track name's lines, not the date, car or any figure.
+      const covered = await card.evaluate((el) => {
+        const l = el.querySelector(".sx-card-lock")!.getBoundingClientRect();
+        const hits = (r: DOMRect) => !(r.right <= l.left || l.right <= r.left || r.bottom <= l.top || l.bottom <= r.top);
+        const texts = [...el.querySelectorAll(".sx-id h2, .sx-meta span, .sx-car span, .sx-slot")].filter((node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          return [...range.getClientRects()].some(hits);
+        });
+        return texts.map((node) => node.className || node.tagName);
+      });
+      expect(covered, "text under the lock").toEqual([]);
       await expectNoHorizontalScroll(page);
     });
 
@@ -339,20 +504,25 @@ for (const device of ROUND2_DEVICES) {
       await expectNoHorizontalScroll(page);
     });
 
-    test("practice and qualifying are quieter than the race: 14 px secondary figures against the race's 15 px primary", async ({ page }) => {
+    test("practice and qualifying are quieter than the race: 14 px secondary figures against the race's 18 px primary, the race hue strongest (#72)", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const style = (l: Locator) => l.evaluate((el) => ({ size: getComputedStyle(el).fontSize, color: getComputedStyle(el).color }));
       const race = await style(value(cell(page, 103), "best").locator(".sx-p").first());
       const prac = await style(quiet(cell(page, 101), "best").locator(".sx-qp").first());
       const qual = await style(quiet(cell(page, 102), "lap1").locator(".sx-qp").first());
-      expect(race.size).toBe("15px");
+      expect(race.size).toBe("18px");
       expect(prac.size).toBe("14px");
       expect(qual.size).toBe("14px");
       expect(prac.color).not.toBe(race.color);
       expect(qual.color).toBe(prac.color);
-      // The phase names follow: the race's at the figure size, the preamble's at the secondary size.
-      expect((await style(cell(page, 103).locator(".sx-phase"))).size).toBe("15px");
+      // The phase names follow: the race's at the body size, the preamble's at the secondary size.
+      expect((await style(cell(page, 103).locator(".sx-phase"))).size).toBe("16px");
       expect((await style(cell(page, 101).locator(".sx-phase"))).size).toBe("14px");
+      // The race line carries its hue strongest: the widest edge and the strongest tint behind its head.
+      // The edge is an inset shadow with no blur: `rgb(...) 5px 0px 0px 0px inset`, its width the first length.
+      const edgeWidth = (id: number) => cell(page, id).locator(".sx-line-body").evaluate((el) => Number(/\) (\d+)px /.exec(getComputedStyle(el).boxShadow)?.[1] ?? 0));
+      expect(await edgeWidth(103)).toBeGreaterThan(await edgeWidth(101));
+      expect(await edgeWidth(103)).toBeGreaterThan(await edgeWidth(102));
     });
 
     test("two events compare on stint length, pace and fuel without opening either", async ({ page }) => {
@@ -375,13 +545,11 @@ for (const device of ROUND2_DEVICES) {
       await expect(value(b, "run")).toHaveText("38");
       await expect(value(b, "burn")).toHaveText("0.44gal/lap");
       expect(page.url()).toBe(url);
-      if (wide) {
-        // Both figures sit on one screen at once.
-        await page.evaluate(() => window.scrollTo(0, 0));
-        const [ab, bb] = [(await a.boundingBox())!, (await b.boundingBox())!];
-        expect(ab.y + ab.height).toBeLessThanOrEqual(d.viewport.height);
-        expect(bb.y + bb.height).toBeLessThanOrEqual(d.viewport.height);
-      }
+      // The first event shows its whole card, three lines, on the first screen at once (#72: lines make a card taller; two events
+      // are compared by scrolling, never by opening one).
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const first = (await bristol(page).boundingBox())!;
+      expect(first.y + first.height).toBeLessThanOrEqual(d.viewport.height);
     });
 
     test("the large colourful tile treatment is gone: no fills, no glow, no bands", async ({ page }) => {
@@ -393,7 +561,7 @@ for (const device of ROUND2_DEVICES) {
       // The only saturated fills are the car stripes (identity) and the phase letters (the P, Q, R badges, #52); no panel fill.
       expect(fills.filter((f) => !/sx-stripe|sx-badge/.test(f))).toEqual([]);
       // A phase keeps its hue as an edge.
-      const edge = (c: Locator) => c.locator(".sx-cell-body").evaluate((el) => getComputedStyle(el).boxShadow);
+      const edge = (c: Locator) => c.locator(".sx-line-body").evaluate((el) => getComputedStyle(el).boxShadow);
       expect(await edge(cell(page, 101))).toContain(PHASE_P);
       expect(await edge(cell(page, 103))).toContain(PHASE_R);
     });
@@ -416,7 +584,8 @@ for (const device of ROUND2_DEVICES) {
       await expect(cell(page, 101).locator(".sx-p.caution")).toHaveCount(0);
       await expect(cell(page, 101).locator(".sx-p.gain, .sx-p.loss")).toHaveCount(0);
       // A win is a plain number, no flag.
-      await expect(value(cell(page, 110), "pos")).toHaveText("P1▲2from P3");
+      await expect(value(cell(page, 110), "pos")).toHaveText("P1▲2");
+      await expect(cell(page, 110).locator(".sx-p.gain")).toHaveAttribute("title", "up 2 from P3");
       await expect(cell(page, 110).locator(".sx-flag, .sx-win")).toHaveCount(0);
       // The fastest lap is not coloured across phases: qualifying's lap 2 holds NH's event best, marked by weight in the plain
       // secondary colour of every preamble figure.
@@ -436,27 +605,32 @@ for (const device of ROUND2_DEVICES) {
       await expect(race.locator(".sx-p.loss")).toHaveText("▼2");
       expect(await race.locator(".sx-p.loss").evaluate((el) => getComputedStyle(el).color)).toBe(LOSS);
       await expect(slot(race, "pos")).toHaveAttribute("title", "Finished P9, started P7");
+      // A place lost names where it was lost from, on the arrow (#68).
+      await expect(race.locator(".sx-p.loss")).toHaveAttribute("title", "down 2 from P7");
+      await expect(race.locator(".sx-p.loss")).toHaveAttribute("aria-label", "down 2 from P7");
+      await expect(value(race, "pos")).toHaveText("P9▼2");
     });
 
-    test("owner's type minimums: 16 px names, 15 px figures, 14 px labels and secondary lines; the row may grow", async ({ page }) => {
+    test("owner's type minimums: 16 px names, 15 px figures or more, 14 px labels and secondary lines; the line may grow", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const race = cell(page, 103);
       await expect(race).toBeVisible();
       const px = (l: Locator) => l.evaluate((el) => getComputedStyle(el).fontSize);
-      expect(await px(value(race, "best").locator(".sx-p").first())).toBe("15px");
+      // The race figures are the largest on the card (18 px); the preamble's are 14 px (the quieter test above).
+      expect(await px(value(race, "best").locator(".sx-p").first())).toBe("18px");
       expect(await px(race.locator(".sx-slot[data-slot=best] .sx-l"))).toBe("14px");
       expect(await px(race.locator(".sx-slot[data-slot=burn] .sx-p.unit"))).toBe("14px");
-      expect(await px(race.locator(".sx-slot[data-slot=pos] .sx-p.unit"))).toBe("14px");
+      expect(await px(race.locator(".sx-slot[data-slot=pace] .sx-p.unit"))).toBe("14px");
+      expect(await px(race.locator(".sx-head .sx-l"))).toBe("14px");
       expect(await px(race.locator(".sx-badge"))).toBe("14px");
       expect(await px(bristol(page).getByRole("heading", { name: "Bristol Motor Speedway" }))).toBe("16px");
       expect(await px(bristol(page).locator(".sx-meta span").first())).toBe("14px");
       expect(await px(bristol(page).locator(".sx-car span").first())).toBe("14px");
       const box = (await race.boundingBox())!;
-      expect(box.height).toBeGreaterThanOrEqual(80);
-      // Larger type lets the row grow (the plan's about 5.5 rem is a floor); it must not run away. On a phone the race's header
-      // takes its own line above three rows of figures, so a figure is never cut (round 4: `from P12`, `gal/lap`).
-      expect(box.height).toBeLessThanOrEqual(phone ? 180 : 150);
-      // The silhouette is about 1.5 rem tall.
+      // A line is one row of labelled figures with 0.75 rem inside (about 66 px); larger type lets it grow, it must not run away. On a
+      // phone the head takes its own row above three rows of figures, so a figure is never cut.
+      expect(box.height).toBeGreaterThanOrEqual(60);
+      expect(box.height).toBeLessThanOrEqual(phone ? 260 : 100);
     });
 
     test("Fixed and Open are a lock glyph, not a chip; a phase that differs carries its own; no status-normal chip", async ({ page }) => {
@@ -594,9 +768,9 @@ for (const device of ROUND2_DEVICES) {
       await closeFilters(page);
       await expect(page.locator("li.session-row")).toHaveCount(4);
       await expect(page.locator("li.session-row .sx-phase")).toHaveText([/Race$/, /Race$/, /Race$/, /Race$/]);
-      // Races only: one column, the race panel as wide as the phases area inside its gutter.
+      // Races only: one line per event, as wide as the phases area inside its gutter, nothing empty above or below it.
       const only = (await page.locator("li.session-row").first().boundingBox())!;
-      const inner = await page.locator(".sx-cells").first().evaluate((el) => {
+      const inner = await page.locator(".sx-lines").first().evaluate((el) => {
         const cs = getComputedStyle(el);
         return el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       });
@@ -682,13 +856,23 @@ for (const device of ROUND2_DEVICES) {
       await expectNoHorizontalScroll(page);
     });
 
-    test("a track without usable geometry draws no silhouette and the row still reads", async ({ page }) => {
+    test("a track without usable geometry draws no silhouette, holds no space for one and the row still reads (#71)", async ({ page }) => {
       await page.route("**/api/v1/analyses/*/track", (route) =>
         route.fulfill({ json: { analysis_id: "x", projection_version: 1, schema_version: 1, profile_version: "", coordinate_space: "normalized_local_vector", status: "usable", main_path: { pct: [0, 0.5], x: [0.1, 0.9], y: [0.5, 0.5] }, provenance: {} } }),
       );
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       await expect(bristol(page).getByRole("heading", { name: "Bristol Motor Speedway" })).toBeVisible();
       await expect(page.getByTestId("silhouette")).toHaveCount(0);
+      // Once the layout is known to have none, nothing is reserved: the three lines start at the block's own left edge.
+      await expect(bristol(page).locator(".sx-sil")).toHaveCount(0);
+      const edge = await bristol(page).evaluate((el) => {
+        const id = el.querySelector(".sx-id")!;
+        const cs = getComputedStyle(id);
+        const at = (selector: string) => el.querySelector(selector)!.getBoundingClientRect().x;
+        const inner = id.getBoundingClientRect().x + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+        return [at(".sx-id h2") - inner, at(".sx-meta") - inner, at(".sx-car .sx-stripe") - inner];
+      });
+      for (const offset of edge) expect(Math.abs(offset)).toBeLessThan(1.5);
     });
 
     test("older events load in batches", async ({ page }) => {
@@ -720,36 +904,86 @@ for (const device of ROUND2_DEVICES) {
   });
 }
 
-// Acceptance screenshots (round 4 S1: web/target/round4/S1): the list at the three viewports, one event's card, the exceptions.
+// Acceptance screenshots (round 4 T68, #68-#72: web/target/round4/T68): the list at the three viewports, one event's card, its identity
+// block and race line, the exceptions, a one-line event, and the measurements the pictures cannot show (the arrow's hover text, the
+// lock's corner, the identity's left edge, the lines' padding, gutters and baselines).
 const dir = process.env.COACH_SCREENS_DIR;
 test.describe("screenshots", () => {
   test.skip(!dir, "set COACH_SCREENS_DIR to write the screenshots");
   for (const device of ROUND2_DEVICES) {
     appTest(device, (d) => {
-      const wide = d.viewport.width >= 1400;
       const phone = d.viewport.width < 700;
-      test(`sessions: screenshots at ${d.viewport.width}`, async ({ page }) => {
+      const w = d.viewport.width;
+      test(`sessions: screenshots at ${w}`, async ({ page }) => {
+        mkdirSync(dir!, { recursive: true });
         await serveGeometry(page);
         await page.goto(hash(`/d/${DRIVER}/sessions`));
         await expect(page.getByTestId("silhouette").first()).toBeVisible();
         await page.waitForLoadState("networkidle");
-        await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}.png` });
-        if (phone) await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}-full.png`, fullPage: true });
+        await page.screenshot({ path: `${dir}/sessions-${w}.png` });
+        if (phone) await page.screenshot({ path: `${dir}/sessions-${w}-full.png`, fullPage: true });
 
-        // One event close up: the three blocks.
-        await bristol(page).screenshot({ path: `${dir}/sessions-${d.viewport.width}-row.png` });
+        // One event close up: the identity block beside (or above) the three phase lines, its race line, its identity.
+        await bristol(page).screenshot({ path: `${dir}/sessions-${w}-card.png` });
+        await cell(page, 103).screenshot({ path: `${dir}/sessions-${w}-race-line.png` });
+        await bristol(page).locator(".sx-id").screenshot({ path: `${dir}/sessions-${w}-identity.png` });
+
+        // A one-line event: nothing empty where practice and qualifying never ran.
+        const solo = page.getByRole("region", { name: "Lime Rock Park - Grand Prix" });
+        await solo.scrollIntoViewIfNeeded();
+        await solo.screenshot({ path: `${dir}/sessions-${w}-one-line.png` });
 
         // The not-ready phases (Not analyzed, Failed, Deferred).
         await cell(page, 108).scrollIntoViewIfNeeded();
         await page.waitForTimeout(150);
-        await page.screenshot({ path: `${dir}/sessions-${d.viewport.width}-exceptions.png` });
+        await page.screenshot({ path: `${dir}/sessions-${w}-exceptions.png` });
 
-        // The investigation's P · Q · R selector in the same phase hues (#52).
-        await page.goto(hash(`/d/${DRIVER}/s/103/race`));
-        const pqr = page.getByRole("group", { name: "Session" });
-        await expect(pqr).toBeVisible();
-        await pqr.screenshot({ path: `${dir}/investigation-pqr-${d.viewport.width}.png` });
+        // The arrow's hover and accessible name (a tooltip is not in a screenshot), the lock's corner and the identity's left edge.
+        await bristol(page).scrollIntoViewIfNeeded();
+        const record = await bristol(page).evaluate((card, ids) => {
+          const rect = (el: Element) => {
+            const b = el.getBoundingClientRect();
+            return { x: Math.round(b.x * 10) / 10, y: Math.round(b.y * 10) / 10, w: Math.round(b.width * 10) / 10, h: Math.round(b.height * 10) / 10 };
+          };
+          const arrow = card.querySelector(".sx-p.gain, .sx-p.loss")!;
+          const id = card.querySelector(".sx-id")!.getBoundingClientRect();
+          const lock = card.querySelector(".sx-card-lock")!.getBoundingClientRect();
+          const name = card.querySelector(".sx-id h2")!.getBoundingClientRect();
+          const meta = card.querySelector(".sx-meta")!.getBoundingClientRect();
+          const stripe = card.querySelector(".sx-car .sx-stripe")!.getBoundingClientRect();
+          const lines = [...card.querySelectorAll("li.session-row")].map((li) => {
+            const body = getComputedStyle(li.querySelector(".sx-line-body")!);
+            const grid = getComputedStyle(li.querySelector(".sx-slots")!);
+            return { phase: li.getAttribute("data-phase"), ...rect(li), padding: [body.paddingTop, body.paddingRight, body.paddingBottom, body.paddingLeft], columnGap: grid.columnGap, rowGap: grid.rowGap, figures: li.querySelectorAll(".sx-slot:not(.sx-head)").length };
+          });
+          return {
+            arrow: { text: arrow.textContent, title: arrow.getAttribute("title"), ariaLabel: arrow.getAttribute("aria-label"), role: arrow.getAttribute("role"), raceFinishText: card.querySelector(`li[data-session="${ids}"] .sx-slot[data-slot=pos] .sx-v`)!.textContent },
+            lock: { title: card.querySelector(".sx-card-lock")!.getAttribute("title"), ariaLabel: card.querySelector(".sx-card-lock")!.getAttribute("aria-label"), insideIdentity: !!card.querySelector(".sx-id .sx-card-lock"), fromIdentityRight: Math.round(id.right - lock.right), fromIdentityTop: Math.round(lock.top - id.top) },
+            identity: { leftEdges: [name.x, meta.x, stripe.x].map((x) => Math.round(x * 10) / 10), block: rect(card.querySelector(".sx-id")!), silhouette: card.querySelector("[data-testid=silhouette]") ? rect(card.querySelector("[data-testid=silhouette]")!) : null },
+            lines,
+          };
+        }, 103);
+        writeFileSync(`${dir}/sessions-${w}.json`, JSON.stringify({ viewport: d.viewport, ...record }, null, 2));
       });
     });
   }
 });
+
+// The identity block and the race line at twice the device pixels, so the lock, the arrow, the colour bar and the baselines read.
+for (const device of ROUND2_DEVICES) {
+  test.describe(`${device.name} close-ups`, () => {
+    test.skip(!dir, "set COACH_SCREENS_DIR to write the screenshots");
+    test.use({ viewport: device.viewport, hasTouch: device.touch, deviceScaleFactor: 2 });
+    test.beforeEach(async ({ request }) => resetMock(request));
+
+    test("sessions: close-ups of the identity block and the race line", async ({ page }) => {
+      mkdirSync(dir!, { recursive: true });
+      await serveGeometry(page);
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      await expect(page.getByTestId("silhouette").first()).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await bristol(page).locator(".sx-id").screenshot({ path: `${dir}/sessions-${device.viewport.width}-identity-2x.png` });
+      await cell(page, 103).screenshot({ path: `${dir}/sessions-${device.viewport.width}-race-line-2x.png` });
+    });
+  });
+}

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from "preact/hooks";
 import { buildCursorConfig, chartContentHeight, chartMetrics, type CursorConfig } from "../cursor/cursor-config";
 import { createTelemetryCursor, type TelemetryCursor } from "../cursor/telemetry-cursor";
+import { tracePathGroups } from "../cursor/trace-path";
 import type { MapPoint } from "../geometry/map-model";
 import {
-  chartPathGroups,
   hasSignalData,
   resolve,
   signalRange,
@@ -98,7 +98,7 @@ export function TraceChart(props: TraceChartProps) {
       const groups = row.signals.flatMap((id, signalIndex) => {
         if (!available[signalIndex]) return [];
         const range = signalRange(data, id, lapIndices, reference);
-        return chartPathGroups(data, id, signalIndex, selected, spotlight, reference, frame, range).map((group) => ({ ...group, signalId: id, signalIndex }));
+        return tracePathGroups(data, id, signalIndex, selected, spotlight, reference, frame, range).map((group) => ({ ...group, signalId: id, signalIndex }));
       });
       return { row, frame, available, groups };
     });

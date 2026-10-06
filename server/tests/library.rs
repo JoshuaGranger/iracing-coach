@@ -259,6 +259,15 @@ async fn the_setup_library_filters_raced_and_never_raced() {
         4096,
     )
     .await;
+    // a folder no recording names: the entry carries a null car name, never the folder as a name
+    env.upload(
+        b"unread sto two",
+        "sto",
+        "open.sto",
+        Some("acuraarx06gtp/open.sto"),
+        4096,
+    )
+    .await;
     env.settle().await;
     let list = |query: &str| {
         let env = &env;
@@ -267,7 +276,24 @@ async fn the_setup_library_filters_raced_and_never_raced() {
     };
     let all = list("").await.json();
     assert_eq!(all["setups"].as_array().unwrap().len(), 1);
-    assert_eq!(all["unlinked_files"].as_array().unwrap().len(), 1);
+    let files = all["unlinked_files"].as_array().unwrap();
+    assert_eq!(files.len(), 2);
+    let name_of = |folder: &str| {
+        files
+            .iter()
+            .find(|f| f["car_folder"] == folder)
+            .unwrap_or_else(|| panic!("no file in {folder}"))["car_name"]
+            .clone()
+    };
+    assert_eq!(
+        name_of("stockcars chevyss2020"),
+        "Stock Car",
+        "a recording of the car path names its folder"
+    );
+    assert_eq!(name_of("acuraarx06gtp"), Value::Null);
+    // the name search finds a folder by its screen name
+    let by_name = list("?q=stock%20car").await.json();
+    assert_eq!(by_name["unlinked_files"].as_array().unwrap().len(), 1);
     let raced = list("?raced=true").await.json();
     assert_eq!(raced["setups"].as_array().unwrap().len(), 1);
     assert!(
@@ -276,7 +302,7 @@ async fn the_setup_library_filters_raced_and_never_raced() {
     );
     let never = list("?raced=false").await.json();
     assert!(never["setups"].as_array().unwrap().is_empty());
-    assert_eq!(never["unlinked_files"].as_array().unwrap().len(), 1);
+    assert_eq!(never["unlinked_files"].as_array().unwrap().len(), 2);
     // the older flag still works, and `raced` overrides it
     assert_eq!(
         list("?raced_only=true").await.json()["setups"]

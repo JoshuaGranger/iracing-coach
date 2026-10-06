@@ -1,10 +1,11 @@
 {
  "calls": {
-  "analysis_engine._lap_trace_payload": 1,
+  "analysis_engine._lap_trace_payload": 2,
   "analysis_engine._track_profile": 1
  },
  "files": {
-  "analysis_engine._lap_trace_payload/00000.json": "d6ef7fcdb11362f38091ad3725c3fda5dade89d9f4d85e73f168123ccefbb3e4",
+  "analysis_engine._lap_trace_payload/00000.json": "afbe3d52cb56102bd1bcde7cdad5fd3948ee468acf18348fe561ca579b860950",
+  "analysis_engine._lap_trace_payload/00001.json": "ee23a7cc5c3390c72c4ff53067be4a1b0499866063c17668f29bc5fd3dfb4170",
   "analysis_engine._track_profile/00000.json": "8439e8238b95b4dce410c33b0492551d3d8c790e530a2eee3758cfdf6e080e96"
  },
  "platform": "windows",

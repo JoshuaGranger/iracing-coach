@@ -571,7 +571,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 160-bin lap traces as a columnar binary container (`application/vnd.coach.columns`):
+         * Lap traces (`bins_per_lap` bins a lap) as a columnar binary container (`application/vnd.coach.columns`):
          *     bytes 0-3 "CCOL", u16 version 1, u16 reserved 0, u32 header length H, H bytes of UTF-8 JSON
          *     `TraceBlobHeader`, zero padding up to the data section, which starts at the first file offset
          *     at or after 12 + H that is a multiple of 8, then for each channel in header order a
@@ -2464,7 +2464,17 @@ export interface components {
             /** @description analysis_profile_version; empty string when the backend left it null. */
             profile_version: string;
         };
-        /** @description One recorded lap (backend `laps[]` projected; unknown backend fields preserved). */
+        /**
+         * @description One recorded lap (backend `laps[]` projected; unknown backend fields preserved). The backend's `clean_context`
+         *     passes through. `traffic_proximity_fraction` is the share of the observed lap time with a car ahead within
+         *     max(25 m, 0.75 s) or behind within max(15 m, 0.40 s) (recorded CarDistAhead and CarDistBehind); `close_traffic`
+         *     screens a lap at >= 0.10. `traffic_ahead_fraction` and `traffic_behind_fraction` (number or null, 4 decimals,
+         *     null without the distance channels) are each side's share alone: a sample with a car close on both sides counts
+         *     once in the combined share, so neither side exceeds it. `traffic_side` ("ahead", "behind", "both" or null) is
+         *     null when the combined share is 0 or null; "both" when each side's share is >= 0.10; else the side whose share
+         *     is; else the side with the larger share, "both" when they are equal. An analysis written before 2026-10-05 lacks
+         *     the three keys: unknown, not open air.
+         */
         Lap: {
             lap: number;
             lap_time_s?: number | null;
@@ -2584,6 +2594,8 @@ export interface components {
                 clean_lap_count: number;
                 /** @description Median of those section times (the mean of the middle two for an even count), 3 decimals; null without one. */
                 median_s: number | null;
+                /** @description The lap the median trace follows: the lower-middle lap of the sorted clean section times; null without one. */
+                median_lap?: number | null;
                 /** @description Up to three fastest, fastest first; min(3, floor(clean_lap_count / 2)) entries, so fastest and slowest never share a lap. Ties order by lap. */
                 fastest: components["schemas"]["SectionLap"][];
                 /** @description Up to three slowest, slowest first; as many entries as `fastest`. */
@@ -2651,7 +2663,7 @@ export interface components {
             [key: string]: unknown;
         };
         TraceCatalog: components["schemas"]["ViewEnvelope"] & {
-            /** @description 160 today (about 0.6 % of a lap). Bin i lies at lap fraction (i + 0.5) / bins_per_lap (the CCOL rule on the traces endpoint). */
+            /** @description 640 for analyses from profile post-race-foundations-v25 (about 0.16 % of a lap, the backend's lap_trace_columns), 160 before (lap_traces). Bin i lies at lap fraction (i + 0.5) / bins_per_lap (the CCOL rule on the traces endpoint). Laps and sector_times_s come from the 160-bin lap_traces either way. */
             bins_per_lap: number;
             laps: components["schemas"]["TraceLap"][];
             /**
@@ -2782,6 +2794,8 @@ export interface components {
             present: boolean;
             /** @description Null = values unknown (encrypted .sto, never seen unmodified). Derived by the server when it answers, never stored: only from an observation with is_modified = false or an htm_export of the file (collector-protocol.md section 8). */
             linked_setup_id?: number | null;
+            /** @description The car's screen name, sent on `unlinked_files` entries: the name a recording of that car folder (or of the car whose setup a file in the folder is linked to) carries. Null when no recording names the folder; the client then falls back to the folder name. Absent on `sto_files` entries. */
+            car_name?: string | null;
         };
         SetupSummary: {
             setup_id: number;

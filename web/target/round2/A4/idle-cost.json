@@ -6,21 +6,21 @@
     "meanFrameMs": 16.62,
     "p95FrameMs": 16.8,
     "scriptMsPerS": 57,
-    "styleLayoutMsPerS": 39
+    "styleLayoutMsPerS": 30
   },
   "editorIdle": {
-    "frames": 241,
-    "meanFrameMs": 16.6,
+    "frames": 242,
+    "meanFrameMs": 16.59,
     "p95FrameMs": 16.7,
-    "scriptMsPerS": 39,
-    "styleLayoutMsPerS": 37
+    "scriptMsPerS": 47,
+    "styleLayoutMsPerS": 33
   },
   "editorSelected": {
     "frames": 241,
-    "meanFrameMs": 16.63,
+    "meanFrameMs": 16.62,
     "p95FrameMs": 16.7,
-    "scriptMsPerS": 45,
-    "styleLayoutMsPerS": 39
+    "scriptMsPerS": 44,
+    "styleLayoutMsPerS": 33
   },
   "rateMessages": []
 }

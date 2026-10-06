@@ -2,7 +2,7 @@
 //!
 //! Native replacements for `analysis_engine._lap_summaries` (with `_vehicle_dynamics_summary`,
 //! `_dynamics_samples`, `_lap_conditions`, `_count_corrections`, `_absolute_summary`,
-//! `_positive_increase`, `_racing_state`, `_on_track`, `_session_track_usage`),
+//! `_positive_increase`, `_racing_state`, `_on_track`, `_traffic_sides`, `_session_track_usage`),
 //! `_service_events` and `_disrupted_sample_indices`. Each returns the oracle's Python objects:
 //! types, float bits and dict insertion order. `_runs`, the tyre lifecycle and the damage
 //! orchestration stay Python, so nothing here reproduces their mutations of laps and runs.

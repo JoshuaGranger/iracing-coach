@@ -1,16 +1,18 @@
-import { clamp, finite, formatSignalValue, nearestIndex, projectedTrackFraction, signed, tooltipX } from "./cursor-core";
+import { binPosition, clamp, finite, formatSignalValue, projectedTrackFraction, signed, tooltipX, valueAt, type BinPosition } from "./cursor-core";
 import { mapPointAt } from "../geometry/map-model";
 import type { CursorConfig } from "./cursor-config";
 
 /**
  * Synchronized chart/map cursor (port of analysis-telemetry-cursor.js, reworked for the G2 gate).
  *
- * Per pointer frame the work is bounded by what is visible, never by lap count: one bin lookup on the
- * shared bin grid and one canvas dirty-rect redraw holding the cursor line, one marker per visible lap
- * and signal, and the per-row value cards. The cards are drawn on the canvas rather than built from DOM
- * text, so a frame has no style recalculation, text layout or paint of page content; the map marker is a
- * compositor-only transform. The chart rect is cached (resize and scroll refresh it), so a pointer frame
- * reads no layout. The percent and summary readouts under the map update at most every 100 ms while the
+ * Per pointer frame the work is bounded by what is visible, never by lap count: one lookup of the two bins
+ * around the cursor on the shared bin grid and one canvas dirty-rect redraw holding the cursor line, one
+ * marker per visible lap and signal, and the per-row value cards. The cursor is continuous: it sits at the
+ * pointer's lap fraction, and every marker and value is read linearly between the two measured bins around
+ * it (a step channel such as gear at the nearer one), never beyond a measured point. The cards are drawn on
+ * the canvas rather than built from DOM text, so a frame has no style recalculation, text layout or paint of
+ * page content; the map marker is a compositor-only transform, at the same lap fraction. The chart rect is
+ * cached (resize and scroll refresh it), so a pointer frame reads no layout. The percent and summary readouts under the map update at most every 100 ms while the
  * pointer moves and once more when it rests. Nothing here touches the network.
  */
 
@@ -37,10 +39,15 @@ export type TrackField = "speed" | "throttle" | "brake" | "delta";
 
 /** The map readout values at a bin: speed mph to 1 decimal, pedals whole percent, delta signed seconds; `—` when missing. */
 export function trackFieldTexts(aggregate: CursorConfig["aggregate"], bin: number): Record<TrackField, string> {
-  const speed = aggregate.speed[bin]!;
-  const throttle = aggregate.throttle[bin]!;
-  const brake = aggregate.brake[bin]!;
-  const delta = aggregate.delta[bin]!;
+  return trackFieldTextsAt(aggregate, { lower: bin, upper: bin, t: 0 });
+}
+
+/** The map readout values at a cursor position, each read between the two measured bins around it. */
+export function trackFieldTextsAt(aggregate: CursorConfig["aggregate"], position: BinPosition): Record<TrackField, string> {
+  const speed = valueAt(aggregate.speed, position);
+  const throttle = valueAt(aggregate.throttle, position);
+  const brake = valueAt(aggregate.brake, position);
+  const delta = valueAt(aggregate.delta, position);
   return {
     speed: finite(speed) ? speed.toFixed(1) : "—",
     throttle: finite(throttle) ? (throttle * 100).toFixed(0) : "—",
@@ -110,7 +117,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
   let lastMarkerTransform = "";
   let readoutTimer = 0;
   let lastReadoutAt = 0;
-  let pendingBin = 0;
+  let pendingPosition: BinPosition = { lower: 0, upper: 0, t: 0 };
   let firstDrawMarked = false;
   let characterWidth = 6.6;
   /** Width of the lap-number column of a card: three digits of the card font. */
@@ -175,12 +182,12 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     if (!frame && !disposed) frame = requestAnimationFrame(render);
   }
 
-  function summaryAt(bin: number): string {
+  function summaryAt(position: BinPosition): string {
     const a = config.aggregate;
-    const speed = a.speed[bin]!;
-    const throttle = a.throttle[bin]!;
-    const brake = a.brake[bin]!;
-    const delta = a.delta[bin]!;
+    const speed = valueAt(a.speed, position);
+    const throttle = valueAt(a.throttle, position);
+    const brake = valueAt(a.brake, position);
+    const delta = valueAt(a.delta, position);
     const parts: string[] = [];
     if (finite(speed)) parts.push(`${speed.toFixed(0)} mph`);
     if (finite(throttle)) parts.push(`${(throttle * 100).toFixed(0)}% throttle`);
@@ -200,7 +207,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
       }
     }
     if (options.trackFields) {
-      const texts = trackFieldTexts(config.aggregate, pendingBin);
+      const texts = trackFieldTextsAt(config.aggregate, pendingPosition);
       for (const key of Object.keys(options.trackFields) as TrackField[]) {
         const element = options.trackFields[key];
         if (element && texts[key] !== lastFieldTexts[key]) {
@@ -210,7 +217,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
       }
     }
     if (options.trackSummary) {
-      const text = summaryAt(pendingBin);
+      const text = summaryAt(pendingPosition);
       if (text !== lastSummaryText) {
         lastSummaryText = text;
         options.trackSummary.textContent = text;
@@ -218,8 +225,8 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     }
   }
 
-  function updateReadouts(bin: number, immediate: boolean): void {
-    pendingBin = bin;
+  function updateReadouts(position: BinPosition, immediate: boolean): void {
+    pendingPosition = position;
     if (immediate) {
       writeReadouts();
       return;
@@ -275,7 +282,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     }
     if (!cursorActive()) {
       hideAll();
-      updateReadouts(Math.max(0, nearestIndex(config.x, fraction)), true);
+      updateReadouts(binPosition(config.x, fraction), true);
       return;
     }
     const m = config.metrics;
@@ -294,10 +301,10 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     } else if (chartInside && rect.width >= 1) {
       fraction = clamp((clientX - rect.left) / rect.width * m.width - m.plotLeft, 0, m.plotWidth) / m.plotWidth;
     }
-    const bin = Math.max(0, nearestIndex(config.x, fraction));
-    drawChart(bin);
+    const position = binPosition(config.x, fraction);
+    drawChart(position);
     updateMarker();
-    updateReadouts(bin, false);
+    updateReadouts(position, false);
     if (options.onFraction && fraction !== lastReportedFraction) {
       lastReportedFraction = fraction;
       options.onFraction(fraction);
@@ -308,10 +315,10 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
     }
   }
 
-  function drawChart(bin: number): void {
+  function drawChart(position: BinPosition): void {
     if (!context) return;
     const m = config.metrics;
-    const cursorX = m.plotLeft + config.x[bin]! * m.plotWidth;
+    const cursorX = m.plotLeft + fraction * m.plotWidth;
     clearDirty();
     const drawn: Rect[] = [{ x: cursorX - MARKER_RADIUS - 2, y: 0, w: MARKER_RADIUS * 2 + 4, h: m.height }];
     context.strokeStyle = lineColor;
@@ -343,7 +350,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
         let text = "";
         for (let s = 0; s < row.signals.length; s++) {
           const signal = row.signals[s]!;
-          const value = values[s]![bin]!;
+          const value = position.lower < 0 ? Number.NaN : valueAt(values[s]!, position, signal.step === true);
           if (!Number.isFinite(value)) continue;
           const span = Math.max(0.000001, signal.max - signal.min);
           const y = row.top + row.plotHeight - 4 - ((value - signal.min) / span) * (row.plotHeight - 8);
@@ -486,7 +493,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
 
   sizeCanvas();
   updateMarker();
-  updateReadouts(Math.max(0, nearestIndex(config.x, fraction)), true);
+  updateReadouts(binPosition(config.x, fraction), true);
 
   const api: TelemetryCursor = {
     update(next) {
@@ -503,7 +510,7 @@ export function createTelemetryCursor(options: TelemetryCursorOptions): Telemetr
       lastSummaryText = "";
       for (const key of Object.keys(lastFieldTexts) as TrackField[]) delete lastFieldTexts[key];
       updateMarker();
-      updateReadouts(Math.max(0, nearestIndex(config.x, fraction)), true);
+      updateReadouts(binPosition(config.x, fraction), true);
       if (cursorActive()) schedule();
     },
     setFraction(value) {

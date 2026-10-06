@@ -211,7 +211,8 @@ describe("pit stops as pictograms (#1m)", () => {
     expect(stop.lap).toBe(41);
     expect(stop.durationS).toBeCloseTo(13.0, 6);
     expect(tiresText(stop)).toBe("4 tires");
-    expect(stop.fuelAddedGal).toBeCloseTo(45.402 / 3.785411784, 6);
+    // The race view's pit_stops (projection 3 on) carry the gallons to 3 decimals.
+    expect(stop.fuelAddedGal).toBeCloseTo(45.402 / 3.785411784, 3);
     expect(stop.capacityGal).toBeCloseTo(59.999 / 3.785411784, 6);
   });
 

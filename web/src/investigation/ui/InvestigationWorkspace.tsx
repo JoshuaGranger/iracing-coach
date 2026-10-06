@@ -223,6 +223,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
       <SectionsView
         inv={inv} section={section} map={map} sectionLaps={overview.state.value.sectionLaps ?? null} onSelectSection={(id) => select({ view: "sections", sectionId: id })}
         onOpenTraces={openSectionInTraces} traces={(ids) => handle.ensureSignals(ids)} analysisKey={props.analysisId}
+        race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]}
       />
     );
   }

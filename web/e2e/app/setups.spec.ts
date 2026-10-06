@@ -1,11 +1,23 @@
 import { type Locator, type Page, expect, test } from "@playwright/test";
 import { DRIVER, appTest, expectNoHorizontalScroll, expectTouchTargets, hash, mockState } from "./helpers";
+import { carAccent } from "../../src/core/palette";
 import { ROUND2_DEVICES } from "./round2-shared";
 
 const CAR = "NASCAR Xfinity Toyota Supra";
 const MX5 = "Global Mazda MX-5 Cup";
-/** Screenshots of the round's record: web/target/round3/R2/<name>-<viewport width>.png. */
-const SHOTS = "target/round3/R2";
+/** Screenshots of round 5, task U2: web/target/round5/U2/<name>-<viewport width>.png. */
+const SHOTS = "target/round5/U2";
+
+/** A file whose values are unknown, in a car folder; `carName` is what the server sends when a recording of the car names it. */
+const loose = (folder: string, name: string, carName: string | null) => ({
+  sha256: `${folder}${name}`.padEnd(64, "0").slice(0, 64),
+  car_folder: folder,
+  relative_path: `${folder}/${name}`,
+  format: "sto",
+  present: true,
+  linked_setup_id: null,
+  car_name: carName,
+});
 
 /**
  * A second car with 25 setups added to the mock's answer: the car has more than ten, odd numbers raced (row eleven is raced twice),
@@ -389,7 +401,8 @@ for (const device of ROUND2_DEVICES) {
       });
       await page.goto(hash(`/d/${DRIVER}/setups`));
       await expect(section(page, MX5)).toBeVisible();
-      await expect(section(page, "dallarair18")).toBeVisible();
+      await expect(section(page, "dallarair18")).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Files without values" })).toContainText("1 car");
       const surface = await filterSurface(page);
       await surface.getByRole("button", { name: /^Car/ }).click();
       const panel = page.getByRole("group", { name: "Car filter" });
@@ -404,6 +417,96 @@ for (const device of ROUND2_DEVICES) {
       await expect(section(page, MX5)).toBeVisible();
       await surface.getByRole("button", { name: /^Car/ }).click();
       await expect(page.getByRole("group", { name: "Car filter" }).getByRole("option")).toHaveCount(2);
+    });
+
+    test("#74: cars with only files sit below the sections under a collapsed divider, by screen name, with N files and never 0 setups", async ({ page }) => {
+      await withManySetups(page, {
+        count: 3,
+        extraFiles: [
+          loose("acuraarx06gtp", "Spa.sto", "Acura ARX-06 GTP"),
+          loose("acuraarx06gtp", "Daytona.sto", "Acura ARX-06 GTP"),
+          loose("acuraarx06gtp", "Road America.sto", "Acura ARX-06 GTP"),
+          loose("bmwlmdh", "Base.sto", "BMW M Hybrid V8"),
+          loose("unknownprototype", "Mystery.sto", null),
+        ],
+      });
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      await expect(section(page, MX5)).toBeVisible();
+      const files = page.getByRole("region", { name: "Files without values" });
+      await expect(files).toBeVisible();
+      const toggle = files.getByRole("button", { name: /Files without values · 3 cars/ });
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      // below the last real section, collapsed: no car row is on screen
+      const last = await page.locator(".s-car").last().boundingBox();
+      const at = await files.boundingBox();
+      expect(at!.y, "the divider is below the last section").toBeGreaterThan(last!.y + last!.height - 1);
+      await expect(files.locator(".s-fcar")).toHaveCount(3);
+      await expect(files.locator(".s-fcar").first()).toBeHidden();
+      await shot(page, "files-collapsed");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      // A to Z by screen name, the folder only when no recording named the car
+      await expect(files.locator(".s-fcar-name")).toHaveText(["Acura ARX-06 GTP", "BMW M Hybrid V8", "unknownprototype"]);
+      await expect(files.locator(".s-fcar").nth(0)).toContainText("3 files");
+      await expect(files.locator(".s-fcar").nth(1)).toContainText("1 file");
+      expect(await files.locator(".s-fcar").nth(1).innerText()).not.toMatch(/1 files/);
+      // never a setup count, never a heading in a raw folder name when a screen name exists
+      await expect(page.getByText(/0 setups?/i)).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: /acuraarx06gtp|bmwlmdh/i })).toHaveCount(0);
+      await expect(files.getByText("acuraarx06gtp")).toHaveCount(0);
+      await expect(page.locator(".s-car-head", { hasText: /acura|bmw|unknownprototype/i })).toHaveCount(0);
+      // a car's files on demand, by name
+      await files.locator(".s-fcar-toggle").first().click();
+      await expect(files.getByRole("list", { name: "Acura ARX-06 GTP files" }).getByRole("listitem")).toHaveText(["Daytona.sto", "Road America.sto", "Spa.sto"]);
+      await expectNoHorizontalScroll(page);
+      if (phone) await expectTouchTargets(page);
+      // the control is as tall as every other control on the page
+      const h = await toggle.evaluate((el) => el.getBoundingClientRect().height);
+      expect(h).toBeGreaterThanOrEqual(36);
+      await page.screenshot({ path: `${SHOTS}/files-open-${d.viewport.width}.png`, fullPage: true });
+    });
+
+    test("#74: the Raced filter and a car filter take the file-only cars away; Raced leaves the cars with setups", async ({ page }) => {
+      await withManySetups(page, { count: 3, extraFiles: [loose("acuraarx06gtp", "Spa.sto", "Acura ARX-06 GTP")] });
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      const files = page.getByRole("region", { name: "Files without values" });
+      await expect(files).toContainText("1 car");
+      const surface = await filterSurface(page);
+      await surface.getByRole("group", { name: "Raced" }).getByRole("button", { name: "Raced", exact: true }).click();
+      await closeFilters(page);
+      await expect(files).toHaveCount(0);
+      await expect(section(page, MX5)).toBeVisible();
+    });
+
+    test("#73: every car has its own accent on its header and on its setup, the same colour everywhere, and the cars differ", async ({ page }) => {
+      await withManySetups(page, { count: 3 });
+      await page.goto(hash(`/d/${DRIVER}/setups`));
+      const accent = (el: Locator) => el.evaluate((node) => (node as HTMLElement).style.getPropertyValue("--car").trim());
+      const xfinity = await accent(section(page, CAR));
+      const mx5 = await accent(section(page, MX5));
+      expect(xfinity).toBe(carAccent("nascar-xfinity"));
+      expect(mx5).toBe(carAccent("mx5-cup"));
+      expect(xfinity).not.toBe(mx5);
+      // the header stripe paints that colour
+      const stripe = await section(page, MX5).locator(".s-car-head").evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(mx5.slice(i, i + 2), 16));
+      expect(stripe).toBe(`rgb(${r}, ${g}, ${b})`);
+      await page.screenshot({ path: `${SHOTS}/accents-${d.viewport.width}.png` });
+      // the setup's own page carries the same accent
+      await section(page, CAR).getByRole("link", { name: "Bristol race v3.sto", exact: true }).click();
+      const head = page.locator(".d-head");
+      await expect(head).toBeVisible();
+      expect(await accent(head)).toBe(xfinity);
+      await page.screenshot({ path: `${SHOTS}/detail-${d.viewport.width}.png` });
+      // and so does the colour bar of the car on Sessions
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const cards = page.locator(".sx-event");
+      await expect(cards.first()).toBeVisible();
+      const seen = new Set(await cards.evaluateAll((els) => els.map((el) => (el as HTMLElement).style.getPropertyValue("--car").trim())));
+      expect([...seen].sort()).toEqual([xfinity, mx5].sort());
+      const first = await cards.first().evaluate((el) => (el as HTMLElement).style.getPropertyValue("--car").trim());
+      const bar = await cards.first().locator(".sx-id .sx-stripe").evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(bar).toBe(`rgb(${[1, 3, 5].map((i) => parseInt(first.slice(i, i + 2), 16)).join(", ")})`);
     });
 
     test("no Library control; the lab library only by ?library=lab in the URL", async ({ page }) => {

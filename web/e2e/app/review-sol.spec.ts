@@ -54,7 +54,8 @@ for (const device of DEVICES) {
     test("Tire load draws its ribbon once the stress channel arrives (finding 7)", async ({ page }) => {
       await openTraces(page);
       await expect(page.locator(".ri-metric-segment")).toHaveCount(0);
-      await page.getByRole("combobox", { name: "Map colour" }).selectOption({ label: "Tire load" });
+      await page.locator(".ri-track-panel").getByRole("button", { name: /^Map / }).click();
+      await page.getByRole("listbox", { name: "Map" }).getByRole("option", { name: "Tire load" }).click();
       await expect.poll(() => page.locator(".ri-metric-segment").count()).toBeGreaterThan(0);
     });
 

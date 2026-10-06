@@ -5,6 +5,7 @@ import type { TrackField } from "../cursor/telemetry-cursor";
 import { MAP_MODES, lapMapPaths, metricLegend, metricRange, metricRibbon, type MapGeometry, type MapMode } from "../geometry/map-model";
 import { signalColumn, type TraceData } from "../geometry/trace-model";
 import { n } from "../format";
+import { SingleSelect } from "../../ui/single-select";
 
 export interface TrackRefs {
   svg: RefObject<SVGSVGElement>;
@@ -42,7 +43,7 @@ const FIELDS: { key: TrackField; label: string; unit: string }[] = [
 
 /**
  * The map strip: the track with the selected laps' lines, pit road in pit blue, the start/finish tick and the cursor marker in
- * the interaction colour; beside it the cursor position and the selected laps' mean speed, throttle, brake and Δ in big numerals.
+ * the interaction colour, all turned with the outline so its long axis is horizontal (`MapGeometry`, backlog #81); beside it the cursor position and the selected laps' mean speed, throttle, brake and Δ in big numerals.
  */
 export function TrackPanel({ data, map, mode, onModeChange, selectedLaps, zeroLap, refs, analysisKey, sectors, loadTick = 0 }: TrackPanelProps) {
   const controller = useRef<TrackMapController | null>(null);
@@ -91,7 +92,7 @@ export function TrackPanel({ data, map, mode, onModeChange, selectedLaps, zeroLa
   return (
     <section class="ri-card ri-track-panel" aria-label="Track position">
       <div class="ri-track-stage">
-        <svg ref={refs.svg} class="ri-track-map" data-analysis-track-map viewBox={viewBox} role="img" aria-label="Track map">
+        <svg ref={refs.svg} class="ri-track-map" data-analysis-track-map data-map-rotation={map?.rotationDeg} viewBox={viewBox} role="img" aria-label="Track map">
           {map ? (
             <>
               {mode === "traces" ? (
@@ -131,12 +132,9 @@ export function TrackPanel({ data, map, mode, onModeChange, selectedLaps, zeroLa
           <strong ref={refs.percent as RefObject<HTMLElement>} title="Lap distance at the cursor">25.0%</strong>
           <span>{selectedLaps.length === 0 ? "No laps" : selectedLaps.length === 1 ? `L${selectedLaps[0]}` : `Avg ${selectedLaps.length} laps`}</span>
           <div class="ri-map-tools">
+            {/* What colours the map: the shared single-choice dropdown (U1), so it keeps the pills' focus and centring rules. */}
             {map && modes.length > 1 && (
-              <label class="ri-select compact"><span class="ri-sr">Map</span>
-                <select value={mode} aria-label="Map colour" onChange={(event) => onModeChange((event.currentTarget as HTMLSelectElement).value as MapMode)}>
-                  {modes.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
-                </select>
-              </label>
+              <SingleSelect class="end" label="Map" value={mode} options={modes.map((option) => ({ key: option.key, label: option.label }))} onChange={(key) => onModeChange(key as MapMode)} />
             )}
             {map && <button type="button" class="ri-pill-button small" title="Fit track" aria-label="Fit track" onClick={() => controller.current?.fit()}>Fit</button>}
           </div>

@@ -4,11 +4,14 @@ import { buildCursorConfig, cardMetrics, chartMetrics } from "../cursor/cursor-c
 import {
   buildMapGeometry,
   isCanonicalMainLoop,
+  isPlausibleNormalizedPoint,
   lapMapPaths,
   metricRibbon,
+  overlayBounds,
   seriesPoints,
   type MapGeometry,
 } from "../geometry/map-model";
+import { perPointMap, perPointPlausible } from "./plausibility-reference";
 import {
   aggregateSeries,
   bestThree,
@@ -221,6 +224,45 @@ describe("map geometry", () => {
     expect(ribbon.length).toBe(160);
     expect(ribbon[0]!.color).toMatch(/^rgb\(/);
     expect(metricRibbon(data, map, "stress", [1]).length).toBe(160);
+  });
+
+  it("checks recorded fixes against overlay bounds computed once, with the per-point rule's answers", () => {
+    const main = seriesPoints(analysis.track.main_path);
+    const bounds = overlayBounds(main)!;
+    expect(bounds).not.toBeNull();
+    const probes: number[] = [Number.NaN, Number.POSITIVE_INFINITY, bounds.minX, bounds.maxX, bounds.minY, bounds.maxY];
+    for (let v = -1; v <= 2.0001; v += 0.0625) probes.push(v);
+    for (const edge of [bounds.minX, bounds.maxX, bounds.minY, bounds.maxY]) probes.push(edge - 1e-12, edge + 1e-12);
+    let inside = 0;
+    for (const x of probes) {
+      for (const y of probes) {
+        const expected = perPointPlausible(main, x, y);
+        expect(isPlausibleNormalizedPoint(main, x, y, bounds), `${x},${y}`).toBe(expected);
+        expect(isPlausibleNormalizedPoint(main, x, y), `${x},${y}`).toBe(expected);
+        if (expected) inside++;
+      }
+    }
+    // Both answers occur, so the comparison covers each side of every edge.
+    expect(inside).toBeGreaterThan(0);
+    expect(inside).toBeLessThan(probes.length * probes.length);
+    // A loop that is not canonical has no bounds, and no point on it is plausible.
+    const open = seriesPoints({ pct: [0, 0.25, 0.5, 0.75], x: [0, 1, 1, 0.9], y: [0, 0, 1, 1] });
+    expect(overlayBounds(open)).toBeNull();
+    expect(isPlausibleNormalizedPoint(open, 0.5, 0.5)).toBe(false);
+  });
+
+  it("draws the same recorded lap lines as a map that applies the per-point rule to every fix", () => {
+    const data = load();
+    const laps = [...data.lapIndex.keys()];
+    for (const track of [analysis.track, { ...analysis.track, transform: { ...analysis.track.transform!, longitude_scale: 0.8 } }]) {
+      const fast = buildMapGeometry(track)!;
+      const reference = perPointMap(track, fast);
+      expect(lapMapPaths(data, fast, laps)).toEqual(lapMapPaths(data, reference, laps));
+      const t = track.transform!;
+      for (const [latitude, longitude] of [[t.source_bounds.maximum_y - 0.5 * t.normalization_scale, t.source_bounds.minimum_x + 0.5 * t.normalization_scale], [0, 0], [t.source_bounds.maximum_y + 3 * t.normalization_scale, t.source_bounds.minimum_x]] as const) {
+        expect(fast.projectGps(latitude, longitude)).toEqual(reference.projectGps(latitude, longitude));
+      }
+    }
   });
 
   it("multiplies a recorded longitude by the geometry's longitude scale before the transform", () => {

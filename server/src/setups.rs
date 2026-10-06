@@ -794,6 +794,48 @@ fn load_setups(conn: &Connection, customer: i64) -> rusqlite::Result<Vec<SetupRo
     Ok(rows)
 }
 
+/// The screen name of each car folder in the setups folder, keys lower case. A folder is a car path in
+/// nearly every case, so a recording of that car path names it (the newest name wins); a folder that
+/// is not a car path takes the name of the car whose setup one of its files is linked to. A folder no
+/// recording or linked setup names is absent: the client then falls back to the folder name.
+fn folder_car_names(
+    conn: &Connection,
+    customer: i64,
+    files: &[FileRow],
+    car_path_of: &HashMap<i64, String>,
+    obs: &[ObsRow],
+) -> rusqlite::Result<HashMap<String, String>> {
+    let mut stmt = conn.prepare(
+        "SELECT car_path, car_name FROM recordings
+         WHERE customer_id = ?1 AND car_path IS NOT NULL AND car_name IS NOT NULL AND car_name <> ''
+         ORDER BY start_time_utc ASC, sha256 ASC",
+    )?;
+    let mut by_path: HashMap<String, String> = HashMap::new();
+    for row in stmt.query_map([customer], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })? {
+        let (path, name) = row?;
+        by_path.insert(path.to_lowercase(), name);
+    }
+    let mut out: HashMap<String, String> = HashMap::new();
+    for f in files {
+        let folder = f.car_folder.to_lowercase();
+        if out.contains_key(&folder) {
+            continue;
+        }
+        let named = by_path.get(&folder).cloned().or_else(|| {
+            let setup = linked_setup(f, car_path_of, obs)?;
+            by_path
+                .get(&car_path_of.get(&setup)?.to_lowercase())
+                .cloned()
+        });
+        if let Some(name) = named {
+            out.insert(folder, name);
+        }
+    }
+    Ok(out)
+}
+
 fn car_name(conn: &Connection, customer: i64, car_path: &str) -> rusqlite::Result<Option<String>> {
     conn.query_row(
         "SELECT car_name FROM recordings WHERE customer_id = ?1 AND car_path = ?2 AND car_name IS NOT NULL
@@ -897,6 +939,7 @@ pub fn library_page(conn: &Connection, query: &LibraryQuery<'_>) -> Result<Value
         None
     };
     // files with values unknown are Joshua's setups folder, not lab usage
+    let names = folder_car_names(conn, query.customer_id, &files, &car_path_of, &obs)?;
     let unlinked: Vec<Value> = if query.cursor.is_some()
         || query.raced == Some(true)
         || query.library == crate::library::Library::Lab
@@ -913,14 +956,23 @@ pub fn library_page(conn: &Connection, query: &LibraryQuery<'_>) -> Result<Value
             })
             .filter(|f| {
                 needle.as_ref().is_none_or(|n| {
-                    format!("{} {}", f.car_folder, f.relative_path)
-                        .to_lowercase()
-                        .contains(n)
+                    format!(
+                        "{} {} {}",
+                        f.car_folder,
+                        names.get(&f.car_folder.to_lowercase()).map_or("", |n| n),
+                        f.relative_path
+                    )
+                    .to_lowercase()
+                    .contains(n)
                 })
             })
             .filter(|f| linked_setup(f, &car_path_of, &obs).is_none())
             .take(2000)
-            .map(|f| file_entry(f, None))
+            .map(|f| {
+                let mut entry = file_entry(f, None);
+                entry["car_name"] = json!(names.get(&f.car_folder.to_lowercase()));
+                entry
+            })
             .collect()
     };
     Ok(json!({

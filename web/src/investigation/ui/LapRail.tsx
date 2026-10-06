@@ -90,9 +90,8 @@ export function LapRail(props: LapRailProps) {
   // Every run of the phase, not only the filtered groups, so a filter never recolours a run.
   const identities = useMemo(() => runIdentities(props.runs.map((run) => (run as { run_number?: unknown }).run_number).filter((run): run is number => typeof run === "number"), props.pitStops), [props.runs, props.pitStops]);
 
-  // Arrow keys move between rows; any pointer use hides the focus ring until the keyboard is used again.
+  // Arrow keys move between rows. The focus ring is the keyboard's alone: the shared rule (ui/control-behaviour.ts) clears it after any pointer use.
   const onKeyDown = (event: KeyboardEvent): void => {
-    rail.current?.removeAttribute("data-pointer");
     const target = event.target as HTMLElement;
     if (!target.classList.contains("ri-lap-row")) return;
     const rows = [...(rail.current?.querySelectorAll<HTMLButtonElement>(".ri-lap-row") ?? [])];
@@ -111,7 +110,7 @@ export function LapRail(props: LapRailProps) {
   return (
     <aside
       ref={rail} class="ri-card ri-lap-rail" aria-label="Laps" style={`--ri-sector-count:${sectorCount}`}
-      onPointerDown={() => rail.current?.setAttribute("data-pointer", "")} onKeyDown={onKeyDown}
+      onKeyDown={onKeyDown}
     >
       <div class="ri-rail-head">
         <span class="ri-rail-title">Laps</span>
@@ -133,9 +132,9 @@ export function LapRail(props: LapRailProps) {
           )}
           <div class="ri-rail-cols ri-lgrid" aria-hidden="true">
             <span /><span class="c">Lap</span><span /><span class="r">Time</span>
-            <span class="r" data-zero-header>{props.zeroLap !== null ? `Δ L${props.zeroLap}` : "Δ"}</span>
+            <span class="r dl" data-zero-header>{props.zeroLap !== null ? `Δ L${props.zeroLap}` : "Δ"}</span>
             <span class="c">{sectorCount > 1 ? Array.from({ length: sectorCount }, (_, index) => `S${index + 1}`).join(" ") : "Sectors"}</span>
-            <span class="r">Fuel</span><span>Inc</span><span>Pit</span>
+            <span class="r fuel">Fuel</span><span class="inc">Inc</span><span>Pit</span>
           </div>
         </div>
         {groups.map((group) => {
@@ -245,10 +244,10 @@ function LapRow({ data, meta, selected, spotlight, zero, incidents, cells, secto
       <span class="ri-pt">
         {stop && (
           <span class="ri-pit-cell" data-pit-stop={stop.lap} onPointerEnter={(event) => onPitEnter(stop, event.currentTarget as HTMLElement)} onPointerLeave={onPitLeave}>
-            <PitGlyph stop={stop} height={24} />{durationText(stop)}
+            <PitGlyph stop={stop} height={24} /><span class="ctl-t">{durationText(stop)}</span>
           </span>
         )}
-        {pitRoad !== null && <span class="ri-pit-road-mark" title={`Pit road · ${pitRoad.toFixed(1)} s`}>{pitRoad > 0 ? pitRoad.toFixed(1) : "Pit"}</span>}
+        {pitRoad !== null && <span class="ri-pit-road-mark" title={`Pit road · ${pitRoad.toFixed(1)} s`}><span class="ctl-t">{pitRoad > 0 ? pitRoad.toFixed(1) : "Pit"}</span></span>}
       </span>
     </button>
   );

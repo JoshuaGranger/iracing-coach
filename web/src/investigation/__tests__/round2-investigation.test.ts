@@ -52,14 +52,18 @@ describe("no earlier/later drawing is left in the investigation (round 4, #66)",
 describe("Not used in pace fit (round 2, #28a)", () => {
   it("names the fit and the backend's reason; never Excl", () => {
     const lap = inv.laps.find((item) => item.lap === 10)!;
+    // A lap screened for close traffic alone is drawn as a traffic lap and reads out its traffic (#67, traffic-marker.test.ts); the
+    // fit status still names the reason. A lap screened for anything else keeps the hollow dot and this readout.
     expect(fitStatus(lap)).toBe("Not in pace fit · close traffic");
-    expect(lapLabel(lap)).toBe(`Lap 10 · ${lap.lapTimeS!.toFixed(3)} s · P4 · Run 1 · 10.0 green · Not in pace fit · close traffic`);
+    const restart = inv.laps.find((item) => item.lap === 29)!;
+    expect(fitStatus(restart)).toBe("Not in pace fit · restart");
+    expect(lapLabel(restart)).toBe(`Lap 29 · ${restart.lapTimeS!.toFixed(3)} s · P4 · Run 2 · 1.0 green · Not in pace fit · restart`);
     expect(fitStatus(inv.laps.find((item) => item.lap === 12)!)).toBeNull();
     const meta = (analysis.catalog.laps as TraceLapData[]).find((item) => item.lap === 10)!;
     expect(lapChipStatus(meta)).toEqual({ kind: "screened", text: "Not used in Run 1 pace fit · close traffic" });
     expect(lapChipStatus({ ...meta, complete: false })?.kind).toBe("partial");
     expect(lapChipStatus({ ...meta, comparison_eligible: true, exclusion_reasons: [] })).toBeNull();
-    for (const text of [fitStatus(lap)!, lapLabel(lap), lapChipStatus(meta)!.text]) expect(text).not.toMatch(/excl/i);
+    for (const text of [fitStatus(lap)!, lapLabel(lap), lapLabel(restart), lapChipStatus(meta)!.text]) expect(text).not.toMatch(/excl/i);
   });
 
   it("plots caution laps as their own dots and keeps them off the pace dots", () => {

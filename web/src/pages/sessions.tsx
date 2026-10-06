@@ -5,6 +5,7 @@ import { useResource } from "../core/resource";
 import { href } from "../core/router";
 import { readJson, writeJson } from "../core/store";
 import { useLibraryChoice } from "../core/library";
+import { carAccent } from "../core/palette";
 import { FilterBar, type FilterControl } from "../ui/filter-bar";
 import { Empty, ErrorLine, Loading, Notice } from "../ui/kit";
 import { EventRow, LockIcon } from "../sessions/event-row";
@@ -22,7 +23,6 @@ import {
   isEmptySelection,
   selectionCount,
   parseSelection,
-  phaseLayout,
   toSessionFilters,
 } from "../sessions/model";
 import { MultiSelect, type Option } from "../ui/multi-select";
@@ -75,8 +75,9 @@ function useSelection(customerId: number): [Selection, (next: Selection) => void
   ];
 }
 
-function CarStripe({ index }: { index: number }) {
-  return <i class="sx-stripe" data-car={index} aria-hidden="true" />;
+/** The car's own accent (`core/palette.ts`), the same on the event cards, on Setups and in the filter. */
+function CarStripe({ car }: { car: string }) {
+  return <i class="sx-stripe" style={`--car:${carAccent(car)}`} aria-hidden="true" />;
 }
 
 export function SessionsPage({ customerId }: { customerId: number }) {
@@ -96,7 +97,6 @@ export function SessionsPage({ customerId }: { customerId: number }) {
     return out;
   }, [all, colors]);
   const events = useMemo(() => groupEvents(sessions, sel), [all, sel]);
-  const layout = useMemo(() => phaseLayout(events.flatMap((e) => e.sessions)), [events]);
   const now = useMemo(() => new Date(), [all]);
 
   const drivers = useResource(paths.drivers, () => api.drivers());
@@ -109,7 +109,7 @@ export function SessionsPage({ customerId }: { customerId: number }) {
       count: o.count,
       mark:
         id === "car" ? (
-          <CarStripe index={o.car ?? 0} />
+          <CarStripe car={o.key} />
         ) : id === "type" ? (
           <span class="sx-letter" data-phase={o.phase}>
             {o.phase}
@@ -171,7 +171,7 @@ export function SessionsPage({ customerId }: { customerId: number }) {
       ) : null}
       <div class="sx-events">
         {visible.map((ev) => (
-          <EventRow key={ev.key} ev={ev} customerId={customerId} colors={colors} now={now} layout={layout} />
+          <EventRow key={ev.key} ev={ev} customerId={customerId} now={now} />
         ))}
       </div>
       {events.length > visible.length ? (

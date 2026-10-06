@@ -1,10 +1,11 @@
 {
  "calls": {
-  "analysis_engine._lap_trace_payload": 1,
+  "analysis_engine._lap_trace_payload": 2,
   "analysis_engine._track_profile": 1
  },
  "files": {
-  "analysis_engine._lap_trace_payload/00000.json": "bdf162c9e4b177289a5f758510e3ecc8e3299324ecc93c59dad8c266b0721680",
+  "analysis_engine._lap_trace_payload/00000.json": "2b78154aad687d28e1c9f79ae3a96ef7622bd7c3d2b0250f09131066700973c0",
+  "analysis_engine._lap_trace_payload/00001.json": "e07e00d19cc9785355be12b8b29277230e5f470f92fb28881f121f972b9d7e91",
   "analysis_engine._track_profile/00000.ccs": "ece4a71817937addd0ec750485a961aee2625ee9f1f837f802ce527d04180a67",
   "analysis_engine._track_profile/00000.json": "bf96137fde1a4c69676beaa70aa005aabd07f17da4f843ca983a12fc520996ea"
  },

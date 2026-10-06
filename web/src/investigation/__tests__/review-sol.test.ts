@@ -14,7 +14,7 @@ import { orderedPhases } from "../ui/PhaseSelector";
 import { raceFastestLap } from "../ui/RaceView";
 import { sectionMapPoints } from "../ui/SectionsView";
 import { emptyRowText } from "../ui/TraceChart";
-import { spotlightChoices } from "../ui/TracesView";
+import { spotlightLaps } from "../ui/TracesView";
 
 /** Regression tests for docs/08-rewrite/reviews/web-round1-review-codex-sol.md (finding numbers in the test names). */
 
@@ -23,7 +23,6 @@ const manifest = JSON.parse(readFileSync(path.join(dir, "fixture.json"), "utf8")
 const body = (kind: string): Buffer => readFileSync(path.join(dir, manifest.files.find((entry) => entry.kind === kind)!.file_name));
 const ccol = body("traces");
 const catalogText = body("trace_catalog").toString("utf8");
-const incidentFree: ReadonlyMap<number, number> = new Map();
 
 function g2(edit?: (catalog: TraceCatalogData) => void): TraceData {
   const catalog = JSON.parse(catalogText) as TraceCatalogData;
@@ -79,13 +78,20 @@ describe("finding 3: rows that cannot fit keep their floor and the chart scrolls
   });
 });
 
-describe("finding 5: Spotlight offers only laps the active filters keep", () => {
-  it("drops pit lap 41 under Clean and offers it again without filters", () => {
+describe("finding 5 (round 5, #79): Spotlight offers only the laps drawn, in rail order", () => {
+  it("lists the selected laps and no others", () => {
     const data = g2();
-    const clean = spotlightChoices(data, false, true, incidentFree).map((meta) => meta.lap);
-    expect(clean).not.toContain(41);
-    expect(clean).toContain(6);
-    expect(spotlightChoices(data, false, false, incidentFree).map((meta) => meta.lap)).toContain(41);
+    expect(spotlightLaps(data, [], [41, 6, 3]).map((meta) => meta.lap)).toEqual([3, 6, 41]);
+    expect(spotlightLaps(data, [], [6]).map((meta) => meta.lap)).toEqual([6]);
+    expect(spotlightLaps(data, [], [])).toEqual([]);
+  });
+
+  it("drops a lap the moment it leaves the selection and offers none that is not on the chart", () => {
+    const data = g2();
+    const drawn = [3, 6, 41];
+    const offered = new Set(spotlightLaps(data, [], drawn).map((meta) => meta.lap));
+    for (const lap of data.laps) expect(offered.has(lap), `L${lap}`).toBe(drawn.includes(lap));
+    expect(spotlightLaps(data, [], drawn.filter((lap) => lap !== 41)).map((meta) => meta.lap)).toEqual([3, 6]);
   });
 });
 

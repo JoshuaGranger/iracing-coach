@@ -1,26 +1,8 @@
 import type { Schemas } from "../core/api";
-import { carColor } from "../core/identity";
+import { carAccent } from "../core/palette";
 import type { Setup } from "./model";
 
 export type SetupFile = Schemas["SetupFileEntry"];
-
-/** Car identity colours (design README, "car colours"): the app's one first-seen order per car path (`core/identity.ts`). */
-export const CAR_COLORS = ["var(--car-1)", "var(--car-2)", "var(--car-3)"] as const;
-
-/**
- * One colour per car path (keys lower case), from the device's first-seen car order shared with Sessions and the rail: a car keeps its
- * colour on every page. Cars this device has not seen yet join in the given order, then alphabetically.
- */
-export function carColors(order: readonly string[], seen: readonly string[]): Map<string, string> {
-  const out = new Map<string, string>();
-  const add = (path: string) => {
-    const key = path.toLowerCase();
-    if (!out.has(key)) out.set(key, carColor(path));
-  };
-  order.forEach(add);
-  [...seen].sort((a, b) => a.localeCompare(b)).forEach(add);
-  return out;
-}
 
 /**
  * How many races used this setup (`SetupSummary.raced_count`). A null, missing or inconsistent count is unknown (null), never 0.
@@ -157,7 +139,7 @@ const stem = (path: string) => path.split(/[\\/]/).pop() ?? path;
  * The library by car: named setups with their versions, one stack of unnamed garage captures, and the files whose
  * values are unknown. `fileCar` maps a file's car folder to a car path (the folder is not always the path).
  */
-export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile[], colors: ReadonlyMap<string, string>, filter: LibraryFilter = {}): CarGroup[] {
+export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile[], filter: LibraryFilter = {}): CarGroup[] {
   const cars = filter.cars && filter.cars.size > 0 ? new Set([...filter.cars].map(lower)) : null;
   const raced = filter.raced ?? "all";
   const folderToCar = new Map<string, string>();
@@ -180,7 +162,7 @@ export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile
   for (const f of files) {
     const path = folderToCar.get(lower(f.car_folder)) ?? f.car_folder;
     if (cars && !cars.has(lower(path)) && !cars.has(lower(f.car_folder))) continue;
-    if (raced !== "raced") get(path, carNameOf(setups, path) ?? path).files.push(f);
+    if (raced !== "raced") get(path, carNameOf(setups, path) ?? screenName(f.car_name) ?? path).files.push(f);
   }
   const out: CarGroup[] = [];
   for (const g of groups.values()) {
@@ -204,7 +186,7 @@ export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile
     out.push({
       carPath: g.carPath,
       carName: g.carName,
-      color: colors.get(lower(g.carPath)) ?? CAR_COLORS[0],
+      color: carAccent(g.carPath),
       entries,
       setups: named.length + unnamed.length,
       raced: g.setups.filter((s) => s.raced).length,
@@ -230,8 +212,28 @@ export function carsWithSetups(groups: readonly CarGroup[]): CarChoice[] {
   return groups.filter((g) => g.setups > 0).map((g) => ({ carPath: g.carPath, carName: g.carName, color: g.color, setups: g.setups }));
 }
 
+const screenName = (name: string | null | undefined): string | null => name?.trim() || null;
+
 function carNameOf(setups: readonly Setup[], carPath: string): string | null {
   return setups.find((s) => lower(s.car_path) === lower(carPath))?.car_name ?? null;
+}
+
+/** The cars with decoded setups, in the library's order: the sections of the page. */
+export function carsWithValues(groups: readonly CarGroup[]): CarGroup[] {
+  return groups.filter((g) => g.setups > 0);
+}
+
+/**
+ * The cars that have only files with unknown values (#74): they sit below the sections under one quiet divider, named by the
+ * sim's screen name when any recording of the car gave one (the folder name only as a fallback), A to Z. Never counted as setups.
+ */
+export function carsFilesOnly(groups: readonly CarGroup[]): CarGroup[] {
+  return groups.filter((g) => g.setups === 0 && g.entries.length > 0).sort((a, b) => a.carName.localeCompare(b.carName, undefined, { sensitivity: "base" }) || a.carPath.localeCompare(b.carPath));
+}
+
+/** The file stems of a car group, for the rows under a files-only car. */
+export function fileNames(g: CarGroup): string[] {
+  return g.entries.flatMap((e) => (e.kind === "file" ? [e.name] : []));
 }
 
 function lastOf(e: Entry): string {

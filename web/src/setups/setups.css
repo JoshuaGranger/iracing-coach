@@ -984,3 +984,105 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---- files without values (#74) ------------------------------------------------------ */
+/* Cars with files and no decoded setup: one quiet divider below the sections, collapsed. No card, no fill, no glow. */
+.ds .s-files {
+  margin-top: var(--space-6);
+}
+.ds .s-files-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font-family: var(--ds-disp);
+  font-stretch: condensed;
+  font-size: var(--text-compact);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ds .s-files-toggle:hover {
+  color: var(--color-text-secondary);
+}
+.ds .s-files-rule {
+  flex: 1 1 0;
+  height: 1px;
+  background: var(--ds-line);
+}
+.ds .s-files-label {
+  flex: none;
+  white-space: nowrap;
+}
+.ds .s-fcars {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+.ds .s-fcars[hidden],
+.ds .s-fcar-files[hidden] {
+  display: none;
+}
+.ds .s-fcar-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  text-align: left;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--car) 70%, transparent);
+}
+.ds .s-fcar-toggle:hover {
+  background: color-mix(in srgb, var(--color-surface3) 45%, transparent);
+}
+.ds .s-fcar-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.ds .s-fcar .n {
+  flex: none;
+  font-family: var(--ds-disp);
+  font-stretch: condensed;
+  font-size: var(--text-compact);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.ds .s-fcar .n strong {
+  color: var(--color-text-secondary);
+  font-weight: 700;
+}
+.ds .s-fcar-files {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) var(--space-4) var(--space-3) var(--space-8);
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-compact);
+}
+.ds .s-fcar-files li {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px), (pointer: coarse) {
+  .ds .s-files-toggle,
+  .ds .s-fcar-toggle {
+    min-height: var(--touch-target);
+  }
+}

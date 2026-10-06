@@ -5,7 +5,9 @@ import type { Investigation, InvestigationLap } from "../investigation-model";
 import type { RaceViewData } from "../types";
 import { exposureWord, lapLabel, RunSwatch } from "./RaceView";
 import { useElementSize, useSessionNumbers } from "./hooks";
+import { LapDot } from "./LapDot";
 import { fitDrawn, fitLabel, fitSegment, identityColour, runCards, runIdentities, runsChartLaps, sparkGeometry, toggleRun, type RunCard, type RunIdentity } from "./runs-model";
+import { lapKind, lapTraffic } from "./traffic";
 import { scaleFor, useRemPx } from "./unit";
 
 export interface RunsViewProps {
@@ -32,7 +34,10 @@ function RunCardView({ card, identity, shown, locked, onToggle }: { card: RunCar
       </span>
       <svg class="ri-spark" viewBox="0 0 96 24" aria-hidden="true">
         {spark.fit && <line x1={spark.fit[0]} y1={spark.fit[1]} x2={spark.fit[2]} y2={spark.fit[3]} class="ri-spark-fit" stroke-dasharray={identity?.dash || undefined} />}
-        {spark.dots.map((dot, index) => <circle key={index} cx={dot.cx} cy={dot.cy} r="1.6" class={`ri-spark-dot${dot.used ? "" : " hollow"}`} />)}
+        {/* The chart's three marks, small: open air a dot, traffic a dot in a ring, any other screen a hollow dot (#67). */}
+        {spark.dots.map((dot, index) => dot.kind === "traffic"
+          ? <g key={index} class="ri-spark-traffic" data-spark-traffic><circle cx={dot.cx} cy={dot.cy} r="0.9" class="ri-spark-dot" /><circle cx={dot.cx} cy={dot.cy} r="2.5" class="ri-spark-ring" /></g>
+          : <circle key={index} cx={dot.cx} cy={dot.cy} r="1.6" class={`ri-spark-dot${dot.kind === "screened" ? " hollow" : ""}`} />)}
       </svg>
       <span class="ri-facts">
         {/* Wide figures in the first column: the fit and the fuel band; the observed fall-off beside the fit (#59a). */}
@@ -60,6 +65,7 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
     return runNumbers.length > 0 && runNumbers.every((run) => valid.has(run)) ? new Set<number>() : valid;
   }, [storedHidden, runNumbers]);
   const identities = useMemo(() => runIdentities(runNumbers, race ? pitStops(race, { runs: runs ?? [] }, null) : []), [runNumbers, race, runs]);
+  const traffic = useMemo(() => lapTraffic(race), [race]);
   const allPoints = useMemo(() => runsChartLaps(inv.laps), [inv]);
   const points = useMemo(() => allPoints.filter((lap) => lap.runNumber === null || !hidden.has(lap.runNumber)), [allPoints, hidden]);
   // The screened fit only where it covers at least half the run's green laps (#59a), as on Race.
@@ -90,7 +96,7 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
       labelY.set(run.runNumber, y);
     }
   }
-  const readout = hover ? lapLabel(hover, word) : "";
+  const readout = hover ? lapLabel(hover, word, traffic.get(hover.lap)) : "";
   const visibleCount = runNumbers.filter((run) => !hidden.has(run)).length;
   return (
     <div class="ri-runs-view" data-ri-view="runs">
@@ -138,14 +144,13 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
                       </g>
                     );
                   })}
-                  {points.map((point) => {
-                    const color = identityColour(identities, point.runNumber);
-                    return (
-                      <circle key={point.lap} cx={n(plot.x(point.greenExposure as number))} cy={n(plot.y(Math.min(plot.yMax, Math.max(plot.yMin, point.lapTimeS as number))))} r="2.8"
-                        fill={point.eligible ? color : "var(--ri-card)"} stroke={color} class={`ri-dot${point.eligible ? "" : " excluded"}`} tabIndex={0} data-lap={point.lap} data-run={point.runNumber ?? ""}
-                        onPointerEnter={() => setHover(point)} onFocus={() => setHover(point)} onClick={() => setHover(point)} aria-label={lapLabel(point, word)}><title>{lapLabel(point, word)}</title></circle>
-                    );
-                  })}
+                  {points.map((point) => (
+                    <LapDot
+                      key={point.lap} lap={point.lap} run={point.runNumber} kind={lapKind(point)} side={traffic.get(point.lap)?.side ?? null}
+                      cx={plot.x(point.greenExposure as number)} cy={plot.y(Math.min(plot.yMax, Math.max(plot.yMin, point.lapTimeS as number)))} r={2.8}
+                      colour={identityColour(identities, point.runNumber)} label={lapLabel(point, word, traffic.get(point.lap))} onSelect={() => setHover(point)}
+                    />
+                  ))}
                 </svg>
               )}
             </div>

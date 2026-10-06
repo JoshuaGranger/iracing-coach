@@ -8,9 +8,11 @@ import { type Silhouette, silhouetteOf } from "./silhouette";
  * in memory for the page load, and in the device's storage so the next visit asks for nothing. A layout without usable geometry
  * is asked for once per page load and then drawn without. Only the current centreline (geometry with `transform.longitude_scale`,
  * analysis profile v24) is kept in storage: an older outline is drawn for the page load and asked for again on the next, so a
- * re-analysed layout replaces it. Version 2 of the key drops the outlines stored before.
+ * re-analysed layout replaces it. A new version of the key leaves every outline stored under an older one unread: version 2
+ * dropped the pre-v24 centrelines, version 3 the outlines stored before they were turned so the long axis is horizontal
+ * (`silhouette.ts`, backlog #81).
  */
-const STORE = "coach.silhouette.2.";
+export const SILHOUETTE_STORE = "coach.silhouette.3.";
 const memory = new Map<string, Silhouette | null>();
 const inflight = new Map<string, Promise<Silhouette | null>>();
 const waiting: (() => void)[] = [];
@@ -33,7 +35,7 @@ function release(): void {
 }
 
 function stored(trackKey: string): Silhouette | null {
-  const v = readJson<Silhouette | null>(STORE + trackKey, null);
+  const v = readJson<Silhouette | null>(SILHOUETTE_STORE + trackKey, null);
   return v && typeof v.d === "string" && Array.isArray(v.tick) ? v : null;
 }
 
@@ -58,7 +60,7 @@ export function silhouetteFor(trackKey: string, analysisId: string): Promise<Sil
       const geometry = await getJson<Schemas["TrackGeometry"]>(paths.track(analysisId));
       const sil = geometry.status === "usable" ? silhouetteOf(geometry.main_path?.x, geometry.main_path?.y) : null;
       memory.set(trackKey, sil);
-      if (sil && isCurrentCentreline(geometry)) writeJson(STORE + trackKey, sil);
+      if (sil && isCurrentCentreline(geometry)) writeJson(SILHOUETTE_STORE + trackKey, sil);
       return sil;
     } catch {
       memory.set(trackKey, null);
@@ -72,15 +74,25 @@ export function silhouetteFor(trackKey: string, analysisId: string): Promise<Sil
   return p;
 }
 
-/** The card's silhouette; the request waits until the card is on screen. */
+/** Whether there is nothing left to wait for: the layout is known (drawn or without geometry) or no analysis can supply it. */
+function settledFor(trackKey: string, analysisId: string | null): boolean {
+  return memory.has(trackKey) || stored(trackKey) !== null || analysisId === null;
+}
+
+/**
+ * The card's silhouette; the request waits until the card is on screen. While it is awaited the host holds its square, so the
+ * identity block does not move when the outline arrives; a layout with no outline draws nothing and holds no space (#71).
+ */
 export function TrackSilhouette({ trackKey, analysisId }: { trackKey: string; analysisId: string | null }) {
   const host = useRef<SVGSVGElement>(null);
   const [sil, setSil] = useState<Silhouette | null>(() => memory.get(trackKey) ?? stored(trackKey));
+  const [settled, setSettled] = useState(() => settledFor(trackKey, analysisId));
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
 
   useEffect(() => {
     setSil(memory.get(trackKey) ?? stored(trackKey));
-  }, [trackKey]);
+    setSettled(settledFor(trackKey, analysisId));
+  }, [trackKey, analysisId]);
   useEffect(() => {
     const el = host.current;
     if (visible || !el) return;
@@ -96,13 +108,17 @@ export function TrackSilhouette({ trackKey, analysisId }: { trackKey: string; an
   useEffect(() => {
     if (sil || !visible || !analysisId) return;
     let live = true;
-    void silhouetteFor(trackKey, analysisId).then((s) => live && setSil(s));
+    void silhouetteFor(trackKey, analysisId).then((s) => {
+      if (!live) return;
+      setSil(s);
+      setSettled(true);
+    });
     return () => {
       live = false;
     };
   }, [sil, visible, trackKey, analysisId]);
 
-  if (!sil) return <svg ref={host} class="sx-sil" width="1" height="1" aria-hidden="true" />;
+  if (!sil) return settled ? null : <svg ref={host} class="sx-sil" width="1" height="1" aria-hidden="true" data-pending="true" />;
   return (
     <svg ref={host} class="sx-sil" width={sil.width} height={sil.height} viewBox={`0 0 ${sil.width} ${sil.height}`} aria-hidden="true" data-testid="silhouette">
       <path class="sx-sil-line" d={sil.d} fill="none" stroke-linejoin="round" stroke-linecap="round" />

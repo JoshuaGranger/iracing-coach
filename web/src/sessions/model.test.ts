@@ -24,13 +24,10 @@ import {
   toggleOption,
   hasFigures,
   colouredFigures,
-  phaseColumns,
-  phaseLayout,
   phaseSlots,
   cellKind,
   cellSlots,
   formatDelta,
-  gridTemplate,
   practiceSlots,
   qualifySlots,
   startPosition,
@@ -304,11 +301,34 @@ describe("phase cell slots (web round 2)", () => {
   it("has seven slots in the plan's order with the figures printed as the cell shows them", () => {
     const slots = phaseSlots(race, 15.234);
     expect(slots.map((s) => s.key)).toEqual(["pos", "laps", "best", "pace", "stops", "burn", "run"]);
-    expect(slots.map(text)).toEqual(["P4 ▲8 from P12", "60 · 20", "15.234", "+0.021", "3", "0.47 gal/lap", "41"]);
+    expect(slots.map(text)).toEqual(["P4 ▲8", "60 · 20", "15.234", "+0.021", "3", "0.47 gal/lap", "41"]);
     expect(slots.map((s) => s.label)).toEqual(["Finish", "Grn · Cau", "Best", "Pace", "Stops", "Burn", "Long run"]);
     expect(slots.every((s) => !s.missing)).toBe(true);
     // fuel used over the race is not a slot (#57)
     expect(phaseSlots(session({ overview: { fuel_used_gal: 21.6 } }), null).find((s) => s.key === "burn")!.missing).toBe(true);
+  });
+
+  it("keeps the arrow and its places but not the grid position as text; the arrow hover and accessible name carry it (#68)", () => {
+    const part = (s: Session) => phaseSlots(s, null)[0]!.parts;
+    // [start_position, final_position, arrow text, tone, hover]
+    const cases: [number, number, string, string, string][] = [
+      [12, 4, "▲8", "gain", "up 8 from P12"],
+      [7, 9, "▼2", "loss", "down 2 from P7"],
+      [3, 1, "▲2", "gain", "up 2 from P3"],
+      [20, 19, "▲1", "gain", "up 1 from P20"],
+    ];
+    for (const [from, to, arrow, tone, title] of cases) {
+      const parts = part(session({ overview: { start_position: from, final_position: to } }));
+      expect(parts.map((p) => p.text)).toEqual([`P${to}`, arrow]);
+      expect(parts[1]).toEqual({ text: arrow, tone, title });
+      expect(parts[0]).toEqual({ text: `P${to}` });
+      for (const p of parts) expect(p.text).not.toMatch(/from/i);
+    }
+    // No arrow, no hover: a held place and an unknown start print the finish alone; the slot hover still names the start.
+    expect(part(session({ overview: { start_position: 5, final_position: 5 } }))).toEqual([{ text: "P5" }]);
+    expect(phaseSlots(session({ overview: { start_position: 5, final_position: 5 } }), null)[0]!.title).toBe("Finished P5, started P5");
+    expect(part(session({ overview: { final_position: 5 } }))).toEqual([{ text: "P5" }]);
+    expect(phaseSlots(session({ overview: { start_position: 12, final_position: 4 } }), null)[0]!.title).toBe("Finished P4, started P12");
   });
 
   it("labels a practice position `Pos` and shows no change for it", () => {
@@ -337,7 +357,7 @@ describe("phase cell slots (web round 2)", () => {
     // Unchanged position, no cautions: only the green count. A win is a plain number with its reference.
     const win = session({ overview: { ...race.overview, start_position: 1, final_position: 1, caution_laps_estimated: 0 } });
     expect(tones(phaseSlots(win, null))).toEqual(["green:60"]);
-    expect(text(phaseSlots(win, null)[0]!)).toBe("P1 from P1");
+    expect(text(phaseSlots(win, null)[0]!)).toBe("P1");
     expect(colouredFigures(phaseSlots(race, 15.234))).toBe(3);
     // No green lap: no green colour.
     expect(tones(phaseSlots(session({ overview: { green_laps_estimated: 0, caution_laps_estimated: 0 } }), null))).toEqual([]);
@@ -354,30 +374,21 @@ describe("phase cell slots (web round 2)", () => {
   });
 });
 
-describe("phase columns", () => {
-  const p = session({ session_type: "Practice" });
-  const q = session({ session_type: "Qualify" });
-  const r = session({ session_type: "Race" });
-  it("keeps practice, qualifying and race in the same column in every event", () => {
-    const layout = phaseLayout([p, q, r]);
-    expect(layout).toEqual(["P", "Q", "R"]);
-    expect(phaseColumns([p, r], layout)).toEqual({ columns: [0, 2], count: 3, tracks: ["P", "Q", "R"] });
-    expect(phaseColumns([r], layout)).toEqual({ columns: [2], count: 3, tracks: ["P", "Q", "R"] });
+describe("phase lines (round 4, #72)", () => {
+  const codes = (sessions: readonly Session[]) => groupEvents(sessions)[0]!.sessions.map((s) => phaseOf(s.session_type).code);
+  it("has one line per recorded phase in running order, whatever order the server lists them in", () => {
+    const [p, q, r] = [session({ session_type: "Practice", sim_session_num: 0 }), session({ session_type: "Qualify", sim_session_num: 1 }), session({ session_type: "Race", sim_session_num: 2 })];
+    expect(codes([r, p, q])).toEqual(["P", "Q", "R"]);
+    expect(groupEvents([r, q, p])[0]!.sessions).toHaveLength(3);
   });
-  it("leaves one column when a filter shows only races", () => {
-    const layout = phaseLayout([r]);
-    expect(layout).toEqual(["R"]);
-    expect(phaseColumns([r], layout)).toEqual({ columns: [0], count: 1, tracks: ["R"] });
+  it("gives a missing phase no line: a race-only event is one line, practice and race two", () => {
+    expect(codes([session({ session_type: "Race", sim_session_num: 2 })])).toEqual(["R"]);
+    expect(codes([session({ session_type: "Race", sim_session_num: 2 }), session({ session_type: "Practice", sim_session_num: 0 })])).toEqual(["P", "R"]);
   });
-  it("puts a test in practice's column and follows running order when an event repeats a phase", () => {
-    expect(phaseLayout([session({ session_type: "Offline Testing" }), r])).toEqual(["P", "R"]);
-    const p2 = session({ session_type: "Practice" });
-    expect(phaseColumns([p, p2, r], ["P", "R"])).toEqual({ columns: [0, 1, 2], count: 3, tracks: ["P", "P", "R"] });
-  });
-  it("gives the race the widest column, practice less, qualifying least, the same fractions in every row", () => {
-    expect(gridTemplate(["P", "Q", "R"])).toBe("minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 1.9fr)");
-    expect(gridTemplate(["R"])).toBe("minmax(0, 1.9fr)");
-    expect(gridTemplate([])).toBe("minmax(0, 1.9fr)");
+  it("puts a test or warmup among the practice lines and keeps running order when a phase repeats", () => {
+    expect(codes([session({ session_type: "Race", sim_session_num: 3 }), session({ session_type: "Offline Testing", sim_session_num: 0 })])).toEqual(["T", "R"]);
+    expect(codes([session({ session_type: "Practice", sim_session_num: 1 }), session({ session_type: "Practice", sim_session_num: 0 }), session({ session_type: "Race", sim_session_num: 2 })])).toEqual(["P", "P", "R"]);
+    expect(cellKind(session({ session_type: "Offline Testing" }))).toBe("practice");
   });
 });
 

@@ -59,3 +59,64 @@ export function raceProgressColour(i: number, n: number): string {
   const t = Math.max(0, Math.min(1, i / (n - 1)));
   return toHex(mix(t));
 }
+
+/* ---- car accent ---------------------------------------------------------------------------------------------------------- */
+
+/** Hue slots around the circle and the two tones of each: 60 accents, 12 degrees apart within a tone. */
+const ACCENT_SLOTS = 30;
+/** `[L, C]` in OKLCH: a body tone and a paler one, both well under the chroma of the race hues so no accent reads as a flag or a loss. */
+const ACCENT_TONES = [
+  [0.66, 0.12],
+  [0.8, 0.1],
+] as const;
+/**
+ * Chosen once against the iRacing car folders and the mock and fixture cars so neighbouring names (`ferrari296gt3`, `ferrari499p`) and
+ * the cars the tests use land on separate accents. Changing it recolours every car on every device.
+ */
+const ACCENT_SALT = 5561;
+
+/** A 32-bit hash of the car identity (FNV-1a with a murmur finaliser): close names land far apart. */
+function accentHash(key: string): number {
+  let h = (0x811c9dc5 ^ ACCENT_SALT) >>> 0;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+const encode = (v: number): number => {
+  const c = Math.max(0, Math.min(1, v));
+  return c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
+};
+
+/** OKLCH to `#rrggbb` (out-of-gamut channels clamp). */
+function oklchHex(L: number, C: number, hueDeg: number): string {
+  const r = (hueDeg * Math.PI) / 180;
+  const a = C * Math.cos(r);
+  const b = C * Math.sin(r);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+  return toHex(rgb.map((v) => encode(v) * 255) as unknown as Rgb);
+}
+
+/**
+ * The accent of a car, a function of its identity alone, so it is the same on every page, device and visit and never depends on
+ * which cars happen to be listed (backlog #73). The key is the car path without case or punctuation (`mx5-cup` and `MX5 Cup`
+ * are one car). The hash picks one of 30 hues and one of two tones of equal lightness steps, so a car beside another of the same
+ * make still differs. Chroma stays under the race hues'. A missing car answers the muted text colour. Returns `#rrggbb`.
+ */
+export function carAccent(carPath: string | null | undefined): string {
+  const key = (carPath ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!key) return "var(--color-text-muted)";
+  const h = accentHash(key);
+  const [L, C] = ACCENT_TONES[(h >>> 4) & 1]!;
+  return oklchHex(L, C, ((h >>> 8) % ACCENT_SLOTS) * (360 / ACCENT_SLOTS) + 360 / ACCENT_SLOTS / 2);
+}

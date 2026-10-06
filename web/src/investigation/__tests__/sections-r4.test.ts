@@ -3,7 +3,6 @@ import { createAnalysisLoader } from "../load";
 import { fixtureFetch } from "../fixtures/api";
 import { buildSectionsAnalysis } from "../fixtures/sections";
 import { deltaBar, lapsToOpen, parseSectionLaps, shadedLaps } from "../ui/section-laps";
-import { offsetPath } from "../ui/SectionsView";
 
 // Web round 3, R4 (backlog #48, #49): the Sections view reads the projector's section_laps and only selects and draws.
 
@@ -76,13 +75,7 @@ describe("deltaBar: a drawing scale against the largest delta shown", () => {
   });
 });
 
-describe("offsetPath: a strand beside the section line", () => {
-  it("moves a straight segment sideways by the offset", () => {
-    expect(offsetPath([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }], 2)).toBe("M0,2 L10,2 L20,2");
-    expect(offsetPath([{ x: 0, y: 0 }, { x: 0, y: 10 }], 1)).toBe("M-1,0 L-1,10");
-    expect(offsetPath([{ x: 0, y: 0 }], 1)).toBe("");
-  });
-});
+// The strands beside the section line (offsetPath) are gone: round 5 (#76) draws each lap's recorded racing line (sections-u3.test.ts).
 
 describe("the loader carries section_laps beside the investigation", () => {
   it("reads it from the investigation view of the sections fixture", async () => {

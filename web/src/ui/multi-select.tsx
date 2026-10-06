@@ -56,6 +56,8 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [keyboard, setKeyboard] = useState(false);
+  /** The active option is lit only once the keyboard or the pointer has moved over the list (#78: nothing is lit by a click alone). */
+  const [lit, setLit] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -73,7 +75,14 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
     document.addEventListener("pointerdown", away);
     return () => document.removeEventListener("pointerdown", away);
   }, [open]);
-  useEffect(() => setActive(0), [query, open]);
+  useEffect(() => {
+    setActive(0);
+    setLit(false);
+  }, [open]);
+  useEffect(() => {
+    setActive(0);
+    if (query) setLit(true);
+  }, [query]);
 
   function close(refocus: boolean) {
     setOpen(false);
@@ -85,6 +94,7 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
   }
   function onKey(e: KeyboardEvent) {
     setKeyboard(true);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") setLit(true);
     const last = shown.length - 1;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -192,9 +202,10 @@ export function MultiSelect({ label, noun, options, selected, onChange }: { labe
                   id={`${id}-o${i}`}
                   role="option"
                   aria-selected={on}
-                  class={i === active ? (keyboard ? "ms-opt hl kb" : "ms-opt hl") : "ms-opt"}
+                  class={i === active && lit ? (keyboard ? "ms-opt hl kb" : "ms-opt hl") : "ms-opt"}
                   onPointerMove={() => {
                     setKeyboard(false);
+                    setLit(true);
                     if (i !== active) setActive(i);
                   }}
                   onClick={() => {

@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::fmt;
 
 use serde::Deserialize;
-use serde::de::{DeserializeSeed, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::de::{
+    DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Visitor,
+};
 use serde_json::{Map, Value};
 
 use crate::ProjectError;
@@ -71,6 +73,8 @@ pub(crate) struct Doc {
     pub values: HashMap<String, Value>,
     pub kinds: HashMap<String, Kind>,
     pub lap_traces: Option<LapTraces>,
+    /// `lap_trace_columns`: the same traces at chart density (backlog #77), absent before profile v25.
+    pub lap_trace_columns: Option<LapTraces>,
     pub nested: Option<Box<Doc>>,
 }
 
@@ -286,6 +290,9 @@ impl<'de> Visitor<'de> for DocVisitor {
                     };
                     doc.kinds.insert(key, kind);
                     doc.lap_traces = traces;
+                }
+                "lap_trace_columns" => {
+                    doc.lap_trace_columns = map.next_value_seed(TraceColumnsSeed)?;
                 }
                 "track_profile" => {
                     let (kind, value) =
@@ -592,6 +599,231 @@ impl<'de> DeserializeSeed<'de> for PointSeed<'_> {
             }
         }
         deserializer.deserialize_map(V(self.trace, self.lt))
+    }
+}
+
+// ---- lap_trace_columns ----
+
+/// `lap_trace_columns`: `{distance_bins_per_lap, traces: [{lap, points, columns: {point key: [..]},
+/// additional_signals: {id: [..]}}]}`, read into the shape `lap_traces` is read into. Every column of
+/// a trace has one value per point (`lap_pct`'s length); a key the trace lacks is all missing.
+struct TraceColumnsSeed;
+
+impl<'de> DeserializeSeed<'de> for TraceColumnsSeed {
+    type Value = Option<LapTraces>;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = Option<LapTraces>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("lap_trace_columns: a JSON object")
+            }
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut lt = LapTraces::default();
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "distance_bins_per_lap" => lt.bins = Some(map.next_value()?),
+                        "traces" => {
+                            let mut traces = Vec::new();
+                            map.next_value_seed(ColumnTracesSeed {
+                                traces: &mut traces,
+                                lt: &mut lt,
+                            })?;
+                            lt.traces = traces;
+                        }
+                        _ => {
+                            map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok(Some(lt))
+            }
+        }
+        deserializer.deserialize_any(V)
+    }
+}
+
+struct ColumnTracesSeed<'a> {
+    traces: &'a mut Vec<RawTrace>,
+    lt: &'a mut LapTraces,
+}
+
+impl<'de> DeserializeSeed<'de> for ColumnTracesSeed<'_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        struct V<'a>(&'a mut Vec<RawTrace>, &'a mut LapTraces);
+        impl<'de> Visitor<'de> for V<'_> {
+            type Value = ();
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("lap_trace_columns.traces: an array")
+            }
+            fn visit_unit<E>(self) -> Result<(), E> {
+                Ok(())
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+                while let Some(trace) =
+                    seq.next_element_seed(ColumnTraceSeed { lt: &mut *self.1 })?
+                {
+                    self.0.push(trace);
+                }
+                Ok(())
+            }
+        }
+        deserializer.deserialize_any(V(self.traces, self.lt))
+    }
+}
+
+struct ColumnTraceSeed<'a> {
+    lt: &'a mut LapTraces,
+}
+
+impl<'de> DeserializeSeed<'de> for ColumnTraceSeed<'_> {
+    type Value = RawTrace;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<RawTrace, D::Error> {
+        struct V<'a>(&'a mut LapTraces);
+        impl<'de> Visitor<'de> for V<'_> {
+            type Value = RawTrace;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a lap_trace_columns.traces[] object")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<RawTrace, A::Error> {
+                let mut trace = RawTrace::new();
+                let mut lap_pct: Option<Vec<f64>> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "lap" => {
+                            trace.meta.insert(key, map.next_value()?);
+                        }
+                        "columns" => {
+                            map.next_value_seed(KeyColumnsSeed {
+                                trace: &mut trace,
+                                lap_pct: &mut lap_pct,
+                            })?;
+                        }
+                        "additional_signals" => {
+                            map.next_value_seed(SignalColumnsSeed {
+                                trace: &mut trace,
+                                lt: &mut *self.0,
+                            })?;
+                        }
+                        _ => {
+                            map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                let lap = trace
+                    .meta
+                    .get("lap")
+                    .map_or_else(|| "?".to_string(), Value::to_string);
+                let lap_pct = lap_pct
+                    .ok_or_else(|| A::Error::custom(format!("lap {lap}: no lap_pct column")))?;
+                let points = lap_pct.len();
+                let mismatch = |what: &str, found: usize| {
+                    A::Error::custom(format!(
+                        "lap {lap}: {what} has {found} values for {points} points"
+                    ))
+                };
+                for (index, column) in trace.core.iter_mut().enumerate() {
+                    if column.is_empty() {
+                        column.resize(points, f64::NAN);
+                    } else if column.len() != points {
+                        return Err(mismatch(&format!("core column {index}"), column.len()));
+                    }
+                }
+                for column in &trace.extras {
+                    if !column.is_empty() && column.len() != points {
+                        return Err(mismatch("an additional signal", column.len()));
+                    }
+                }
+                trace.lap_pct = lap_pct;
+                trace.points = points;
+                Ok(trace)
+            }
+        }
+        deserializer.deserialize_map(V(self.lt))
+    }
+}
+
+/// A column of numbers: missing (NaN) where an item is not a finite number.
+struct NumColumn(Vec<f64>);
+
+impl<'de> Deserialize<'de> for NumColumn {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<NumColumn, D::Error> {
+        let items = Vec::<Num>::deserialize(deserializer)?;
+        Ok(NumColumn(items.into_iter().map(|n| n.0).collect()))
+    }
+}
+
+struct KeyColumnsSeed<'a> {
+    trace: &'a mut RawTrace,
+    lap_pct: &'a mut Option<Vec<f64>>,
+}
+
+impl<'de> DeserializeSeed<'de> for KeyColumnsSeed<'_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        struct V<'a>(&'a mut RawTrace, &'a mut Option<Vec<f64>>);
+        impl<'de> Visitor<'de> for V<'_> {
+            type Value = ();
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("columns: an object of arrays")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+                while let Some(key) = map.next_key_seed(PointKeySeed)? {
+                    match key {
+                        PointKey::Core(index) => {
+                            self.0.core[index] = map.next_value::<NumColumn>()?.0;
+                        }
+                        PointKey::LapPct => *self.1 = Some(map.next_value::<NumColumn>()?.0),
+                        PointKey::Additional | PointKey::Other => {
+                            map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+        deserializer.deserialize_map(V(self.trace, self.lap_pct))
+    }
+}
+
+struct SignalColumnsSeed<'a> {
+    trace: &'a mut RawTrace,
+    lt: &'a mut LapTraces,
+}
+
+impl<'de> DeserializeSeed<'de> for SignalColumnsSeed<'_> {
+    type Value = ();
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        struct V<'a>(&'a mut RawTrace, &'a mut LapTraces);
+        impl<'de> Visitor<'de> for V<'_> {
+            type Value = ();
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("additional_signals: an object of arrays")
+            }
+            fn visit_unit<E>(self) -> Result<(), E> {
+                Ok(())
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+                while let Some(channel) = map.next_key_seed(InternSeed(&mut *self.1))? {
+                    let values = map.next_value::<NumColumn>()?.0;
+                    if self.0.extras.len() <= channel {
+                        self.0.extras.resize_with(channel + 1, Vec::new);
+                    }
+                    self.0.extras[channel] = values;
+                }
+                Ok(())
+            }
+        }
+        deserializer.deserialize_any(V(self.trace, self.lt))
     }
 }
 

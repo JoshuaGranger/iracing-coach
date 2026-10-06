@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { decodeCcol } from "../ccol";
 import { parseLapRanges, routeStatic, type StaticAnalysisFiles } from "../fixtures/static-api";
+import { buildMapGeometry, lapMapPaths } from "../geometry/map-model";
+import { createTraceData } from "../geometry/trace-model";
 import { createAnalysisLoader } from "../load";
+import type { TraceCatalogData, TrackGeometryData } from "../types";
+import { perPointMap } from "./plausibility-reference";
 
 /** The committed current-profile 82-lap race that gate G2 runs on (`test-data/g2/`). */
 const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../test-data/g2");
@@ -54,7 +58,7 @@ describe("G2 fixture (test-data/g2)", () => {
     expect(overview.track).not.toBeNull();
     const data = await handle.traces();
     expect(data.laps.length).toBe(manifest.catalog_laps);
-    expect(data.bins).toBe(160);
+    expect(data.bins).toBe(640);
     expect(data.signals.size).toBe(manifest.signals);
     expect(log.some((url) => url.includes("?"))).toBe(false);
   });
@@ -72,6 +76,19 @@ describe("G2 fixture (test-data/g2)", () => {
     const speed = whole.channels.get("speed")!.raw;
     expect(Array.from(part.channels.get("speed")!.raw)).toEqual(Array.from(speed.slice(5 * whole.bins, 8 * whole.bins)));
     expect(routeStatic(files, `/api/v1/analyses/${manifest.analysis_id}/traces?channels=nope`).status).toBe(400);
+  });
+
+  it("places every lap's 640 recorded fixes on the map as the per-point rule does, with the bounds computed once", () => {
+    const table = decodeCcol(files.ccol.buffer.slice(files.ccol.byteOffset, files.ccol.byteOffset + files.ccol.byteLength) as ArrayBuffer);
+    const data = createTraceData(JSON.parse(files.catalog) as TraceCatalogData, table);
+    const track = JSON.parse(files.track!) as TrackGeometryData;
+    const map = buildMapGeometry(track)!;
+    expect(data.bins).toBe(640);
+    expect(data.aux.latitude).not.toBeNull();
+    const laps = [...data.lapIndex.keys()];
+    const drawn = lapMapPaths(data, map, laps);
+    expect(drawn.flatMap((group) => group.laps).length).toBeGreaterThan(0);
+    expect(drawn).toEqual(lapMapPaths(data, perPointMap(track, map), laps));
   });
 
   it("parses lap range lists", () => {

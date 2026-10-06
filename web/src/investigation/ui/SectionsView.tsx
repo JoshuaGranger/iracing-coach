@@ -6,6 +6,9 @@ import { n, percentText, seconds, signedText } from "../format";
 import type { MapGeometry, MapPoint } from "../geometry/map-model";
 import type { TraceData } from "../geometry/trace-model";
 import type { Investigation, Section } from "../investigation-model";
+import type { RaceViewData } from "../types";
+import { contextTitle, lapContexts, tiresText, trafficCell, type LapContext } from "./section-context";
+import { POSITION_SIGNALS, sectionRacingLines } from "./section-lines";
 import { deltaBar, lapsToOpen, shadedLaps, type SectionLapEntry, type SectionLaps, type ShadedLap } from "./section-laps";
 import { projectOnSection, SECTION_SIGNALS, sectionPointAt, sectionTrackPoints, tracedLaps } from "./section-traces-model";
 import { SectionTraces, type SectionTraceLap, type SectionTraceStatus } from "./SectionTraces";
@@ -13,12 +16,13 @@ import { scaleFor, useRemPx } from "./unit";
 import "./sections.css";
 
 /**
- * Sections (backlog #48, #49, #64): per detected section, the three fastest and three slowest clean laps by that section's time, the
- * section's median as zero, green shades faster and red shades slower. The map draws them as six strands along the section; the
- * tab strip picks the section; the lap rows select the laps the telemetry draws and `Open in Traces` opens with the cursor at the
- * section start. The right panel draws those laps' speed, throttle, brake and steering over the section with the median lap in
- * grey, cursor-synced with a marker on the section segment. Every figure is the projector's (`section_laps`, the CCOL traces); this
- * view ranks nothing.
+ * Sections (backlog #48, #49, #64, #75, #76): per detected section, the three fastest and three slowest clean laps by that section's
+ * time, the section's median as zero, green shades faster and red shades slower. The map draws each lap's own racing line through
+ * the section from its recorded positions (no line where it recorded none); the tab strip picks the section; the lap rows, with the
+ * laps on the tires and the lap's traffic beside the time, select the laps the telemetry draws and `Open in Traces` opens with the
+ * cursor at the section start. The right panel draws those laps' speed, throttle, brake and steering over the section with the
+ * median lap in grey, cursor-synced with a marker on the section segment. Every figure is the projector's (`section_laps`, the CCOL
+ * traces, the race and runs views); this view ranks nothing.
  */
 
 /** The median lap's line: the chart reference grey. */
@@ -28,18 +32,7 @@ function mapPath(points: readonly { x: number; y: number }[]): string {
   return points.map((point, index) => `${index === 0 ? "M" : "L"}${n(point.x)},${n(point.y)}`).join(" ");
 }
 
-/** A polyline moved sideways by `offset` (map units) along each point's normal; drawing only. */
-export function offsetPath(points: readonly { x: number; y: number }[], offset: number): string {
-  if (points.length < 2) return "";
-  return mapPath(points.map((point, i) => {
-    const a = points[Math.max(0, i - 1)]!;
-    const b = points[Math.min(points.length - 1, i + 1)]!;
-    const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    return { x: point.x - ((b.y - a.y) / length) * offset, y: point.y + ((b.x - a.x) / length) * offset };
-  }));
-}
-
-/** Map points that may place a section label or strand: all of them when every point has its lap fraction, else none. */
+/** Map points that may place a section label or segment: all of them when every point has its lap fraction, else none. */
 export function sectionMapPoints(map: MapGeometry | null): readonly MapPoint[] {
   return map?.sectionsReady === true ? map.points : [];
 }
@@ -68,23 +61,30 @@ export interface SectionsViewProps {
   traces?(ids: readonly string[]): Promise<TraceData>;
   /** Identifies the analysis (the cursor key and the trace load). */
   analysisKey?: string;
+  /** The race view (each lap's traffic, #75); none draws `—`. */
+  race?: RaceViewData | null;
+  /** The runs view's runs (the tire set's laps, #75); none draws `—`. */
+  runs?: readonly unknown[] | null;
 }
 
 const OPEN_SIGNALS = ["speed", "throttle", "brake", "steering"];
-/** Strand spacing and the section label size on screen, in px at the default root size. */
-const STRAND_PX = 3.25;
+/** What the view loads: the four telemetry channels and the positions the racing lines are drawn from. */
+const LOAD_SIGNALS = [...SECTION_SIGNALS, ...POSITION_SIGNALS];
 
 function countText(count: number): string {
   return `${count} clean ${count === 1 ? "lap" : "laps"} timed`;
 }
 
-function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; selected: boolean; hot: boolean; onToggle(): void; onHot(lap: number | null): void }) {
-  const { lap } = props;
+function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; context: LapContext | null; selected: boolean; hot: boolean; onToggle(): void; onHot(lap: number | null): void }) {
+  const { lap, context } = props;
   const bar = deltaBar(lap.deltaS, props.listed);
+  const tag = contextTitle(context);
+  const traffic = context?.traffic?.fraction ?? null;
+  const cell = trafficCell(context?.traffic);
   return (
     <button
       type="button" class={`ri-lap-row ri-sgrid${props.selected ? " selected" : ""}${props.hot ? " hot" : ""}`} data-lap={lap.lap} data-shade={lap.shade}
-      aria-pressed={props.selected} style={`--lap:var(--sl-${lap.shade})`} title={`L${lap.lap} · ${seconds(lap.sectionS)} s · ${signedText(lap.deltaS)} s to the median`}
+      aria-pressed={props.selected} style={`--lap:var(--sl-${lap.shade})`} title={`L${lap.lap} · ${seconds(lap.sectionS)} s · ${signedText(lap.deltaS)} s to the median${tag ? ` · ${tag}` : ""}`}
       onClick={props.onToggle} onPointerEnter={() => props.onHot(lap.lap)} onPointerLeave={() => props.onHot(null)} onFocus={() => props.onHot(lap.lap)} onBlur={() => props.onHot(null)}
     >
       <span class="ri-sl-sw" aria-hidden="true" />
@@ -92,6 +92,14 @@ function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; selected:
       <span class="ri-tm">{seconds(lap.sectionS)}</span>
       <span class={`ri-sl-dl ${bar.side}`}>{signedText(lap.deltaS)}</span>
       <span class="ri-sl-bar" aria-hidden="true">{bar.widthPct > 0 && <i class={bar.side} style={bar.side === "gain" ? `right:50%;width:${n(bar.widthPct)}%` : `left:50%;width:${n(bar.widthPct)}%`} />}</span>
+      <span class="ri-sl-tires" data-sl-tires>{tiresText(context?.tires)}</span>
+      {/* One line: the share's bar, the share, and the side in words, which sections.css draws as the Race chart's mark where the
+          column is narrow (the words stay for the screen reader and the cell's text). */}
+      <span class="ri-sl-traffic" data-sl-traffic>
+        <span class="ri-sl-tbar" aria-hidden="true">{traffic !== null && traffic > 0 && <i style={`width:${n(Math.min(1, traffic) * 100)}%`} />}</span>
+        <span class="ri-sl-tq">{cell.share}</span>
+        {cell.side !== null && <span class="ri-sl-side" data-side={context?.traffic?.side ?? undefined}><span class="ri-sl-sword">{` · ${cell.side}`}</span></span>}
+      </span>
     </button>
   );
 }
@@ -114,7 +122,7 @@ export function mapUnits(box: readonly [number, number, number, number], width: 
   return { x: box[0] + (px - (width - box[2] * scale) / 2) / scale, y: box[1] + (py - (height - box[3] * scale) / 2) / scale };
 }
 
-export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, onOpenTraces, traces, analysisKey = "" }: SectionsViewProps) {
+export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, onOpenTraces, traces, analysisKey = "", race = null, runs = null }: SectionsViewProps) {
   const sections = inv.sections.sections;
   const entry: SectionLapEntry | null = section ? sectionLaps?.get(section.id) ?? null : null;
   const { fastest, slowest } = useMemo(() => shadedLaps(entry), [entry]);
@@ -124,6 +132,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   const [hot, setHot] = useState<number | null>(null);
   const hotLap = listed.find((lap) => lap.lap === hot) ?? null;
   const opens = lapsToOpen(listed.map((lap) => lap.lap), selected);
+  const contexts = useMemo(() => lapContexts(race, runs), [race, runs]);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
@@ -137,14 +146,14 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   // Section labels keep one size on screen (1.25x the data size) whatever the map's scale.
   const labelFont = pxPerUnit > 0 ? theme.typography.dataPx * 1.25 * k * unitsPerPx : span * 0.04;
   const labelRadius = labelFont * 0.9;
-  /** Half the strand band (sections.css `.ri-sl-segment`, 1.625 rem) plus a pixel, in map units. */
+  /** Half the segment band (sections.css `.ri-sl-segment`, 1.625 rem) plus a pixel, in map units. */
   const band = 14 * k * unitsPerPx;
   /** A label's tap target: 44 px across on screen. */
   const hitRadius = 22 * k * unitsPerPx;
   const labels = useMemo(() => {
     const out: { id: string; text: string; x: number; y: number; ax: number; ay: number }[] = [];
     if (!map || placed.length < 3) return out;
-    // Labels sit beside the track so the strands stay readable: two rings of places around the section's middle (in label radii),
+    // Labels sit beside the track so the racing lines stay readable: two rings of places around the section's middle (in label radii),
     // nearest first, kept inside the map's box so none is clipped at its edge.
     const ring = (d: number): [number, number][] => [[d, 0], [-d, 0], [0, d], [0, -d], [d * 0.8, d * 0.8], [-d * 0.8, -d * 0.8], [d * 0.8, -d * 0.8], [-d * 0.8, d * 0.8]];
     const offsets: [number, number][] = [...ring(2.4), ...ring(4), [0, 0]];
@@ -154,7 +163,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
       const middle = (s.startPct + s.endPct) / 2;
       const anchor = placed.reduce((best, point) => (Math.abs(point.percent - middle) < Math.abs(best.percent - middle) ? point : best), placed[0]!);
       const candidates = offsets.map(([dx, dy]) => inside({ x: anchor.x + dx * labelRadius, y: anchor.y + dy * labelRadius }));
-      // The first place clear of the track's strand band and the other labels; failing that, the one farthest from both.
+      // The first place clear of the track's segment band and the other labels; failing that, the one farthest from both.
       const clearance = (c: { x: number; y: number }) => Math.min(
         ...placed.map((p) => Math.hypot(p.x - c.x, p.y - c.y) - band),
         ...out.map((o) => Math.hypot(o.x - c.x, o.y - c.y) / 2.1),
@@ -165,7 +174,6 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     return out;
   }, [map, placed, sections, labelRadius, band]);
   const segment = useMemo(() => (section ? placed.filter((point) => point.percent >= section.startPct - 1e-9 && point.percent <= section.endPct + 1e-9) : []), [placed, section]);
-  const strandGap = STRAND_PX * k * unitsPerPx;
 
   // Telemetry: the trace store, loaded once when the section first has laps to draw (and on Retry); section and lap changes only redraw.
   const [loaded, setLoaded] = useState<{ key: string; status: SectionTraceStatus; data: TraceData | null }>({ key: analysisKey, status: "loading", data: null });
@@ -178,12 +186,22 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     if (!wantsTraces || !tracesRef.current) return undefined;
     let live = true;
     setLoaded((current) => (current.key === analysisKey && current.status === "ready" ? current : { key: analysisKey, status: "loading", data: null }));
-    tracesRef.current(SECTION_SIGNALS).then(
+    tracesRef.current(LOAD_SIGNALS).then(
       (data) => { if (live) setLoaded({ key: analysisKey, status: "ready", data }); },
       () => { if (live) setLoaded({ key: analysisKey, status: "failed", data: null }); },
     );
     return () => { live = false; };
   }, [analysisKey, wantsTraces, attempt]);
+
+  // Racing lines (#76): each listed lap's recorded path through the section; the hovered lap is drawn last, on top.
+  const recorded = useMemo(() => {
+    const byLap = new Map(sectionRacingLines(traceState.data, map, section, listed.map((lap) => lap.lap)).map((line) => [line.lap, line] as const));
+    return listed.flatMap((lap) => {
+      const line = byLap.get(lap.lap);
+      return line ? [{ lap, line }] : [];
+    });
+  }, [traceState.data, map, section?.id, section?.startPct, section?.endPct, listed]);
+  const lines = hot === null ? recorded : [...recorded.filter((item) => item.lap.lap !== hot), ...recorded.filter((item) => item.lap.lap === hot)];
 
   const selectedKey = [...selected].sort((a, b) => a - b).join(",");
   const drawnLaps: SectionTraceLap[] = useMemo(() => {
@@ -268,10 +286,9 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     (event.currentTarget as HTMLElement).parentElement?.querySelector<HTMLElement>(`[data-section="${next.id}"]`)?.focus();
   };
   const row = (lap: ShadedLap) => (
-    <LapRow key={lap.lap} lap={lap} listed={listed} selected={selected.has(lap.lap)} hot={hot === lap.lap} onToggle={() => toggle(lap.lap)} onHot={setHot} />
+    <LapRow key={lap.lap} lap={lap} listed={listed} context={contexts.get(lap.lap) ?? null} selected={selected.has(lap.lap)} hot={hot === lap.lap} onToggle={() => toggle(lap.lap)} onHot={setHot} />
   );
   const range = section ? `${percentText(section.startPct)}–${percentText(section.endPct)}` : "";
-  const strands = segment.length > 1 ? listed : [];
   const head = (
     <>
       <h2>Section {section?.label} <small>{range} % lap</small></h2>
@@ -287,26 +304,26 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
       <div class="ri-sl-map">
         <div class="ri-card-label">
           <span class="ri-card-title">Track</span>
-          {strands.length > 0 && (
+          {listed.length > 0 && segment.length > 1 && (
             <span class="ri-sl-key"><span><i class="g" />Fastest {fastest.length}</span><span><i class="r" />Slowest {slowest.length}</span><span>clean laps · section {section?.label}</span></span>
           )}
           {!map && <span>not recorded</span>}
         </div>
         {map && map.points.length > 2 ? (
           <div class="ri-sl-stage" data-sl-map>
-            <svg ref={svgRef} class="ri-sl-svg" viewBox={map.viewBox} aria-hidden="true">
+            <svg ref={svgRef} class="ri-sl-svg" viewBox={map.viewBox} aria-hidden="true" data-map-rotation={map.rotationDeg}>
               <path d={mapPath(map.points)} class="ri-sl-track" />
               {segment.length > 1 && <path d={mapPath(segment)} class="ri-sl-segment" />}
               {map.startFinish && <line x1={n(map.startFinish.x1)} y1={n(map.startFinish.y1)} x2={n(map.startFinish.x2)} y2={n(map.startFinish.y2)} class="ri-sl-start" />}
             </svg>
-            {/* Over the map with the same box: the strands and the scrub band along the section (pointer there moves the cursor), then the labels. */}
+            {/* Over the map with the same box: the racing lines and the scrub band along the section (pointer there moves the cursor), then the labels. */}
             <svg ref={overlayRef} class="ri-sl-over" viewBox={map.viewBox} role="group" aria-label={`Track map · section ${section?.label ?? ""}`}>
               {segment.length > 1 && (
                 <g class="ri-sl-zone" data-sl-zone aria-hidden="true" onPointerEnter={drive} onPointerMove={drive} onPointerDown={drive} onPointerLeave={() => { zoneRect.current = null; }}>
                   <path d={mapPath(segment)} class="ri-sl-scrub" />
-                  {strands.map((lap, i) => (
-                    <path key={lap.lap} d={offsetPath(segment, (i - (strands.length - 1) / 2) * strandGap)} class={`ri-sl-strand${hot === lap.lap ? " hot" : ""}${selected.has(lap.lap) ? " selected" : ""}`}
-                      style={`--lap:var(--sl-${lap.shade})`} data-strand={lap.lap} data-shade={lap.shade}
+                  {lines.map(({ lap, line }) => (
+                    <path key={lap.lap} d={line.d} class={`ri-sl-line${hot === lap.lap ? " hot" : ""}${selected.has(lap.lap) ? " selected" : ""}`}
+                      style={`--lap:var(--sl-${lap.shade})`} data-sl-line={lap.lap} data-shade={lap.shade}
                       onPointerEnter={() => setHot(lap.lap)} onPointerLeave={() => setHot(null)}>
                       <title>{`L${lap.lap} · ${seconds(lap.sectionS)} s · ${signedText(lap.deltaS)} s`}</title>
                     </path>
@@ -345,9 +362,12 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
         <div class="ri-sl-list" role="tabpanel" aria-label={`Section ${section?.label ?? ""} laps`}>
           {listed.length > 0 ? (
             <>
-              <div class="ri-sgrid ri-sl-cols" aria-hidden="true"><span /><span>Lap</span><span class="r">Time · s</span><span class="r">Δ median</span><span /></div>
+              <div class="ri-sgrid ri-sl-cols" aria-hidden="true">
+                <span /><span>Lap</span><span class="r">Time<span class="ri-sl-long"> · s</span></span><span class="r">Δ<span class="ri-sl-long"> median</span></span><span />
+                <span class="r">Tires</span><span class="ri-sl-traffic">Traffic</span>
+              </div>
               {fastest.map(row)}
-              <div class="ri-sgrid ri-sl-median" data-sl-median><span /><span>Med</span><span class="r">{seconds(entry?.medianS)}</span><span class="r">0</span><span class="ri-sl-zero" aria-hidden="true" /></div>
+              <div class="ri-sgrid ri-sl-median" data-sl-median><span /><span>Med</span><span class="r">{seconds(entry?.medianS)}</span><span class="r">0</span><span class="ri-sl-zero" aria-hidden="true" /><span /><span /></div>
               {slowest.map(row)}
             </>
           ) : (

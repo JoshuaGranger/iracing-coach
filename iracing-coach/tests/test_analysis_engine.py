@@ -20,8 +20,11 @@ from analysis_engine import (  # noqa: E402
     _duration_minutes,
     _finite,
     _find_race_session,
+    TRACE_COLUMN_BINS,
+    TRACE_COLUMN_KEYS,
     _lap_limit,
     _lap_summaries,
+    _lap_trace_columns,
     _lap_trace_payload,
     _phase_comparison,
     _race_grades,
@@ -1047,6 +1050,99 @@ class AnalysisEngineTests(unittest.TestCase):
         self.assertNotIn("air-temperature", {item["id"] for item in trace["additional_signal_catalog"]})
         json.dumps(trace, allow_nan=False)
 
+    def test_trace_columns_are_the_payload_at_chart_density(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=5)
+        analysis = analyze_telemetry(telemetry)
+        table = TelemetryTable(telemetry)
+        laps = analysis["laps"]
+        columns = analysis["lap_trace_columns"]
+        self.assertEqual(columns["distance_bins_per_lap"], TRACE_COLUMN_BINS)
+        self.assertEqual(TRACE_COLUMN_BINS, 640)
+        # Every value is the 640-bin payload's own point value, lap by lap, whatever the chunking.
+        payload = _lap_trace_payload(table, laps, maximum_bins=TRACE_COLUMN_BINS)
+        for chunk in (1, 2, 64):
+            self.assertEqual(_lap_trace_columns(table, laps, chunk_laps=chunk), columns)
+        self.assertEqual([trace["lap"] for trace in columns["traces"]], [trace["lap"] for trace in payload["traces"]])
+        for dense, source in zip(columns["traces"], payload["traces"]):
+            points = source["points"]
+            self.assertEqual(dense["points"], len(points))
+            self.assertEqual(list(dense["columns"]), list(TRACE_COLUMN_KEYS))
+            for key in TRACE_COLUMN_KEYS:
+                if key != "session_time_s":
+                    self.assertEqual(dense["columns"][key], [point[key] for point in points])
+            # Session time is the bin centre's crossing time, within a second of the bin's median sample time.
+            for time, point in zip(dense["columns"]["session_time_s"], points):
+                self.assertLessEqual(abs(time - point["session_time_s"]), 1.0)
+            for signal_id, values in dense["additional_signals"].items():
+                self.assertEqual(values, [point["additional_signals"].get(signal_id) for point in points])
+            # Bin centres at (i + 0.5) / 640, strictly increasing.
+            pcts = dense["columns"]["lap_pct"]
+            self.assertEqual(pcts, sorted(set(pcts)))
+            self.assertTrue(all(abs(pct * TRACE_COLUMN_BINS - 0.5 - round(pct * TRACE_COLUMN_BINS - 0.5)) < 0.001 for pct in pcts))
+        # The 160-bin traces the investigation reads are unchanged.
+        self.assertEqual(analysis["lap_traces"]["distance_bins_per_lap"], 160)
+        self.assertEqual(analysis["lap_traces"], _lap_trace_payload(table, laps))
+        json.dumps(columns, allow_nan=False)
+
+    def test_trace_columns_bins_nest_inside_the_160_bins(self) -> None:
+        telemetry = synthetic_telemetry(lap_count=3)
+        analysis = analyze_telemetry(telemetry)
+        coarse = {trace["lap"]: trace for trace in analysis["lap_traces"]["traces"]}
+        for dense in analysis["lap_trace_columns"]["traces"]:
+            points = coarse[dense["lap"]]["points"]
+            coarse_bins = {int(point["lap_pct"] * 160) for point in points}
+            dense_bins = {int(pct * TRACE_COLUMN_BINS) // 4 for pct in dense["columns"]["lap_pct"]}
+            self.assertEqual(dense_bins, coarse_bins)
+        # The samples of four narrow bins are exactly their wide bin's.
+        table = TelemetryTable(telemetry)
+        fine = _lap_trace_payload(table, analysis["laps"], maximum_bins=TRACE_COLUMN_BINS)
+        for trace in fine["traces"]:
+            counts: dict[int, int] = {}
+            for point in trace["points"]:
+                wide = int(point["lap_pct"] * TRACE_COLUMN_BINS) // 4
+                counts[wide] = counts.get(wide, 0) + point["samples"]
+            expected = {int(point["lap_pct"] * 160): point["samples"] for point in coarse[trace["lap"]]["points"]}
+            self.assertEqual(counts, expected)
+
+    def test_trace_column_session_time_is_the_bin_centre_crossing(self) -> None:
+        # 80 samples a lap at 20 Hz, lap distance linear in time: the car passes lap fraction p at lap start + 4 p seconds.
+        telemetry = synthetic_telemetry(lap_count=3)
+        analysis = analyze_telemetry(telemetry)
+        laps = {lap["lap"]: lap for lap in analysis["laps"]}
+        times = telemetry["channels"]["SessionTime"]
+        for dense in analysis["lap_trace_columns"]["traces"]:
+            lap_start = times[int(laps[dense["lap"]]["start_index"])]
+            pcts = dense["columns"]["lap_pct"]
+            crossings = dense["columns"]["session_time_s"]
+            for pct, time in zip(pcts, crossings):
+                if pct < 79 / 80:  # past the last sample of the lap no pair spans the centre
+                    self.assertAlmostEqual(time, round(lap_start + pct * 4.0, 6), places=5)
+            # A constant pace gives a constant time per unit of distance: no binning noise between bins.
+            steps = [(t1 - t0) / (p1 - p0) for p0, p1, t0, t1 in zip(pcts, pcts[1:], crossings, crossings[1:]) if p1 < 79 / 80]
+            self.assertTrue(steps)
+            self.assertLess(max(steps) - min(steps), 0.01)
+
+    def test_bin_centre_times_skip_implausible_steps_and_keep_the_first_pass(self) -> None:
+        from analysis_engine import _bin_centre_times
+
+        pct = [0.10, 0.11, 0.30, 0.31, None, 0.40, 0.105, 0.115]
+        time = [10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 30.0, 30.1]
+        crossings = _bin_centre_times(pct, time, 0, len(pct) - 1, 100)
+        # 0.105 lies between the first two samples: half way in time.
+        self.assertAlmostEqual(crossings[10], 10.05, places=9)
+        # 0.11 to 0.30 is too far a step; 0.31 to the gap and the gap to 0.40 are broken.
+        self.assertNotIn(20, crossings)
+        self.assertNotIn(35, crossings)
+        # The first pass of bin 10 wins over the later one; bin 11 (0.115) is only passed later.
+        self.assertAlmostEqual(crossings[11], 30.1, places=9)
+        self.assertEqual(_bin_centre_times([0.5], [1.0], 0, 0, 640), {})
+
+    def test_trace_columns_of_no_laps_are_empty(self) -> None:
+        table = TelemetryTable({"channels": {"LapDistPct": [0.1, 0.2], "Speed": [30.0, 31.0]}})
+        columns = _lap_trace_columns(table, [])
+        self.assertEqual(columns["traces"], [])
+        self.assertEqual(columns["distance_bins_per_lap"], 640)
+
     def test_optional_trace_conversion_and_median_overflow_remain_gaps(self) -> None:
         table = TelemetryTable({"channels": {
             "LapDistPct": [0.1, 0.1],
@@ -1088,7 +1184,7 @@ class AnalysisEngineTests(unittest.TestCase):
 
         self.assertEqual(
             analysis["analysis_profile_version"],
-            "post-race-foundations-v24",
+            "post-race-foundations-v25",
         )
         observed = analysis["runs"][0]["tire_observation"]["tires"]["LF"]
         self.assertEqual(observed["carcass_temperature_f"]["CL"], 212.0)

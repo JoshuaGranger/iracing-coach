@@ -35,6 +35,29 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 Each contract change adds one entry here in the same commit; review per the rule at the top.
 
+### 2026-10-05, traffic side: `clean_context.traffic_ahead_fraction`, `traffic_behind_fraction`, `traffic_side` (web round 5, backlog #67 and #75; additive optional fields, no review needed)
+
+Reason: backlog #67 and #75, the Race chart's traffic marker and the Sections `Traffic` column name the side the other car was on; the backend stated only how much of the lap had close traffic.
+
+- Python (oracle, `analysis_engine._lap_summaries` through `_traffic_sides`): each lap's `clean_context` gains `traffic_ahead_fraction` and `traffic_behind_fraction`, the share of the observed lap time with a car ahead within max(25 m, 0.75 s), or behind within max(15 m, 0.40 s), from the recorded `CarDistAhead` and `CarDistBehind` (4 decimals; null without the channels), and `traffic_side`: null when `traffic_proximity_fraction` is 0 or null; `both` when each side's fraction is >= 0.10; else the side whose fraction is; else the side with the larger fraction (`both` when equal). The rounded fractions decide, as the screen does. `traffic_proximity_fraction`, `traffic_screened`, `traffic_rule` and the close-traffic screen are unchanged. No profile bump of its own (every existing value is unchanged; an analysis without the keys reads as side unknown).
+- Native kernel `analysis_engine._lap_summaries` (`crates/coach-analysis`) ported byte for byte. Kernel vectors regenerated on both platforms: the laps unit, with two new synthetic tables (`laps-traffic-sides`, `laps-traffic-behind-only`), and the sections and field calls whose recorded arguments carry the laps. `coach-views` `consumed::LAP` copies the three keys, so the race view's shrink ladder keeps them.
+- `api.openapi.yaml`: `Lap` describes the three keys and lists them in `x-consumed-fields`; regenerated with `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+
+### 2026-10-05, U4: traces at 640 bins per lap (web round 5 task U4; description changes and one new projection version, no review needed; analysis profile v25)
+
+Reason: backlog #77, the traces were binned at 160 bins per lap (10-20 m on an oval) and the cursor stepped from bin to bin.
+
+- Python (oracle, `analysis_engine._lap_trace_columns`): the analysis gains `lap_trace_columns`, the lap traces at 640 bins per lap as one list per point key (`_lap_trace_payload` at `maximum_bins=640`, eight laps a call; `session_time_s` is the time the car passed each bin centre, linear between the two samples either side, where the 160-bin payload keeps the bin's median sample time). `lap_traces` stays at 160 bins: the investigation, the trials and the section times read it. `ANALYSIS_PROFILE_VERSION` v24 becomes v25, so `POST /admin/reanalyze` re-queues every stored session; an analysis without `lap_trace_columns` projects at 160 bins as before.
+- Native kernels: no change; `_lap_trace_payload` already takes any `maximum_bins`, and the traces vectors now record the 640-bin calls (Windows).
+- `coach-views`: `traces.ccol` and the catalog's `bins_per_lap` and `signals` come from `lap_trace_columns` when present; the catalog's laps and `sector_times_s` and `InvestigationView.section_laps` stay on `lap_traces`. `PROJECTION_VERSION` 3 becomes 4.
+- `crate-api.md` section 5: `PROJECTION_VERSION` 4; `bins_per_lap` names its source. `api.openapi.yaml`: the traces endpoint summary and `TraceCatalog.bins_per_lap` describe both densities. Regenerated with `pnpm gen:wire`.
+
+### 2026-10-05, U2: `SetupFileEntry.car_name` on the unlinked files (web round 5 task U2; additive optional nullable field, no review needed)
+
+Reason: backlog #74, the Setups page named cars without a decoded setup by their raw folder (`acuraarx06gtp`).
+
+- `api.openapi.yaml`: `SetupFileEntry.car_name` (string or null), sent on `SetupPage.unlinked_files` entries and absent on `sto_files`: the screen name a recording of that car folder carries (the newest wins), or of the car whose setup a file in the folder is linked to; null when no recording names it. Filled by `server/src/setups.rs`; the setups `q` search also matches it on unlinked files. Regenerated with `pnpm gen:wire`.
+
 ### 2026-10-04, S3: `section_laps[].median_lap` (web round 4 task S3; additive, no review needed)
 
 Reason: backlog #64, the Sections telemetry draws the median lap in grey and needs the backend to name it.

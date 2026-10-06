@@ -1,13 +1,14 @@
 import { channelAsFloat } from "../ccol";
 import type { PathSeriesData, Point2, TrackGeometryData } from "../types";
 import { pointBudgetPerTrace, representativeIndices } from "./budget";
+import { principalAxisRotation, rotatePoint, rotationDegrees } from "./rotation";
 import { lapColor, signalColumn, type TraceData } from "./trace-model";
 
 /**
  * Track map geometry (TelemetryWorkspace.razor:1750-2240, AnalysisTrackMapGeometry.cs). The backend's
- * normalized_local_vector geometry is drawn as delivered: this module only scales it into the 420x280
- * map box, checks that overlays are plausible and places recorded laps with the geometry's own
- * GPS-to-geometry transform. No coordinate is reprojected.
+ * normalized_local_vector geometry is drawn as delivered: this module only turns it so its long axis is horizontal
+ * (`rotation.ts`, backlog #81), scales it into the 420x280 map box, checks that overlays are plausible and places recorded laps
+ * with the geometry's own GPS-to-geometry transform. No coordinate is reprojected.
  */
 
 export interface VectorPoint {
@@ -111,13 +112,32 @@ export function isPlausibleOverlayLine(main: readonly VectorPoint[], line: { a: 
   return distance(line.a, line.b) <= span * 0.2;
 }
 
-export function isPlausibleNormalizedPoint(main: readonly VectorPoint[], x: number, y: number): boolean {
-  if (!Number.isFinite(x) || !Number.isFinite(y) || !isCanonicalMainLoop(main)) return false;
+/** Where a plausible overlay point may lie: the main loop's extents grown by the overlay margin on every side. */
+export interface OverlayBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/** The overlay bounds of a canonical main loop; null for any other loop (no point is then plausible). */
+export function overlayBounds(main: readonly VectorPoint[]): OverlayBounds | null {
+  if (!isCanonicalMainLoop(main)) return null;
   const m = extents(main);
-  if (!m) return false;
+  if (!m) return null;
   const span = Math.max(m.maxX - m.minX, m.maxY - m.minY);
   const margin = span * MAXIMUM_OVERLAY_MARGIN;
-  return x >= m.minX - margin && x <= m.maxX + margin && y >= m.minY - margin && y <= m.maxY + margin;
+  return { minX: m.minX - margin, maxX: m.maxX + margin, minY: m.minY - margin, maxY: m.maxY + margin };
+}
+
+/**
+ * A normalized-geometry point inside the main loop's overlay bounds. `bounds` defaults to the loop's own; a caller that checks many
+ * points (`MapGeometry.projectGps`, once per trace bin) passes the bounds it computed once, since the loop check and its extents
+ * walk and sort the whole loop.
+ */
+export function isPlausibleNormalizedPoint(main: readonly VectorPoint[], x: number, y: number, bounds: OverlayBounds | null = overlayBounds(main)): boolean {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !bounds) return false;
+  return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
 }
 
 export interface MapGeometry {
@@ -134,6 +154,8 @@ export interface MapGeometry {
   /** Recorded GPS to map box, null when the geometry has no transform or the point is implausible. */
   projectGps(latitude: number, longitude: number): Point2 | null;
   hasTransform: boolean;
+  /** The turn applied so the centreline's long axis is horizontal (#81), degrees, y down. */
+  rotationDeg: number;
   /** The Sections highlight may use this map: status usable and every main-loop point carries its lap fraction (audit R8). */
   sectionsReady: boolean;
 }
@@ -163,6 +185,13 @@ export function svgPath(points: readonly Point2[], close: boolean): string {
   return close ? `${path} Z` : path;
 }
 
+/** The main loop's point at the start/finish line: the smallest lap fraction, else the first point. */
+function lapStart(main: readonly VectorPoint[]): VectorPoint | null {
+  let best: VectorPoint | null = null;
+  for (const point of main) if (point.pct !== null && (best === null || wrap(point.pct) < wrap(best.pct!))) best = point;
+  return best ?? main[0] ?? null;
+}
+
 /** Builds the map from backend geometry; null when it has no complete main loop (the browser then uses the distance strip). */
 export function buildMapGeometry(track: TrackGeometryData | null): MapGeometry | null {
   if (!track || track.status.toLowerCase() === "unavailable") return null;
@@ -170,11 +199,17 @@ export function buildMapGeometry(track: TrackGeometryData | null): MapGeometry |
   if (main.length < 3 || !isCanonicalMainLoop(main)) return null;
   const quality = track.quality as { main_loop_complete?: unknown } | null | undefined;
   if (quality && quality.main_loop_complete === false) return null;
-  const e = extents(main)!;
+  // Backlog #81: the centreline's long axis laid horizontal (start/finish in the lower half), then fitted; every overlay below goes
+  // through `project`, so the pit road, the lines, the racing lines, the markers and the cursor turn with it.
+  const rotation = principalAxisRotation(main, lapStart(main));
+  const e = extents(main.map((point) => rotatePoint(rotation, point.x, point.y)))!;
   const centerX = (e.minX + e.maxX) / 2;
   const centerY = (e.minY + e.maxY) / 2;
   const scale = Math.min(350 / Math.max(0.0001, e.maxX - e.minX), 218 / Math.max(0.0001, e.maxY - e.minY));
-  const project = (x: number, y: number): Point2 => ({ x: 210 + (x - centerX) * scale, y: 140 + (y - centerY) * scale });
+  const project = (x: number, y: number): Point2 => {
+    const turned = rotatePoint(rotation, x, y);
+    return { x: 210 + (turned.x - centerX) * scale, y: 140 + (turned.y - centerY) * scale };
+  };
   const points: MapPoint[] = main.map((point, index) => {
     const p = project(point.x, point.y);
     return { percent: wrap(point.pct ?? index / main.length), x: p.x, y: p.y };
@@ -205,6 +240,8 @@ export function buildMapGeometry(track: TrackGeometryData | null): MapGeometry |
   const commitment = track.pit_commitment_line && isPlausibleOverlayLine(main, track.pit_commitment_line) ? lineOf(track.pit_commitment_line) : null;
   const merge = track.pit_merge_line && isPlausibleOverlayLine(main, track.pit_merge_line) ? lineOf(track.pit_merge_line) : null;
   const transform = track.transform ?? null;
+  // Every recorded fix is checked against the same bounds: computed once here, not once per point.
+  const gpsBounds = transform ? overlayBounds(main) : null;
   // The backend's x is longitude times this factor (profile v24); older geometry has none and x is longitude.
   const longitudeScale = transform?.longitude_scale !== undefined && transform.longitude_scale > 0 ? transform.longitude_scale : 1;
   return {
@@ -216,12 +253,13 @@ export function buildMapGeometry(track: TrackGeometryData | null): MapGeometry |
     pit: road || entry || exit || commitment || merge ? { road, entry, exit, commitment, merge } : null,
     project,
     hasTransform: transform !== null,
+    rotationDeg: rotationDegrees(rotation),
     sectionsReady: track.status.toLowerCase() === "usable" && main.every((point) => typeof point.pct === "number" && Number.isFinite(point.pct)),
     projectGps(latitude, longitude) {
       if (!transform) return null;
       const nx = (longitude * longitudeScale - transform.source_bounds.minimum_x) / transform.normalization_scale;
       const ny = (transform.source_bounds.maximum_y - latitude) / transform.normalization_scale;
-      return isPlausibleNormalizedPoint(main, nx, ny) ? project(nx, ny) : null;
+      return isPlausibleNormalizedPoint(main, nx, ny, gpsBounds) ? project(nx, ny) : null;
     },
   };
 }

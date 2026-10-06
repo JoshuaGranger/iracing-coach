@@ -14,6 +14,9 @@
 }
 
 :root {
+  /* Control heights (#80): every button, select, tab and segment is --control-height (the theme token, --touch-target on touch); every
+     chip, badge and count tag is --chip-height. A control keeps its label, value and chevron on one centre line (see .ctl-t below). */
+  --chip-height: 1.625rem;
   --lit: rgb(255 255 255 / 0.08);
   --lit-strong: rgb(255 255 255 / 0.14);
   --card-fill: linear-gradient(180deg, var(--color-surface1), var(--color-surface-card-end));
@@ -121,6 +124,13 @@ a:hover {
 :focus:not(:focus-visible) {
   outline: none;
 }
+/* Focus shows for the keyboard only (#78). ui/control-behaviour.ts sets html[data-input] from the last device used; after a pointer
+   press no control draws a ring, an outline or a focus border, whatever a component sheet says for :focus-visible. A text field keeps
+   its own focus border: it is being typed in. */
+html[data-input="pointer"] :focus-visible:not(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"]), textarea, [contenteditable="true"]) {
+  outline: none;
+  box-shadow: none;
+}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -192,6 +202,13 @@ button,
   color: var(--color-text-primary);
   white-space: nowrap;
 }
+/* Control text sits on the centre line by its capital letters (#80). A line box centres a font's ascent and descent, which leaves
+   capitals a pixel or two off whatever the face; trimming the text run's box to its capitals lets the control's align-items: center
+   do the rest. ui/control-text.ts gives bare text in a control a .ctl-t span; a text-only span anywhere inside a control is trimmed alike. */
+.ctl-t,
+:is(button, summary, [role="tab"], [role="button"], .btn, [class*="chip"], [class*="badge"], [class*="pill"], [class*="toggle"], [class*="-tab"], [class*="seg"]) :is(span, b, strong, em, small, output):not(:has(*)) {
+  text-box: trim-both cap alphabetic;
+}
 /* Selection has one state: hover changes only unselected items. SELECTED in ui/selectable.ts lists the same markers. */
 button:hover:not(:disabled):not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))),
 .btn:hover:not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))) {
@@ -256,7 +273,7 @@ textarea {
   max-width: 100%;
 }
 input:focus-visible,
-select:focus-visible,
+html:not([data-input="pointer"]) select:focus-visible,
 textarea:focus-visible {
   border-color: var(--color-interaction);
   outline-offset: 0;
@@ -640,7 +657,7 @@ label.check > span:first-child {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 1.625rem;
+  min-height: var(--chip-height);
   padding: 0 var(--space-2);
   border-radius: var(--radius-control);
   border: 1px solid var(--color-border-strong);
@@ -664,7 +681,7 @@ label.check > span:first-child {
   color: var(--color-text-primary);
 }
 button.chip-action {
-  min-height: 1.625rem;
+  min-height: var(--chip-height);
   padding: 0 var(--space-2);
   letter-spacing: 0.07em;
   background: transparent;
@@ -674,7 +691,7 @@ button.chip-action {
   text-underline-offset: 0.2em;
 }
 .chip-act {
-  min-height: 1.625rem;
+  min-height: var(--chip-height);
   margin: 0 calc(var(--space-2) * -1) 0 0;
   padding: 0 var(--space-2);
   border: 0;
@@ -929,6 +946,127 @@ button.chip-action {
     left: 0;
     right: 0;
     width: auto;
+  }
+}
+
+/* ---- single-choice dropdown (ui/single-select.tsx): Traces Spotlight and Layout ------------------------------------------ */
+.ss {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.ss-pill {
+  max-width: 100%;
+  min-width: 0;
+  min-height: var(--ms-pill-h);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  gap: var(--space-2);
+  justify-content: space-between;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface2);
+  font-size: var(--text-control);
+}
+.ss-pill.open {
+  border-color: var(--color-interaction);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-interaction) 30%, transparent), 0 0 1.125rem color-mix(in srgb, var(--color-interaction) 14%, transparent);
+}
+.ss-cap {
+  flex: none;
+  color: var(--color-text-muted);
+}
+/* The value is body text in its own face; the ellipsis box is padded and pulled back so trimming it to its capitals clips no descender. */
+.ss-val {
+  min-width: 0;
+  padding-block: 0.3em;
+  margin-block: -0.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text-primary);
+  font: var(--weight-medium) var(--text-body) / 1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ss-chev {
+  flex: none;
+  color: var(--color-text-muted);
+}
+.ss-pill .swl {
+  flex: none;
+  width: 0.875rem;
+  height: 0.3125rem;
+  border-radius: 2px;
+  background: var(--lap, var(--color-text-muted));
+}
+.ss-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--color-surface2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.75rem;
+  box-shadow: 0 1.125rem 2.375rem rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+.ss.end .ss-panel {
+  left: auto;
+  right: 0;
+}
+.ss-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: max(2.75rem, var(--control-height));
+  padding: 0 var(--space-3);
+  border-radius: 0.5rem;
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ss-opt-mark:empty {
+  display: none;
+}
+.ss-opt-mark .swl {
+  display: block;
+  width: 0.875rem;
+  height: 0.3125rem;
+  border-radius: 2px;
+  background: var(--lap, var(--color-text-muted));
+}
+.ss-opt-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ss-opt-hint {
+  color: var(--color-text-muted);
+  font: var(--weight-semibold) var(--text-compact) / 1 var(--font-display);
+  font-stretch: condensed;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* Selection has one state: a selected option ignores hover; only an unselected one is lit by the pointer or the keyboard. */
+.ss-opt[aria-selected="true"] {
+  background: color-mix(in srgb, var(--color-interaction) 14%, transparent);
+}
+.ss-opt.hl:not([aria-selected="true"]) {
+  background: var(--color-surface3);
+}
+/* A narrow screen keeps the list under its pill, inside the viewport: the pills sit at the right edge, so the list hangs from there. */
+@media (max-width: 700px) {
+  .ss-panel {
+    left: auto;
+    right: 0;
   }
 }
 
@@ -1706,7 +1844,7 @@ tr.group-head th {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 1.625rem;
+  min-height: var(--chip-height);
   padding: 0 10px;
   border-radius: 13px;
   font: 700 0.9375rem / 1 var(--font-display);
@@ -1752,7 +1890,7 @@ tr.group-head th {
 .inc-chip {
   display: inline-grid;
   place-items: center;
-  min-height: 1.625rem;
+  min-height: var(--chip-height);
   padding: 0 7px;
   border-radius: 13px;
   font: 700 1rem / 1 var(--font-display);
@@ -1776,7 +1914,7 @@ tr.group-head th {
 .state-chip {
   display: inline-grid;
   place-items: center;
-  min-height: 1.625rem;
+  min-height: var(--chip-height);
   padding: 0 9px;
   border-radius: 13px;
   border: 1px solid var(--color-border-strong);

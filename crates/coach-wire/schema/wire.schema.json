@@ -770,7 +770,7 @@
     },
     "Lap": {
       "type": "object",
-      "description": "One recorded lap (backend `laps[]` projected; unknown backend fields preserved).",
+      "description": "One recorded lap (backend `laps[]` projected; unknown backend fields preserved). The backend's `clean_context`\npasses through. `traffic_proximity_fraction` is the share of the observed lap time with a car ahead within\nmax(25 m, 0.75 s) or behind within max(15 m, 0.40 s) (recorded CarDistAhead and CarDistBehind); `close_traffic`\nscreens a lap at >= 0.10. `traffic_ahead_fraction` and `traffic_behind_fraction` (number or null, 4 decimals,\nnull without the distance channels) are each side's share alone: a sample with a car close on both sides counts\nonce in the combined share, so neither side exceeds it. `traffic_side` (\"ahead\", \"behind\", \"both\" or null) is\nnull when the combined share is 0 or null; \"both\" when each side's share is >= 0.10; else the side whose share\nis; else the side with the larger share, \"both\" when they are equal. An analysis written before 2026-10-05 lacks\nthe three keys: unknown, not open air.\n",
       "additionalProperties": true,
       "x-consumed-fields": [
         "lap",
@@ -785,6 +785,9 @@
         "racing_state_fraction",
         "clean_context.on_track_fraction",
         "clean_context.traffic_proximity_fraction",
+        "clean_context.traffic_ahead_fraction",
+        "clean_context.traffic_behind_fraction",
+        "clean_context.traffic_side",
         "damage_repair_context.automatic_coaching_reference_eligible",
         "damage_repair_context.exclusion_reason_codes"
       ],
@@ -1406,6 +1409,13 @@
                 ],
                 "description": "Median of those section times (the mean of the middle two for an even count), 3 decimals; null without one."
               },
+              "median_lap": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The lap the median trace follows: the lower-middle lap of the sorted clean section times; null without one."
+              },
               "fastest": {
                 "type": "array",
                 "description": "Up to three fastest, fastest first; min(3, floor(clean_lap_count / 2)) entries, so fastest and slowest never share a lap. Ties order by lap.",
@@ -1665,7 +1675,7 @@
           "properties": {
             "bins_per_lap": {
               "type": "integer",
-              "description": "160 today (about 0.6 % of a lap). Bin i lies at lap fraction (i + 0.5) / bins_per_lap (the CCOL rule on the traces endpoint)."
+              "description": "640 for analyses from profile post-race-foundations-v25 (about 0.16 % of a lap, the backend's lap_trace_columns), 160 before (lap_traces). Bin i lies at lap fraction (i + 0.5) / bins_per_lap (the CCOL rule on the traces endpoint). Laps and sector_times_s come from the 160-bin lap_traces either way."
             },
             "laps": {
               "type": "array",
@@ -2160,6 +2170,13 @@
             "null"
           ],
           "description": "Null = values unknown (encrypted .sto, never seen unmodified). Derived by the server when it answers, never stored: only from an observation with is_modified = false or an htm_export of the file (collector-protocol.md section 8)."
+        },
+        "car_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The car's screen name, sent on `unlinked_files` entries: the name a recording of that car folder (or of the car whose setup a file in the folder is linked to) carries. Null when no recording names the folder; the client then falls back to the folder name. Absent on `sto_files` entries."
         }
       }
     },

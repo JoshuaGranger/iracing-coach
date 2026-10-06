@@ -1,5 +1,5 @@
-/* Sections (backlog #48, #49, #64): left, the map with the chosen section's six clean laps as strands and under it the section tabs
-   and the six laps in the Traces rail's row style; right, the section's median, its telemetry and Open in Traces. Colour carries data only: three
+/* Sections (backlog #48, #49, #64, #75, #76): left, the map with the chosen section's six clean laps as their recorded racing lines
+   and under it the section tabs and the six laps in the Traces rail's row style, with the laps on the tires and the lap's traffic; right, the section's median, its telemetry and Open in Traces. Colour carries data only: three
    green shades for the fastest three, three red shades for the slowest three (the strongest shade is the extreme lap). */
 .ri-sl {
   --sl-g1: var(--ri-green);
@@ -25,18 +25,19 @@
 .ri-sl-key i { display: inline-block; width: 1.5rem; height: 0.3125rem; border-radius: 2px; }
 .ri-sl-key i.g { background: linear-gradient(90deg, var(--sl-g1), var(--sl-g2), var(--sl-g3)); }
 .ri-sl-key i.r { background: linear-gradient(90deg, var(--sl-r3), var(--sl-r2), var(--sl-r1)); }
-/* The map and, over it with the same box, the strands, the scrub band along the section and the cursor marker. */
+/* The map and, over it with the same box, the racing lines, the scrub band along the section and the cursor marker. */
 .ri-sl-stage { position: relative; flex: 1; min-height: 8rem; }
 .ri-sl-svg, .ri-sl-over { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: pan-y; }
 .ri-sl-over { pointer-events: none; }
 .ri-sl-zone { pointer-events: auto; cursor: crosshair; }
 .ri-sl-over .ri-sl-label { pointer-events: auto; }
 .ri-sl-scrub { fill: none; stroke: transparent; stroke-width: 1.75rem; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; }.ri-sl-track { fill: none; stroke: var(--color-border-strong); stroke-width: 4px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-/* The bundle's backing band: six strands at 3.25 px plus a margin. */
+/* The section's band under the racing lines. */
 .ri-sl-segment { fill: none; stroke: var(--ri-raise); stroke-width: 1.625rem; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.ri-sl-strand { fill: none; stroke: var(--lap); stroke-width: 2.5px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; }
-.ri-sl-strand.selected { stroke-width: 3px; }
-.ri-sl-strand.hot { stroke-width: 4.5px; }
+/* A lap's recorded line, where it drove: thin enough that lines a car width apart stay apart. */
+.ri-sl-line { fill: none; stroke: var(--lap); stroke-width: 1.75px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.ri-sl-line.selected { stroke-width: 2.5px; }
+.ri-sl-line.hot { stroke-width: 3.5px; }
 .ri-sl-start { stroke: var(--ri-t1); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .ri-sl-leader { stroke: var(--color-border-strong); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .ri-sl-label { cursor: pointer; }
@@ -56,9 +57,13 @@
 .ri-sl-tab { min-width: 2.75rem; height: var(--control-height); padding: 0 0.875rem; border: 1px solid var(--ri-line); border-radius: 0.5rem; background: transparent; color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: 700; letter-spacing: 0.04em; cursor: pointer; }
 .ri-sl-tab[aria-selected="true"] { border-color: var(--ri-ice); background: var(--ri-ice); color: var(--ri-on-ice); }
 @media (hover: hover) { .ri-sl-tab:not([aria-selected="true"]):hover { background: var(--color-surface-hover); color: var(--ri-t1); } }
-.ri-sl-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--space-1); }
-/* One template for the header, the six rows and the median line: swatch, lap, section time, Δ to the median, Δ bar. */
-.ri-sgrid { display: grid; grid-template-columns: 1.25rem 2.5rem 5rem 4.75rem minmax(3rem, 16rem); column-gap: 0.375rem; align-items: center; justify-content: start; padding: 0 var(--space-3); }
+/* The list is the container the Traffic column sizes itself by (below). */
+.ri-sl-list { container: sl-list / inline-size; flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--space-1); }
+/* One template for the header, the six rows and the median line: swatch, lap, section time, Δ to the median, Δ bar, laps on the
+   tires, traffic (bar, share and side). Each row is its own grid, so every track but the Δ bar is fixed to keep the columns aligned.
+   A list wide enough says the side in words; a narrower one draws the side as the Race chart's mark, so the cell stays on one line
+   at every width. */
+.ri-sgrid { display: grid; grid-template-columns: 1.25rem 2.25rem 4.5rem 4.25rem minmax(1.5rem, 12rem) 2.25rem var(--sl-traffic-w, 6.5rem); column-gap: 0.5rem; align-items: center; justify-content: start; padding: 0 var(--space-3); }
 .ri-sl-cols { height: 1.625rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .ri-sl-cols .r, .ri-sl-median .r { text-align: right; }
 .ri-lap-row.ri-sgrid { min-height: 2.375rem; }
@@ -71,6 +76,30 @@
 .ri-sl-bar::before, .ri-sl-zero::before { content: ""; position: absolute; left: 50%; top: -0.25rem; bottom: -0.25rem; width: 1px; background: var(--ri-t3); }
 .ri-sl-bar i { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--lap); }
 .ri-sl-median { min-height: 1.875rem; border-top: 1px dashed var(--ri-line); border-bottom: 1px dashed var(--ri-line); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
+.ri-sl-tires { text-align: right; color: var(--ri-t2); font-variant-numeric: tabular-nums; }
+/* Traffic: one line, the share's bar, the share and the side, each part a flex item centred on the row's line (the texts are leaf
+   spans, trimmed to their capitals by the control rule in styles.css). A gutter after Tires so the two figures never read as one
+   number. The cell does not clip: a trimmed word's ascenders stand above its box. */
+.ri-sl-traffic { display: inline-flex; align-items: center; gap: 0.375rem; min-width: 0; padding-left: 0.625rem; color: var(--ri-t2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ri-lap-row > .ri-sl-traffic { overflow: visible; }
+.ri-sl-tq { flex: none; }
+.ri-sl-tbar { position: relative; flex: none; width: 1.25rem; height: 0.375rem; border-radius: 2px; background: var(--ri-raise); overflow: hidden; }
+.ri-sl-tbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--ri-t2); }
+/* The side, narrow: the Race chart's mark (backlog #67, LapDot.tsx), a chevron on the leading side for a car ahead, on the trailing
+   side for a car behind, a double ring for both; the words stay for the screen reader and the cell's text. */
+.ri-sl-side { position: relative; display: inline-flex; flex: none; align-items: center; color: var(--ri-t3); }
+.ri-sl-sword { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ri-sl-side::after { content: ""; display: block; width: 0.75rem; height: 0.75rem; background: currentColor; -webkit-mask: var(--sl-mark) center / contain no-repeat; mask: var(--sl-mark) center / contain no-repeat; }
+.ri-sl-side[data-side="ahead"] { --sl-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M4.5 2.25L8.25 6 4.5 9.75' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.ri-sl-side[data-side="behind"] { --sl-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M7.5 2.25L3.75 6 7.5 9.75' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.ri-sl-side[data-side="both"] { --sl-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Ccircle cx='6' cy='6' r='5.1' fill='none' stroke='%23000' stroke-width='1.3'/%3E%3Ccircle cx='6' cy='6' r='2.3' fill='none' stroke='%23000' stroke-width='1.3'/%3E%3C/svg%3E"); }
+/* Wide: a longer bar and the side in words (`· behind`, `· both sides`). */
+@container sl-list (min-width: 34rem) {
+  .ri-sgrid { --sl-traffic-w: 11.5rem; }
+  .ri-sl-tbar { width: 2rem; }
+  .ri-sl-sword { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .ri-sl-side::after { content: none; }
+}
 .ri-sl-median > span:nth-child(2) { color: var(--ri-t3); font-size: var(--text-compact); letter-spacing: 0.08em; text-transform: uppercase; }
 .ri-lap-row.ri-sgrid.hot:not(.selected) { background: var(--color-surface-hover); }
 .ri-sl-none { padding: var(--space-3); color: var(--ri-t2); font-size: var(--text-body); }
@@ -114,5 +143,8 @@
   .ri-lap-row.ri-sgrid { min-height: var(--touch-target); }
 }
 @media (max-width: 420px) {
-  .ri-sgrid { grid-template-columns: 1.125rem 2.25rem 4.5rem 4.5rem minmax(2rem, 1fr); column-gap: 0.25rem; }
+  /* Phone: narrower columns and short headings so the two context columns fit beside the Δ bar; the traffic share is text only,
+     with the side's mark beside it. */
+  .ri-sgrid { grid-template-columns: 0.875rem 1.75rem 3.5rem 3.5rem minmax(1rem, 1fr) 2rem 4.75rem; column-gap: 0.375rem; padding: 0 var(--space-2); }
+  .ri-sl-long, .ri-sl-tbar { display: none; }
 }

@@ -29,7 +29,7 @@ use parse::{Doc, Kind};
 use prune::Spec;
 use val::{Obj, int_of};
 
-pub const PROJECTION_VERSION: u32 = 3;
+pub const PROJECTION_VERSION: u32 = 4;
 
 /// `analysis_view.schema_version` this crate reads, and the analysis document's own.
 const VIEW_SCHEMA_VERSION: i64 = 1;
@@ -99,7 +99,8 @@ pub struct ProjectionSummary {
     pub profile_version: String,
     /// `laps[]` length.
     pub lap_count: u32,
-    /// `lap_traces` distance bins (160 today).
+    /// Distance bins of `traces.ccol`: `lap_trace_columns` when the analysis has them (640), else
+    /// `lap_traces` (160).
     pub bins_per_lap: u32,
     /// `TraceSignal` ids in catalog order.
     pub trace_channels: Vec<String>,
@@ -263,6 +264,7 @@ fn kind_name(kind: Kind) -> &'static str {
 fn build(mut root: Doc) -> Result<Built, ProjectError> {
     // Which document is it, and is its version one this crate reads.
     let nested = root.nested.take();
+    let root_columns = root.lap_trace_columns.take();
     let mut analysis_id = root.analysis_id.take();
     let (mut doc, version_field, supported, expected) = match nested {
         Some(inner) => (
@@ -380,9 +382,30 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
     let (steering, road_wheel) = geometry::steering_basis(lap_traces.steering.as_ref());
     let steering_digits = if road_wheel { 2 } else { 1 };
     let prepared = traces::prepare(&mut lap_traces, road_wheel, steering_digits)?;
+    // The chart's channels come from the dense traces when the analysis has them; the catalog's laps,
+    // sector times and the section times stay on `lap_traces`, the traces the backend's own
+    // investigation reads.
+    let dense = match doc.lap_trace_columns.take().or(root_columns) {
+        Some(mut columns) => {
+            columns.signal_catalog = lap_traces.signal_catalog.clone();
+            let served = traces::prepare_columns(&mut columns, road_wheel, steering_digits)?;
+            if served.laps != prepared.laps {
+                return Err(ProjectError::Json {
+                    path: "lap_trace_columns.traces".into(),
+                    message: format!(
+                        "laps {:?} differ from lap_traces laps {:?}",
+                        served.laps, prepared.laps
+                    ),
+                });
+            }
+            Some((served, columns.traces))
+        }
+        None => None,
+    };
     let catalog = traces::catalog_json(&traces::CatalogInputs {
         envelope: &envelope,
         prepared: &prepared,
+        served: dense.as_ref().map_or(&prepared, |(served, _)| served),
         traces: &lap_traces.traces,
         records: &lap_records,
         sector_start_pcts: lap_traces.sector_start_pcts.as_ref(),
@@ -534,12 +557,16 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
         )?,
     ));
 
+    let (prepared, traces) = match dense {
+        Some((served, traces)) => (served, traces),
+        None => (prepared, lap_traces.traces),
+    };
     Ok(Built {
         lap_count: lap_records.len() as u32,
         envelope,
         json_views: views,
         prepared,
-        traces: lap_traces.traces,
+        traces,
     })
 }
 

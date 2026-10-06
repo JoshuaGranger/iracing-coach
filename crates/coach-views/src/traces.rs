@@ -513,6 +513,21 @@ pub(crate) fn prepare(
     })
 }
 
+/// [`prepare`] for `lap_trace_columns`, its error paths named after it.
+pub(crate) fn prepare_columns(
+    lt: &mut LapTraces,
+    road_wheel: bool,
+    steering_digits: u8,
+) -> Result<Prepared, ProjectError> {
+    prepare(lt, road_wheel, steering_digits).map_err(|error| match error {
+        ProjectError::Json { path, message } => ProjectError::Json {
+            path: path.replacen("lap_traces", "lap_trace_columns", 1),
+            message,
+        },
+        other => other,
+    })
+}
+
 fn signal_json(signal: &Signal) -> Value {
     json!({
         "id": signal.id,
@@ -578,7 +593,10 @@ fn sector_times(trace: &RawTrace, starts: &[f64], bins: usize) -> Vec<Option<f64
 
 pub(crate) struct CatalogInputs<'a> {
     pub envelope: &'a Envelope,
+    /// `lap_traces`: the laps and their sector times.
     pub prepared: &'a Prepared,
+    /// What `traces.ccol` holds: its bins and channels (the dense traces when the analysis has them).
+    pub served: &'a Prepared,
     pub traces: &'a [RawTrace],
     pub records: &'a [LapRecord],
     pub sector_start_pcts: Option<&'a Value>,
@@ -629,11 +647,11 @@ pub(crate) fn catalog_json(input: &CatalogInputs) -> Value {
         .collect();
     let mut view = Map::new();
     input.envelope.apply(&mut view);
-    view.insert("bins_per_lap".into(), json!(prepared.bins));
+    view.insert("bins_per_lap".into(), json!(input.served.bins));
     view.insert("laps".into(), Value::Array(laps));
     view.insert(
         "signals".into(),
-        Value::Array(prepared.signals.iter().map(signal_json).collect()),
+        Value::Array(input.served.signals.iter().map(signal_json).collect()),
     );
     view.insert("sector_start_pcts".into(), json!(sectors));
     view.insert("steering_basis".into(), input.steering_basis.clone());
@@ -647,8 +665,8 @@ pub(crate) fn catalog_json(input: &CatalogInputs) -> Value {
             "max_trace_rows": 10
         }),
     );
-    if !prepared.omitted.is_empty() {
-        view.insert("omitted_signals".into(), json!(prepared.omitted));
+    if !input.served.omitted.is_empty() {
+        view.insert("omitted_signals".into(), json!(input.served.omitted));
     }
     Value::Object(view)
 }

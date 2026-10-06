@@ -15,6 +15,9 @@ pub const LAP: &[&str] = &[
     "racing_state_fraction",
     "clean_context.on_track_fraction",
     "clean_context.traffic_proximity_fraction",
+    "clean_context.traffic_ahead_fraction",
+    "clean_context.traffic_behind_fraction",
+    "clean_context.traffic_side",
     "damage_repair_context.automatic_coaching_reference_eligible",
     "damage_repair_context.exclusion_reason_codes",
 ];

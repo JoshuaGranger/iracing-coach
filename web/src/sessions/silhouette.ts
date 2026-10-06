@@ -1,5 +1,8 @@
+import { principalAxisRotation, rotatePoint } from "../investigation/geometry/rotation";
+
 /**
- * The track silhouette on an event card: the analysis geometry's main path, fitted to a small box, with a tick at the line.
+ * The track silhouette on an event card: the analysis geometry's main path, turned so its long axis is horizontal by the same rule
+ * as the investigation map (backlog #81, `investigation/geometry/rotation.ts`), fitted to a small box, with a tick at the line.
  * No geometry (or too few points to be a circuit) gives no silhouette.
  */
 export interface Silhouette {
@@ -30,9 +33,12 @@ export function silhouetteOf(xs: readonly number[] | undefined, ys: readonly num
   }
   if (pts.length < MIN_POINTS) return null;
   const stride = Math.max(1, Math.ceil(pts.length / MAX_POINTS));
-  const picked = pts.filter((_, i) => i % stride === 0);
+  const thinned = pts.filter((_, i) => i % stride === 0);
   const last = pts[pts.length - 1]!;
-  if (picked[picked.length - 1] !== last) picked.push(last);
+  if (thinned[thinned.length - 1] !== last) thinned.push(last);
+  // The turn comes from every point (the path starts at the line), as the map's does, so card and map agree.
+  const rotation = principalAxisRotation(pts, pts[0]);
+  const picked = thinned.map((p) => rotatePoint(rotation, p.x, p.y));
 
   let minX = Infinity;
   let maxX = -Infinity;

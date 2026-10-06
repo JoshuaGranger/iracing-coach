@@ -2,6 +2,7 @@ import { runColour, runDash } from "../../core/palette";
 import type { PitStop } from "../geometry/rail-model";
 import type { Investigation, InvestigationLap, RunView } from "../investigation-model";
 import { asRecord, num } from "../types";
+import { lapKind, type LapKind } from "./traffic";
 
 const LITERS_PER_GALLON = 3.785411784;
 
@@ -255,7 +256,8 @@ export function runLineReadout(parts: readonly RunLinePart[]): string {
 export interface SparkPoint {
   x: number;
   y: number;
-  used: boolean;
+  /** The lap's mark on the chart: open air (in the fit), screened for traffic alone, screened for anything else (#67). */
+  kind: LapKind;
 }
 
 export interface RunCard {
@@ -313,7 +315,7 @@ export function runCards(inv: Investigation, runs: readonly unknown[]): RunCard[
     return {
       runNumber: run.runNumber,
       lapsText: `L${run.firstLap}–${run.lastLap}`,
-      points: drawn.filter((lap) => lap.runNumber === run.runNumber).map((lap) => ({ x: lap.greenExposure as number, y: lap.lapTimeS as number, used: lap.eligible })),
+      points: drawn.filter((lap) => lap.runNumber === run.runNumber).map((lap) => ({ x: lap.greenExposure as number, y: lap.lapTimeS as number, kind: lapKind(lap) })),
       fit: drawnFit ? fitSegment(run) : null,
       slope: drawnFit ? fitLabel(run) : null,
       fallOff: f ? perLapText(f.sPerLap) : null,
@@ -327,7 +329,7 @@ export function runCards(inv: Investigation, runs: readonly unknown[]): RunCard[
 }
 
 /** The card sparkline in a `width` × `height` box (y down, slower up): dot centres and the fit's two ends, on the run's own scale. */
-export function sparkGeometry(card: Pick<RunCard, "points" | "fit">, width: number, height: number): { dots: { cx: number; cy: number; used: boolean }[]; fit: [number, number, number, number] | null } {
+export function sparkGeometry(card: Pick<RunCard, "points" | "fit">, width: number, height: number): { dots: { cx: number; cy: number; kind: LapKind }[]; fit: [number, number, number, number] | null } {
   const xs = [...card.points.map((p) => p.x), ...(card.fit ? [card.fit.x1, card.fit.x2] : [])];
   const ys = [...card.points.map((p) => p.y), ...(card.fit ? [card.fit.y1, card.fit.y2] : [])];
   if (xs.length === 0) return { dots: [], fit: null };
@@ -338,7 +340,7 @@ export function sparkGeometry(card: Pick<RunCard, "points" | "fit">, width: numb
   const sy = (y: number): number => height - pad - ((y - y0) / Math.max(1e-9, y1 - y0)) * (height - 2 * pad);
   const r = (value: number): number => Math.round(value * 10) / 10;
   return {
-    dots: card.points.map((p) => ({ cx: r(sx(p.x)), cy: r(sy(p.y)), used: p.used })),
+    dots: card.points.map((p) => ({ cx: r(sx(p.x)), cy: r(sy(p.y)), kind: p.kind })),
     fit: card.fit ? [r(sx(card.fit.x1)), r(sy(card.fit.y1)), r(sx(card.fit.x2)), r(sy(card.fit.y2))] : null,
   };
 }

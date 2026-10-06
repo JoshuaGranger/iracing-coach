@@ -478,6 +478,8 @@ export type PartTone = "gain" | "loss" | "green" | "caution" | "unit" | "sep";
 export interface SlotPart {
   text: string;
   tone?: PartTone;
+  /** The part's own hover and accessible name: the finish arrow says where the place was gained or lost from (`up 8 from P12`). */
+  title?: string;
 }
 export interface Slot {
   key: SlotKey;
@@ -520,7 +522,7 @@ function lapText(seconds: number): string {
 
 /**
  * The seven slots of one phase, every one present so a missing value reads `—` in its place. The finish is a plain figure (no win
- * flag); a position change (race only, against the official start, which `from P12` names) is the one gain or loss colour; the
+ * flag); a position change (race only, against the official start, which the arrow's hover names: `up 8 from P12`) is the one gain or loss colour; the
  * green-lap count is in the green-flag colour, cautions above zero in the caution colour; best, pace, stops, burn and the long run
  * carry no colour.
  */
@@ -534,8 +536,12 @@ export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
   else {
     const parts: SlotPart[] = [{ text: formatPosition(final) }];
     const change = positionChange(s);
-    if (change && change.gained !== 0) parts.push({ text: `${change.gained > 0 ? "▲" : "▼"}${Math.abs(change.gained)}`, tone: change.gained > 0 ? "gain" : "loss" });
-    if (change) parts.push({ text: `from P${change.from}`, tone: "unit" });
+    if (change && change.gained !== 0) {
+      const places = Math.abs(change.gained);
+      const gain = change.gained > 0;
+      // The grid position is not printed (#68): it is the arrow's hover and accessible name.
+      parts.push({ text: `${gain ? "▲" : "▼"}${places}`, tone: gain ? "gain" : "loss", title: `${gain ? "up" : "down"} ${places} from P${change.from}` });
+    }
     out.push({ key: "pos", label, title: change ? `Finished P${final}, started P${change.from}` : `Finished P${final}`, parts, missing: false });
   }
 
@@ -642,43 +648,4 @@ export function cellSlots(s: Session, eventBest: number | null): Slot[] {
 /** Coloured figures in one cell: the budget is at most three (one position change, the green count, one caution count). */
 export function colouredFigures(slots: readonly Slot[]): number {
   return slots.reduce((n, s) => n + s.parts.filter((p) => p.tone === "gain" || p.tone === "loss" || p.tone === "green" || p.tone === "caution").length, 0);
-}
-
-/** The column a phase takes: a test shares practice's. */
-const COLUMN_ORDER = ["P", "Q", "W", "R"] as const;
-export type ColumnCode = (typeof COLUMN_ORDER)[number];
-const columnCode = (s: Session): ColumnCode => {
-  const code = phaseOf(s.session_type).code;
-  return code === "T" ? "P" : code;
-};
-
-/**
- * The phase columns the list uses: the phases present in what is shown, in running order. Two events line up for comparison because
- * a phase keeps its column in every row; a filter that leaves only races leaves one column.
- */
-export function phaseLayout(sessions: readonly Session[]): ColumnCode[] {
-  const present = new Set(sessions.map(columnCode));
-  return COLUMN_ORDER.filter((c) => present.has(c));
-}
-
-/**
- * The grid column of each phase of one event under `layout`. An event whose phases are not distinct (two practices) follows running
- * order instead. Returns the columns and how many the row has.
- */
-export function phaseColumns(sessions: readonly Session[], layout: readonly ColumnCode[]): { columns: number[]; count: number; tracks: ColumnCode[] } {
-  const codes = sessions.map(columnCode);
-  if (new Set(codes).size === codes.length && codes.every((c) => layout.includes(c))) return { columns: codes.map((c) => layout.indexOf(c)), count: Math.max(1, layout.length), tracks: layout.length ? [...layout] : codes };
-  const count = Math.max(layout.length, sessions.length, 1);
-  return { columns: sessions.map((_, i) => i), count, tracks: Array.from({ length: count }, (_, i) => codes[i] ?? layout[i] ?? "P") };
-}
-
-/**
- * Relative width of a phase column: the race is the row's subject and takes the most room; practice is narrower, qualifying (three
- * figures) narrower still. Fractions of the same container, so a phase keeps its column edge in every row.
- */
-const TRACK_FR: Record<ColumnCode, number> = { P: 1, W: 1, Q: 0.7, R: 1.9 };
-
-/** The CSS grid template of a row's phase columns. */
-export function gridTemplate(tracks: readonly ColumnCode[]): string {
-  return (tracks.length ? tracks : (["R"] as const)).map((c) => `minmax(0, ${TRACK_FR[c]}fr)`).join(" ");
 }

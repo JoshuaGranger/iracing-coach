@@ -9,7 +9,6 @@ import {
   referenceLapFor,
   resolve,
   signalRange,
-  smoothedValue,
   type AggregateSeries,
   type Range,
   type TraceData,
@@ -100,6 +99,8 @@ export interface CursorSignal {
   digits: number | null;
   min: number;
   max: number;
+  /** A step channel (gear, on/off, position): read at the nearer bin, never between two. */
+  step?: boolean;
 }
 
 export interface CursorRow {
@@ -114,7 +115,7 @@ export interface CursorRow {
 export interface CursorTrace {
   lap: number;
   color: string;
-  /** `rowValues[row][signal]` is a bin-length array of smoothed display values (NaN missing). */
+  /** `rowValues[row][signal]` is a bin-length array of the measured display values (NaN missing); the cursor interpolates between them. */
   rowValues: Float64Array[][];
 }
 
@@ -170,7 +171,7 @@ export function buildCursorConfig(input: CursorInputs): CursorConfig {
       const resolved = resolve(data, id);
       if (!resolved) continue;
       const range = signalRange(data, id, lapIndices, reference);
-      signals.push({ id, shortLabel: resolved.shortLabel, unit: resolved.unit, digits: resolved.digits, min: range.min, max: range.max });
+      signals.push({ id, shortLabel: resolved.shortLabel, unit: resolved.unit, digits: resolved.digits, min: range.min, max: range.max, step: resolved.step });
     }
     return { rowId: row.row_id, top: metrics.chartTop + rowIndex * metrics.rowHeight, plotHeight: metrics.plotHeight, signals, widestText: 8 };
   });
@@ -179,9 +180,8 @@ export function buildCursorConfig(input: CursorInputs): CursorConfig {
     const rowValues = rows.map((row) =>
       row.signals.map((signal) => {
         const column = plotColumn(data, signal.id, reference);
-        const resolved = resolve(data, signal.id);
         const out = new Float64Array(bins).fill(Number.NaN);
-        if (column && resolved) for (let bin = 0; bin < bins; bin++) out[bin] = smoothedValue(column, lapIndex, bin, bins, signal.id, resolved.step);
+        if (column) out.set(column.subarray(lapIndex * bins, (lapIndex + 1) * bins));
         return out;
       }),
     );

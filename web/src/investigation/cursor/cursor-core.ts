@@ -24,6 +24,53 @@ export function nearestIndex(points: ArrayLike<number>, fraction: number): numbe
   return Math.abs(points[low]! - fraction) < Math.abs(points[low - 1]! - fraction) ? low : low - 1;
 }
 
+/**
+ * Where `fraction` falls on an ascending bin grid: the two measured bins around it and how far it lies from `lower` towards
+ * `upper` (0 to 1). Before the first or past the last bin it holds that bin (`lower === upper`, `t` 0): never beyond a measured point.
+ */
+export interface BinPosition {
+  lower: number;
+  upper: number;
+  t: number;
+}
+
+export function binPosition(points: ArrayLike<number>, fraction: number): BinPosition {
+  const count = points.length;
+  if (count === 0) return { lower: -1, upper: -1, t: 0 };
+  if (!(fraction > points[0]!)) return { lower: 0, upper: 0, t: 0 };
+  if (!(fraction < points[count - 1]!)) return { lower: count - 1, upper: count - 1, t: 0 };
+  // First bin strictly after the fraction; the one before it is at or before it.
+  let low = 1;
+  let high = count - 1;
+  while (low < high) {
+    const middle = low + ((high - low) >> 1);
+    if (points[middle]! > fraction) high = middle;
+    else low = middle + 1;
+  }
+  const lower = low - 1;
+  const span = points[low]! - points[lower]!;
+  return { lower, upper: low, t: span > 0 ? clamp((fraction - points[lower]!) / span, 0, 1) : 0 };
+}
+
+/** The bin of a position the cursor reads a step channel (gear, on/off) from: the nearer of the two. */
+export function nearerBin(position: BinPosition): number {
+  return position.t < 0.5 ? position.lower : position.upper;
+}
+
+/**
+ * A channel's value at a position: linear between the two measured neighbours when both hold a value, the nearer bin's value
+ * when only it does (a gap in the recording stays a gap), and the nearer bin's value for a step channel. `offset` is the lap's
+ * first bin in a lap-major column.
+ */
+export function valueAt(values: ArrayLike<number>, position: BinPosition, step = false, offset = 0): number {
+  if (position.lower < 0) return Number.NaN;
+  const a = values[offset + position.lower]!;
+  const b = values[offset + position.upper]!;
+  if (step || position.lower === position.upper) return position.t < 0.5 ? a : b;
+  if (Number.isFinite(a) && Number.isFinite(b)) return a + (b - a) * position.t;
+  return position.t < 0.5 ? a : b;
+}
+
 export function signed(value: number, digits: number): string {
   if (Math.abs(value) < Math.pow(10, -digits) / 2) return (0).toFixed(digits);
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;

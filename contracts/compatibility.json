@@ -11,7 +11,7 @@
     "worker": "this backend: Python 3.12, standard library only, inside the server container"
   },
   "backend": {
-    "analysis_profile_version": "post-race-foundations-v24",
+    "analysis_profile_version": "post-race-foundations-v25",
     "analysis_schema_version": 2,
     "analysis_view_envelope_version": 1,
     "analyze_result_contract_version": 1,

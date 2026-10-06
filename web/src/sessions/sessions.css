@@ -1,22 +1,11 @@
 /*
- * Sessions page, web round 2 (docs/08-rewrite/web-round-2-plan.md, "Sessions"; round 3 #33; round 4 #50-#57): one card per event,
- * a gap between cards, read as blocks. Identity at the left behind a divider, then each phase its own panel across a gutter: the
- * race widest with its seven figures, practice and qualifying narrower in quieter type (a stacked row per phase on a phone). Colour
- * is data and nothing else: gain or loss on a position change, green on the green-lap count, caution on a count above zero, the
- * phase hue on its edge and badge, the car's stripe. No panel fills, no glow. Interaction is light, never a hue. Sizes are rem.
+ * Sessions page, web round 2 (docs/08-rewrite/web-round-2-plan.md, "Sessions"; round 3 #33; round 4 #50-#57, #68-#72): one card per
+ * event, a gap between cards. The identity block stands at the left (above the lines under 62 rem); the phases are full-width lines
+ * stacked in session order, each its own panel: badge, name and time at the left, its figures evenly spaced across the line, the race
+ * line strongest. Colour is data and nothing else: gain or loss on a position change, green on the green-lap count, caution on a count
+ * above zero, the phase hue on its edge and badge, the car's stripe. No panel fills, no glow. Interaction is light, never a hue. Sizes
+ * are rem.
  */
-.sx [data-car="0"],
-.sx-event[data-car="0"] {
-  --car: var(--car-1);
-}
-.sx [data-car="1"],
-.sx-event[data-car="1"] {
-  --car: var(--car-2);
-}
-.sx [data-car="2"],
-.sx-event[data-car="2"] {
-  --car: var(--car-3);
-}
 /* Phase hues (backlog #52): practice, qualifying and race each their own token, the race the strongest; the investigation's
    P · Q · R selector uses the same three. */
 .sx [data-phase="P"],
@@ -81,8 +70,7 @@
   display: none;
 }
 .sx-event {
-  position: relative;
-  container-type: inline-size;
+  container: sx-event / inline-size;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-panel);
   background: var(--color-surface1);
@@ -101,6 +89,7 @@
   width: 0.875rem;
   height: 0.875rem;
 }
+/* The event's lock sits in the top-right corner of the identity block, inside it (backlog #69). */
 .sx-card-lock {
   position: absolute;
   top: 0.25rem;
@@ -113,36 +102,58 @@
 }
 .sx-row {
   display: grid;
-  grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
+  grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
   min-height: 5.5rem;
 }
-/* The identity block ends at a visible divider; the phase panels sit a gutter beyond it. */
+
+/* ---- identity block (backlog #71) --------------------------------------------------- */
+/* The block ends at a visible divider and is centred against the phase lines beside it. The silhouette stands at the left, level with
+   the first text line; the track, `config · date` and the car share one left edge to its right. With no silhouette the text starts
+   at the block's own edge: nothing is reserved for it. */
 .sx-id {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.125rem;
   min-width: 0;
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border-right: 1px solid var(--color-border-subtle);
 }
-.sx-id-title {
+.sx-id-body {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
+  gap: var(--space-3);
   min-width: 0;
 }
+.sx-id-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+/* The track name is the only display-type line: one line where it fits, wrapped at most once. */
 .sx-id h2 {
+  display: -webkit-box;
+  overflow: hidden;
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   line-height: 1.25rem;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* The lock holds the block's top-right corner: the name never runs under it. */
+.sx-event[data-setup] .sx-id h2 {
+  padding-right: 1.5rem;
 }
 .sx-sil {
   flex: none;
   width: auto;
   height: 1.5rem;
   max-width: 2.25rem;
+  /* centred on the name's first line (1.25 rem tall) */
+  margin-top: -0.125rem;
 }
 .sx-sil-line {
   stroke: var(--color-text-secondary);
@@ -158,58 +169,71 @@
 }
 .sx-meta,
 .sx-car {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.125rem var(--space-2);
   min-width: 0;
   color: var(--color-text-muted);
   font-size: var(--text-compact);
   line-height: 1.125rem;
+  overflow-wrap: anywhere;
 }
 .sx-car {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
   color: var(--color-text-secondary);
 }
+/* The car's colour bar stands on the same left edge as the lines above and spans its text, one line or two. */
+.sx-car .sx-stripe {
+  height: auto;
+  min-height: 1.125rem;
+  align-self: stretch;
+}
 
-/* ---- phase cells ------------------------------------------------------------------- */
-/* Phase columns from the row's template (`gridTemplate`): fractions of one width, so a phase keeps its edge in every row. */
-.sx-cells {
-  display: grid;
-  grid-template-columns: var(--tracks, minmax(0, 1fr));
-  gap: var(--space-3);
+/* ---- phase lines: full width, stacked in session order (backlog #72; spacing #70) --------- */
+/* A missing phase has no line, so a race-only event is one line. A card taller than its lines (the identity beside them) keeps them
+   centred. Each line is its own panel; the race line carries its hue strongest and its figures largest. */
+.sx-lines {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
   min-width: 0;
-  /* the right gutter holds the card's lock */
-  padding: var(--space-2) 2rem var(--space-2) var(--space-3);
+  margin: 0;
+  padding: var(--space-3);
   list-style: none;
 }
-/* Each phase is its own panel: border, radius, a step lighter than the row. */
-.sx-cell {
-  grid-column: var(--col, auto);
-  grid-row: 1;
-  display: flex;
+.sx-line {
+  container: sx-line / inline-size;
   min-width: 0;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-card);
   background: var(--color-surface2);
   overflow: hidden;
 }
-.sx-cell-body {
-  position: relative;
-  flex: 1;
+.sx-line-body {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
   min-width: 0;
-  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  /* about 0.75 rem inside; the left edge's hue takes the first 3 px (5 px on the race) */
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   color: inherit;
-  /* The phase's hue: a left edge and a faint tint behind the header, never a saturated fill. */
-  background-image: linear-gradient(90deg, color-mix(in srgb, var(--b) 10%, transparent), transparent 45%);
+  /* The phase's hue: a left edge and a faint tint behind the head, never a saturated fill. */
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--b) 8%, transparent), transparent 40%);
   box-shadow: inset 3px 0 0 var(--b);
 }
-.sx-cell[data-kind="race"] .sx-cell-body {
-  box-shadow: inset 4px 0 0 var(--b);
+.sx-line[data-kind="race"] .sx-line-body {
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--b) 14%, transparent), transparent 55%);
+  box-shadow: inset 5px 0 0 var(--b);
 }
-/* P, Q or R at the cell's top-left (backlog #52). */
+a.sx-line-body:hover {
+  background: var(--color-surface3);
+  text-decoration: none;
+}
+a.sx-line-body:focus-visible {
+  outline-offset: -3px;
+}
+/* P, Q or R at the head's left (backlog #52). */
 .sx-badge {
   display: inline-grid;
   flex: none;
@@ -225,68 +249,43 @@
   font-weight: 700;
   line-height: 1;
 }
-a.sx-cell-body:hover {
-  background: var(--color-surface3);
-  text-decoration: none;
-}
-a.sx-cell-body:focus-visible {
-  outline-offset: -3px;
-}
-/* header slot and the seven figures: four columns by two rows, so every phase reads in the same place */
+
+/* The line is one grid, labels over figures, one gutter (1.25 rem) between columns and one spacing between rows. Narrow, the head
+   takes its own row and the figures wrap under it in even columns (4 for the race and practice, 3 for qualifying; fewer as the line
+   narrows). From 56 rem the head (badge, name, time on one baseline) is the first column and the figures follow in the race's seven
+   even columns; practice and qualifying take the columns that space their figures evenly (1, 3, 5, 7 and 1, 4, 7), so every
+   column lines up from one phase to the next. */
 .sx-slots {
+  --head: 15rem;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(0, 1fr));
-  gap: 0 var(--space-2);
-  max-width: 28rem;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(var(--cols, 4), minmax(max-content, 1fr));
+  gap: 0.625rem 1.25rem;
+  align-items: start;
+  min-width: 0;
+}
+.sx-line[data-kind="race"] .sx-slots,
+.sx-line[data-kind="practice"] .sx-slots {
+  --cols: 4;
+}
+.sx-line[data-kind="qualify"] .sx-slots {
+  --cols: 3;
 }
 .sx-slots[data-figures="false"] {
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-}
-/*
- * Columns as wide as their figures, so a figure is never cut or run into its neighbour (`P4 ▲8 from P12`, `0.47 gal/lap`).
- * Race: header, finish, laps, best / pace, stops, burn, long run. Practice: header, position, best / long run, fall-off.
- * Qualifying: header, position / lap 1, lap 2.
- */
-.sx-cell {
-  container: sx-cell / inline-size;
-}
-.sx-cell[data-kind="race"] .sx-slots[data-figures="true"] {
-  grid-template-columns: repeat(4, max-content);
-  gap: 0 var(--space-4);
-  max-width: none;
-}
-.sx-cell[data-kind="practice"] .sx-slots[data-figures="true"] {
-  grid-template-columns: repeat(3, max-content);
-  gap: 0 var(--space-4);
-  max-width: none;
-}
-.sx-cell[data-kind="qualify"] .sx-slots[data-figures="true"] {
-  grid-template-columns: repeat(2, max-content);
-  gap: 0 var(--space-4);
-  max-width: none;
-}
-/* A race cell too narrow for four columns (a phone): the header on its own line, the seven figures in three columns, and the
-   finish's reference may drop under its arrow. */
-@container sx-cell (max-width: 26rem) {
-  .sx-cell[data-kind="race"] .sx-slots[data-figures="true"] {
-    grid-template-columns: max-content minmax(0, 1fr) max-content;
-    gap: 0.125rem var(--space-3);
-  }
-  .sx-cell[data-kind="race"] .sx-head {
-    grid-column: 1 / -1;
-    flex-direction: row;
-    align-items: baseline;
-    gap: var(--space-2);
-  }
-  .sx-cell[data-kind="race"] .sx-v {
-    flex-wrap: wrap;
-    row-gap: 0;
-  }
+  flex: 0 1 auto;
+  grid-template-columns: max-content;
 }
 .sx-slot {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+/* The head: badge, name and time on one baseline, on its own row until the line is wide enough to carry it beside the figures. */
+.sx-head {
+  grid-column: 1 / -1;
+  flex-flow: row wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
 }
 .sx-l {
   overflow: hidden;
@@ -310,6 +309,11 @@ a.sx-cell-body:focus-visible {
   line-height: 1.25rem;
   white-space: nowrap;
 }
+/* The race is the card's subject: its figures are the largest on the card. */
+.sx-line[data-kind="race"] .sx-v {
+  font-size: var(--text-section-title);
+  line-height: 1.5rem;
+}
 /* Practice and qualifying figures: the preamble, at the secondary size (the owner's 14 px minimum) and colour. */
 .sx-qv {
   display: flex;
@@ -330,11 +334,15 @@ a.sx-cell-body:focus-visible {
   color: var(--color-text-disabled);
 }
 .sx-phase {
-  align-items: center;
+  align-items: baseline;
   gap: 0.375rem;
   font-family: var(--font-ui);
   font-stretch: normal;
   font-weight: var(--weight-semibold);
+}
+.sx-line[data-kind="race"] .sx-phase {
+  font-size: var(--text-body);
+  line-height: 1.25rem;
 }
 /* The event's fastest lap is marked by weight, never by colour. */
 .sx-v.event-best,
@@ -372,7 +380,6 @@ a.sx-cell-body:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  padding-top: 0.25rem;
 }
 /* The verb inside the chip is a control: the app's control size (15 px, 36 px; 44 px on touch). */
 .sx-state-row .chip-act {
@@ -399,54 +406,55 @@ a.sx-cell-body:focus-visible {
   text-decoration: none;
 }
 
-/* ---- tablet: identity on its own line, the phases still inline ---------------------- */
-@container (max-width: 62rem) {
+/* ---- by width: container queries on the card and on each line, not a device test ---------- */
+/* Under 62 rem the identity is a block above the lines, its divider under it. */
+@container sx-event (max-width: 62rem) {
   .sx-row {
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
   }
   .sx-id {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.125rem var(--space-4);
-    padding-bottom: var(--space-1);
-  }
-  .sx-id-title {
-    flex: 0 1 auto;
-  }
-  /* The divider moves under the identity line; the lock sits at its right end. */
-  .sx-id {
-    padding-right: 2rem;
     border-right: 0;
     border-bottom: 1px solid var(--color-border-subtle);
   }
-  .sx-cells {
-    padding-right: var(--space-3);
+}
+/* A line under 30 rem (a phone): the race in three columns, a narrower gutter. Under 21 rem: two for the race and practice. */
+@container sx-line (max-width: 30rem) {
+  .sx-slots {
+    column-gap: var(--space-4);
+  }
+  .sx-line[data-kind="race"] .sx-slots {
+    --cols: 3;
   }
 }
-
-/* ---- phone: one stacked row per phase ------------------------------------------------ */
-@container (max-width: 40rem) {
-  .sx-cells {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-2);
-    padding: var(--space-2);
+@container sx-line (max-width: 21rem) {
+  .sx-line[data-kind="race"] .sx-slots,
+  .sx-line[data-kind="practice"] .sx-slots {
+    --cols: 2;
   }
-  .sx-cell {
+}
+/* A line over 56 rem: the head beside the figures, all on one row. Items sit on the last baseline: the head's text baseline is the
+   figures' baseline, their labels above it. */
+@container sx-line (min-width: 56.01rem) {
+  .sx-slots {
+    grid-template-columns: var(--head) repeat(7, minmax(max-content, 1fr));
+    align-items: end;
+    align-items: last baseline;
+  }
+  .sx-head {
     grid-column: 1;
-    grid-row: auto;
   }
-  .sx-id {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.125rem;
-    padding: var(--space-2) 2rem var(--space-2) var(--space-3);
+  .sx-slots[data-figures="false"] {
+    grid-template-columns: var(--head) max-content;
   }
-  .sx-cell-body {
-    padding-left: var(--space-3);
-  }
+  .sx-line[data-kind="practice"] .sx-slot:nth-child(2) { grid-column: 2; }
+  .sx-line[data-kind="practice"] .sx-slot:nth-child(3) { grid-column: 4; }
+  .sx-line[data-kind="practice"] .sx-slot:nth-child(4) { grid-column: 6; }
+  .sx-line[data-kind="practice"] .sx-slot:nth-child(5) { grid-column: 8; }
+  .sx-line[data-kind="qualify"] .sx-slot:nth-child(2) { grid-column: 2; }
+  .sx-line[data-kind="qualify"] .sx-slot:nth-child(3) { grid-column: 5; }
+  .sx-line[data-kind="qualify"] .sx-slot:nth-child(4) { grid-column: 8; }
+  .sx-slots[data-figures="false"] .sx-slot:nth-child(2) { grid-column: 2; }
 }
 
 /* Touch: the action inside a chip is a real target. */

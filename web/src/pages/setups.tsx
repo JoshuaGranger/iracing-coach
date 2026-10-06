@@ -10,7 +10,7 @@ import { Chip, Empty, ErrorLine, Loading, Notice, Stripe } from "../ui/kit";
 import { FilterBar, type FilterControl } from "../ui/filter-bar";
 import { MultiSelect } from "../ui/multi-select";
 import { Segmented } from "../ui/segmented";
-import { type CarGroup, type Entry, type RacedFilter, carColors, carsWithSetups, groupLibrary, racedCountOf } from "../setups/library";
+import { type CarGroup, type Entry, type RacedFilter, carsFilesOnly, carsWithSetups, carsWithValues, fileNames, groupLibrary, racedCountOf } from "../setups/library";
 import { Chevron, RacedMark } from "../setups/glyphs";
 import {
   FIRST_ROWS,
@@ -203,6 +203,51 @@ function CarSection({
   );
 }
 
+/** One car whose files have no decoded values: its screen name, the file count (never a setup count), the file names on demand. */
+function FilesCar({ g }: { g: CarGroup }) {
+  const [open, setOpen] = useState(false);
+  const names = fileNames(g);
+  const id = `files-${g.carPath.replace(/[^A-Za-z0-9]+/g, "-")}`;
+  return (
+    <li class="s-fcar" data-car-files={g.carPath} style={`--car:${g.color}`}>
+      <button type="button" class="s-fcar-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        <Chevron down={open} />
+        <span class="s-fcar-name">{g.carName}</span>
+        <span class="n">
+          <strong>{names.length}</strong> {names.length === 1 ? "file" : "files"}
+        </span>
+      </button>
+      <ul id={id} class="s-fcar-files" hidden={!open} aria-label={`${g.carName} files`}>
+        {names.map((n, i) => (
+          <li key={`${n}-${i}`}>{n}</li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+/** Cars with files and no decoded setup, below the sections under a quiet divider, collapsed until asked for (#74). */
+function FilesWithoutValues({ cars }: { cars: CarGroup[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section class="s-files" aria-label="Files without values" data-open={open ? "true" : "false"}>
+      <button type="button" class="s-files-toggle" aria-expanded={open} aria-controls="s-files-list" onClick={() => setOpen(!open)}>
+        <span class="s-files-rule" aria-hidden="true" />
+        <Chevron down={open} />
+        <span class="s-files-label">
+          Files without values · {cars.length} {cars.length === 1 ? "car" : "cars"}
+        </span>
+        <span class="s-files-rule" aria-hidden="true" />
+      </button>
+      <ul id="s-files-list" class="s-fcars" hidden={!open}>
+        {cars.map((g) => (
+          <FilesCar key={g.carPath} g={g} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 const hintKey = (customerId: number) => `coach.setups.filters.${customerId}`;
 
 /**
@@ -248,7 +293,6 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
   const raced = sel.raced;
   const text = sel.text;
   const q = useDebounced(text.trim(), 250);
-  const options = useResource(paths.carsAndTracks(customerId), () => api.carsAndTracks(customerId));
   const query = { q: q || undefined, limit: PAGE, library };
   const key = paths.setups(customerId, query);
   const first = useResource(key, (signal) => api.setups(customerId, query, { signal }));
@@ -269,15 +313,7 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
   const setups = useMemo(() => [...(first.data?.setups ?? []), ...(more?.setups ?? [])], [first.data, more]);
   const files = useMemo(() => (first.data?.unlinked_files ?? []).filter((f) => !q || f.relative_path.toLowerCase().includes(q.toLowerCase())), [first.data, q]);
 
-  const colors = useMemo(
-    () =>
-      carColors(
-        (options.data?.cars ?? []).map((c) => c.car_path),
-        setups.map((s) => s.car_path),
-      ),
-    [options.data, setups],
-  );
-  const all = useMemo(() => groupLibrary(setups, files, colors), [setups, files, colors]);
+  const all = useMemo(() => groupLibrary(setups, files), [setups, files]);
   // The Car dropdown offers the cars the setup library holds (the setups response, never the sessions' cars), and a name search
   // does not shrink it: it keeps the list of the unsearched library for this driver and library.
   const offeredCars = useRef<{ at: string; cars: ReturnType<typeof carsWithSetups> } | null>(null);
@@ -293,7 +329,9 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
     return sel.cars.filter((c) => known.has(c.toLowerCase()));
   }, [sel.cars, offered]);
   const effective: SetupSelection = { ...sel, cars };
-  const groups = useMemo(() => groupLibrary(setups, files, colors, { cars: new Set(cars), raced }), [setups, files, colors, cars, raced]);
+  const everything = useMemo(() => groupLibrary(setups, files, { cars: new Set(cars), raced }), [setups, files, cars, raced]);
+  const groups = useMemo(() => carsWithValues(everything), [everything]);
+  const withoutValues = useMemo(() => carsFilesOnly(everything), [everything]);
   const filtering = !isEmptySelection(effective);
 
   // A car header sticks under the app bar, whatever height the bar wraps to.
@@ -350,7 +388,7 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
       {first.error && !first.data ? <ErrorLine error={first.error} /> : null}
       {first.error && first.data ? <Notice tone="warn">Could not refresh: {first.error.message}</Notice> : null}
       {!first.data && !first.error ? <Loading what="setups" /> : null}
-      {first.data && groups.length === 0 ? <Empty title={filtering ? "No setups match" : "No setups yet"} /> : null}
+      {first.data && groups.length === 0 && withoutValues.length === 0 ? <Empty title={filtering ? "No setups match" : "No setups yet"} /> : null}
       <div class="s-cars" aria-label="Setups">
         {groups.map((g) => (
           <CarSection
@@ -367,6 +405,7 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
           />
         ))}
       </div>
+      {first.data && withoutValues.length > 0 ? <FilesWithoutValues cars={withoutValues} /> : null}
     </div>
   );
 }
