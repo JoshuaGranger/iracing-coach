@@ -35,3 +35,9 @@ Commit `d608ad8` (complaints #33–#49, spec in `../web-round-2-plan.md` "Round 
 # Round 4 release (2026-10-04, late)
 
 Commits `b0b539e` (complaints #50–#66) and `47eb540` (only round screenshots stay tracked under `web/target`), released as `iracing-coach:47eb540…`, healthy. Analysis profile `post-race-foundations-v24` (track geometry rule `clean-racing-laps-v1`): every stored analysis is older than the worker's profile, so Joshua's 51 sessions were queued for re-analysis first (`POST /api/v1/sessions/{id}/analysis`, 51 × 202); the Lab sessions follow through `POST /api/v1/admin/reanalyze` once his are done. Until a session is re-analysed its map is the old outline.
+
+# Round 5 release (2026-10-06)
+
+Commit `bfef9d7` (complaints #67–#83, spec `../web-round-2-plan.md` "Round 5"), released as `iracing-coach:bfef9d7…`, healthy. Analysis profile v25 (640-bin `lap_trace_columns`, traffic sides per lap), projection 4: Joshua's 51 sessions were re-queued first (51 × 202), then `POST /api/v1/admin/reanalyze` (job 4806) for the rest. Until a session is re-analysed its traces stay at 160 bins and its traffic marks carry no side.
+
+Also this day: the agents' build caches had filled C: (1.9 GB free): 131 GB of per-agent Rust targets under `target/` and 98 GB under WSL `~/.cache/iracing-coach` were deleted; all agent scratch now lives under `G:\Agent Files\` with a README and a LEDGER (memory `agent-scratch-on-g-drive`); the WSL disk is sparse and needs an in-distro `fstrim` (sudo) to give its space back to C:. WSL hung once while C: was full; Joshua restarted it (`taskkill /F /IM wslservice.exe`).
