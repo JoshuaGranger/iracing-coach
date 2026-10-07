@@ -35,6 +35,16 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 Each contract change adds one entry here in the same commit; review per the rule at the top.
 
+### 2026-10-07, B96/B97: a race's finish, and the start on lap 0 (web round 6, backlog #96 #97; additive optional fields, no review needed)
+
+Reason: backlog #97, a race he wrecked out of and left read as a finish (the 2026-10-06 21:09 Charlotte race: "P6", the place he was running when the recording stopped), and #96, the Race chart's position line began at lap 1's place instead of the start.
+
+- Python (oracle, `analysis_engine._race_finish`, called by `analyze_telemetry` for `race_summary`): `race_summary.finish`, null outside a Race session (`sim_session_type`), else `status` (`checkered`: the samples of the race session, by `SessionNum`, reached `SessionState` checkered 5 or cool-down 6; `recording_ended`: they reached racing 4 and never either; `unknown`: no `SessionState`, or never racing), `finished` (true, false, null), `last_lap` and `position_at_end` (the last lap summary's `lap` and `position.end`), `last_session_state`, `laps_remaining_at_end` (`SessionLapsRemainEx` at the last sample, null at 32767), `evidence_class` `measured_session_state`, `rule`. Not a ported stage: no native kernel changes. `ANALYSIS_PROFILE_VERSION` v25 becomes v26 (`ANALYZER_BUNDLE_REVIEWED_SHA256` reviewed): every other value is unchanged and a v25 analysis reads as unknown, but the worker's analysis cache is keyed on the profile, so without the bump a re-analysis would answer from the v25 cache; `POST /admin/reanalyze` re-queues every stored session. Tests: `iracing-coach/tests/test_race_finish.py`.
+- `api.openapi.yaml`: `RaceView.race_summary` lists `finish` in `x-consumed-fields` (the shrink ladder keeps it; `coach-views` `consumed::RACE_RACE_SUMMARY`) and describes it. `SessionOverview.finished`, `retired_lap`, `retired_position`: the backend's `finished`, and with `finished` false its `last_lap` and `position_at_end`; null otherwise; always sent (`server/src/overview.rs`, `FINISH_KEYS`). An overview stored without `finished` is rebuilt from its views at start. No projection version change: `race_summary` is copied whole.
+- Web: the Sessions Finish slot reads `DNF · L14` for a race with `finished` false and no official `results_position`; the Race chart's position line starts at lap 0 with `start_position` (the shell passes the session's start and retirement to the workspace as `raceResult`).
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+- Proof: `cargo test -p coach-server` (`tests/finish_fields.rs`; unit tests in `src/overview.rs`), the Python tests above, `web/src/sessions/dnf-97.test.ts`, `web/src/investigation/__tests__/start-dnf-96-97.test.ts`, and the e2e cases in `sessions.spec.ts` and `investigation.spec.ts`.
+
 ### 2026-10-06, B90: each run's observed pace trend on the runs view (web round 6, backlog #90 #91 #93; additive optional field, no review needed; one new projection version)
 
 Reason: backlog #90, the Race chart draws each run's best-fit line with its slope, traffic laps included, and #91, the run's fall-off read `−0.10 s/lap` on a slowing run because it took the restart lap as the run's first. The fit comes from the server, not the browser.

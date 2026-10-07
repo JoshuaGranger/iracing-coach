@@ -2252,8 +2252,18 @@ def _analysis_pipeline_sha256() -> str:
 # read the side as unknown, as with garage_setup_fingerprint and
 # steering_offset. The native _lap_summaries kernel carries the keys byte for
 # byte.
+# Review 2026-10-07 (race finish, backlog #97): v26 retires v25 because
+# race_summary gains finish (_race_finish): for a Race session, whether its
+# SessionState reached checkered or cool-down in the recording (checkered),
+# or reached racing and never either (recording_ended: he left mid-race, so
+# the last recorded place is a running place, not a finish), with the lap in
+# progress, the position then and SessionLapsRemainEx at the end; null for
+# other sessions. Every other value is unchanged. A v25 cached analysis would
+# give no wrong answer (no finish reads as unknown), but the profile is bumped
+# so that re-analysis replaces those caches and stored races gain the finish.
+# Not a ported stage: no kernel changes.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "3de20772109990614e15e536763f4ef1deb66d7cc17141fbd9b31feb1fead263"
+    "988a5784b9de01b68e737a9dbfd8e6b707ed22213ca0d2c399b594aeab140e27"
 )
 
 

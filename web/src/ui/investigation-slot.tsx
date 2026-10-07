@@ -6,6 +6,7 @@ import { type LastInvestigation, rememberInvestigation, savePrefs, usePrefs, use
 import { invalidate, useResource } from "../core/resource";
 import { type InvestigationView, formatRoute, navigate } from "../core/router";
 import { writeJson } from "../core/store";
+import { phaseOf, retirement, startPosition } from "../sessions/model";
 import { Empty, ErrorLine, Loading, Notice } from "./kit";
 
 /** The device copy `getLastInvestigation` reads (core/prefs.ts, `coach.last-investigation.<driver>`). */
@@ -95,6 +96,8 @@ interface WorkspaceProps {
   traceLayouts?: NamedLayout[];
   activeTraceLayoutId?: string;
   onTraceLayoutCommand?(command: TraceLayoutCommand): void;
+  /** The race's official start and retirement, the Sessions row's own rule (#96 #97); null outside a race. */
+  raceResult?: { start: number | null; retired: { lap: number | null; position: number | null } | null } | null;
 }
 
 interface InvestigationModule {
@@ -117,6 +120,12 @@ function phasesOf(detail: Schemas["SessionDetail"]): NonNullable<WorkspaceProps[
     { sessionId: me.session_id, sessionType: me.session_type ?? null, state: me.analysis_state, reason: me.analysis_reason ?? null },
     ...others.map((o) => ({ sessionId: o.session_id, sessionType: o.session_type, state: o.analysis_state ?? null, reason: o.analysis_reason ?? null })),
   ];
+}
+
+/** The Race chart's start (lap 0, #96) and retirement (#97) from the session, as the Sessions row reads them; null for another phase. */
+function raceResultOf(session: Schemas["SessionSummary"]): WorkspaceProps["raceResult"] {
+  if (phaseOf(session.session_type).code !== "R") return null;
+  return { start: startPosition(session), retired: retirement(session) };
 }
 
 function namedLayouts(list: readonly Schemas["TraceLayout"][]): NamedLayout[] {
@@ -204,6 +213,7 @@ function Host({ mod, customerId, sessionId, view, query }: InvestigationProps & 
       onTraceLayoutCommand={traceLayouts.command}
       reducedMotion={reduced}
       phases={phasesOf(detail.data)}
+      raceResult={raceResultOf(detail.data.session)}
       currentSessionId={sessionId}
       onPhase={(id) => navigate({ page: "investigation", customerId, sessionId: id, view })}
     />

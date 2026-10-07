@@ -126,6 +126,7 @@ pub const RACE_RACE_SUMMARY: &[&str] = &[
     "green_laps_estimated",
     "caution_laps_estimated",
     "fuel_used_gal",
+    "finish",
 ];
 
 pub const RACE_RACE_GRADES: &[&str] = &[

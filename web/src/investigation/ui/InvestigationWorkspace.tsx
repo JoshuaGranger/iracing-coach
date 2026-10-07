@@ -10,7 +10,7 @@ import { INVESTIGATION_VIEWS, type InvestigationView, type TraceLayoutBody } fro
 import "./investigation.css";
 import { useViewportFit } from "./fit";
 import { useAsync } from "./hooks";
-import { RaceView } from "./RaceView";
+import { RaceView, type RaceResult } from "./RaceView";
 import { RunsView } from "./RunsView";
 import { SectionsView, type SectionsOpenRequest } from "./SectionsView";
 import { PhaseSelector, type PhaseOption } from "./PhaseSelector";
@@ -54,6 +54,8 @@ export interface InvestigationWorkspaceProps {
   onTraceLayoutCommand?(command: TraceLayoutCommand): void;
   /** Called with the live cursor (diagnostics, tests). */
   onCursor?(cursor: TelemetryCursor | null): void;
+  /** The session's official start and retirement for the Race chart (`SessionOverview`, #96 #97); else the race view's own. */
+  raceResult?: RaceResult | null;
 }
 
 const SHELL_LAYOUT_ID = "shell-active";
@@ -209,7 +211,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
     );
   } else if (view === "race") {
     body = (
-      <RaceView inv={inv} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)} />
+      <RaceView inv={inv} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)} result={props.raceResult} />
     );
   } else if (view === "runs") {
     body = (

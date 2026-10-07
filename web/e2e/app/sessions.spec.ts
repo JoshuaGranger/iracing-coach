@@ -380,6 +380,31 @@ for (const device of ROUND2_DEVICES) {
       expect(await v.evaluate((el) => el.scrollWidth > el.clientWidth + 1), "the finish is clipped").toBe(false);
     });
 
+    test("#97: a race left before the flag reads DNF and the lap, no arrow, the running place in the hover", async ({ page }) => {
+      // Bristol's race as session 670 ended: the recording stopped on lap 14, running P6; gridded P12.
+      await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { ...r.overview, final_position: 6, finished: false, retired_lap: 14, retired_position: 6 } } : r)));
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const race = cell(page, 103);
+      await expect(slot(race, "pos").locator(".sx-l")).toHaveText("Finish");
+      await expect(value(race, "pos")).toHaveText("DNF · L14");
+      await expect(race.locator(".sx-p.gain, .sx-p.loss")).toHaveCount(0);
+      await expect(race).not.toContainText(/P6|▲|▼/);
+      await expect(slot(race, "pos")).toHaveAttribute("title", "Running P6 when the recording ended, started P12");
+      const v = value(race, "pos");
+      expect(await v.evaluate((el) => el.scrollWidth > el.clientWidth + 1), "the DNF is clipped").toBe(false);
+      await expectNoHorizontalScroll(page);
+      const shots = process.env.B96_SHOTS;
+      if (shots) {
+        mkdirSync(shots, { recursive: true });
+        await race.screenshot({ path: `${shots}/sessions-${d.viewport.width}-dnf-line.png` });
+      }
+      // A finished race (the backend saw the checkered flag) reads as before.
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await editLibrary(page, (rows) => rows.map((r) => (r.session_id === 103 ? { ...r, overview: { ...r.overview, finished: true, retired_lap: null, retired_position: null } } : r)));
+      await page.reload();
+      await expect(value(cell(page, 103), "pos")).toHaveText("P4▲8");
+    });
+
     test("round 4: practice and qualifying read P3 / 24, the official place over the field; the recorded place alone without it (#55)", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       // Bristol's qualifying ended P2 when its recording stopped and was classified P5 of 24.

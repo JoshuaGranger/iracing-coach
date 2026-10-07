@@ -192,6 +192,11 @@
 .ri-position-seg.hold { stroke: var(--ri-neutral-dot); opacity: 0.75; }
 .ri-pos-dot { fill: var(--ri-neutral-dot); stroke: var(--color-app); stroke-width: 1; }
 .ri-pos-dot.on { fill: var(--ri-ice); stroke: var(--ri-ice); stroke-width: 3; }
+/* The start at lap 0 (#96): a ring, so the grid reads apart from a recorded lap. */
+.ri-pos-dot.start { fill: var(--color-app); stroke: var(--ri-neutral-dot); stroke-width: 1.5; }
+.ri-pos-dot.start.on { fill: var(--ri-ice); stroke: var(--ri-ice); stroke-width: 3; }
+/* A race left before the flag (#97): the band's corner reads DNF and the lap. */
+.ri-dnf-text { fill: var(--ri-t1); }
 .ri-hit { fill: transparent; cursor: crosshair; }
 .gain { color: var(--ri-green); }
 .loss { color: var(--ri-loss); }

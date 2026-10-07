@@ -54,6 +54,11 @@ pub const ROUND4_KEYS: [&str; 4] = [
 /// sent like `ROUND2_KEYS`.
 pub const ROUND6_KEYS: [&str; 2] = ["best_green_lap_s", "race_pace_median_s"];
 
+/// Whether a race's recording reached its finish (backlog #97), from the backend's
+/// `race_summary.finish`: `finished`, and for a race left before the flag the lap he was on and
+/// where he was running when the recording ended. Always sent like `ROUND2_KEYS`.
+pub const FINISH_KEYS: [&str; 3] = ["finished", "retired_lap", "retired_position"];
+
 /// Every key the server always sends on `SessionSummary.overview`, null when not measured.
 pub fn always_sent() -> impl Iterator<Item = &'static str> {
     ROUND2_KEYS
@@ -61,6 +66,7 @@ pub fn always_sent() -> impl Iterator<Item = &'static str> {
         .chain(ROUND3_KEYS)
         .chain(ROUND4_KEYS)
         .chain(ROUND6_KEYS)
+        .chain(FINISH_KEYS)
 }
 
 /// The backend's lap exclusion reasons (`race.json` `laps[].exclusion_reasons`) that describe the
@@ -125,6 +131,9 @@ pub fn session_overview(race: &Value, investigation: Option<&Value>) -> Value {
         json!(green.iter().copied().min_by(f64::total_cmp)),
     );
     out.insert("race_pace_median_s".into(), json!(median(green)));
+    for (key, value) in race_finish(&summary["finish"]) {
+        out.insert(key.into(), value);
+    }
     let timed = timed_laps(race);
     out.insert("timed_lap_1_s".into(), json!(timed.first()));
     out.insert("timed_lap_2_s".into(), json!(timed.get(1)));
@@ -143,6 +152,28 @@ pub fn session_overview(race: &Value, investigation: Option<&Value>) -> Value {
         out.insert(key.into(), Value::Null);
     }
     Value::Object(out)
+}
+
+/// The overview's `FINISH_KEYS` from the backend's `race_summary.finish` (backlog #97):
+/// `finished` is its `finished` (true: the race reached the checkered flag in the recording;
+/// false: the recording stopped while the race was still running; null: unknown, not a race, or
+/// an analysis from before the field). For a race left before the flag, `retired_lap` is the lap
+/// in progress when the recording ended (`last_lap`) and `retired_position` the position recorded
+/// then (`position_at_end`); both null otherwise. Read, never decided here.
+fn race_finish(finish: &Value) -> [(&'static str, Value); 3] {
+    let finished = finish["finished"].as_bool();
+    let retired = finished == Some(false);
+    let lap = finish["last_lap"]
+        .as_i64()
+        .filter(|lap| retired && *lap >= 0);
+    let position = finish["position_at_end"]
+        .as_i64()
+        .filter(|place| retired && *place > 0);
+    [
+        ("finished", json!(finished)),
+        ("retired_lap", json!(lap)),
+        ("retired_position", json!(position)),
+    ]
 }
 
 // ------------------------------------------------------------ official results
@@ -566,7 +597,7 @@ pub async fn backfill_results(app: &AppState) -> Result<usize> {
 
 /// At start, in the background: recordings stored before the results summary gain it
 /// (`backfill_results`); sessions whose current analysis is projected at this version but whose
-/// stored overview predates the round-2, round-3, round-4 or round-6 figures get them from their views;
+/// stored overview predates the round-2, round-3, round-4 or round-6 figures or the finish (#97) get them from their views;
 /// every such overview then takes its session-info figures (`merge_results`) from the stored
 /// results. Returns how many overviews changed. Idempotent; a session whose views cannot be read
 /// keeps its view figures.
@@ -597,6 +628,7 @@ pub async fn refresh_on_start(app: &AppState) -> Result<usize> {
                 "longest_run_laps",
                 "fuel_per_lap_gal",
                 "best_green_lap_s",
+                "finished",
             ]
             .iter()
             .any(|key| before.get(key).is_none())
@@ -1142,5 +1174,76 @@ QualifyResultsInfo:
         // 80 of 83 laps: the partial last lap and the two pit-stop laps are left out
         assert_eq!(o["best_green_lap_s"], 28.408);
         assert_eq!(o["race_pace_median_s"], 28.5105);
+    }
+
+    fn with_finish(finish: Value) -> Value {
+        let mut r = race(Value::Null);
+        r["race_summary"]["finish"] = finish;
+        r
+    }
+
+    #[test]
+    fn a_race_left_before_the_flag_names_the_lap_and_the_running_place() {
+        // session 670 (backlog #97): the recording stopped in the stall on lap 14, running P6
+        let o = session_overview(
+            &with_finish(
+                json!({"status": "recording_ended", "finished": false, "last_lap": 14,
+                                "position_at_end": 6, "last_session_state": "racing",
+                                "laps_remaining_at_end": 77}),
+            ),
+            None,
+        );
+        assert_eq!(o["finished"], false);
+        assert_eq!(o["retired_lap"], 14);
+        assert_eq!(o["retired_position"], 6);
+        assert_eq!(
+            o["final_position"], 4,
+            "the recorded figure stays as recorded"
+        );
+    }
+
+    #[test]
+    fn a_finished_or_unknown_race_has_no_retirement() {
+        let o = session_overview(
+            &with_finish(
+                json!({"status": "checkered", "finished": true, "last_lap": 46,
+                                "position_at_end": 1}),
+            ),
+            None,
+        );
+        assert_eq!(o["finished"], true);
+        assert_eq!(o["retired_lap"], Value::Null);
+        assert_eq!(o["retired_position"], Value::Null);
+        for finish in [
+            json!({"status": "unknown", "finished": null, "last_lap": 3, "position_at_end": 2}),
+            Value::Null,
+        ] {
+            let o = session_overview(&with_finish(finish), None);
+            for key in FINISH_KEYS {
+                assert_eq!(
+                    o[key],
+                    Value::Null,
+                    "{key} is always sent, null when unknown"
+                );
+            }
+        }
+        // an analysis from before the field
+        let o = session_overview(&race(Value::Null), None);
+        for key in FINISH_KEYS {
+            assert_eq!(o[key], Value::Null);
+        }
+    }
+
+    #[test]
+    fn a_retirement_without_a_place_keeps_the_lap() {
+        let o = session_overview(
+            &with_finish(
+                json!({"status": "recording_ended", "finished": false, "last_lap": 2,
+                                "position_at_end": null}),
+            ),
+            None,
+        );
+        assert_eq!(o["retired_lap"], 2);
+        assert_eq!(o["retired_position"], Value::Null);
     }
 }

@@ -55,9 +55,9 @@ export function positionTicks(min: number, max: number): number[] {
 }
 
 /** Position line segments coloured by what the lap did: gained (green), lost (loss red), held (neutral). */
-export function positionSegments(laps: readonly InvestigationLap[]): { from: InvestigationLap; to: InvestigationLap; tone: "gain" | "loss" | "hold" }[] {
+export function positionSegments<T extends { lap: number; position: number | null }>(laps: readonly T[]): { from: T; to: T; tone: "gain" | "loss" | "hold" }[] {
   const placed = laps.filter((lap) => lap.position !== null && lap.position > 0);
-  const out: { from: InvestigationLap; to: InvestigationLap; tone: "gain" | "loss" | "hold" }[] = [];
+  const out: { from: T; to: T; tone: "gain" | "loss" | "hold" }[] = [];
   for (let index = 1; index < placed.length; index++) {
     const from = placed[index - 1]!;
     const to = placed[index]!;
@@ -65,6 +65,69 @@ export function positionSegments(laps: readonly InvestigationLap[]): { from: Inv
     out.push({ from, to, tone: to.position! < from.position! ? "gain" : to.position! > from.position! ? "loss" : "hold" });
   }
   return out;
+}
+
+/** One point of the position line: a lap's recorded place, or the start at lap 0 (backlog #96). */
+export interface PositionPoint {
+  lap: number;
+  position: number;
+  start: boolean;
+}
+
+/**
+ * The position line: the start at lap 0, then every recorded lap's place from lap 1, so a car that lost places on the opening lap
+ * starts the line where it lined up, joined to lap 1 by that lap's loss (#96: "Lap 0 should show my starting position"). Without
+ * a start, the recorded laps alone.
+ */
+export function positionTrack(laps: readonly InvestigationLap[], start: number | null): PositionPoint[] {
+  const recorded = laps
+    .filter((lap) => lap.position !== null && lap.position > 0 && (start === null || lap.lap > 0))
+    .map((lap) => ({ lap: lap.lap, position: lap.position as number, start: false }));
+  return start !== null ? [{ lap: 0, position: start, start: true }, ...recorded] : recorded;
+}
+
+/** A race left before the flag (#97): the lap he was on and where he was running when the recording ended. */
+export interface RaceRetirement {
+  lap: number | null;
+  position: number | null;
+}
+
+/** What the shell knows of the race's result from the session (`SessionOverview`): the official start and a retirement. */
+export interface RaceResult {
+  /** The official start (`start_position`: the grid, else the backend's position at the green flag); null when unknown. */
+  start: number | null;
+  /** Set when the recording stopped before the race did and no official result stands (`finished` false). */
+  retired: RaceRetirement | null;
+}
+
+const positive = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null);
+
+/**
+ * The race's result for the Race chart. The shell's, from the session by the Sessions row's rule, when it passes one (null: not a
+ * race). Without the shell (the harness), the race view's own, for a race only (the backend writes `race_summary.finish` for a Race
+ * session alone; the identity's event type names the weekend, not the phase): `race_summary.starting_position` and, when
+ * `finish.finished` is false, `finish.last_lap` and `finish.position_at_end`.
+ */
+export function raceResult(race: RaceViewData | null | undefined, given?: RaceResult | null): RaceResult | null {
+  if (given !== undefined) return given && { start: positive(given.start), retired: given.retired };
+  const summary = asRecord(race?.race_summary);
+  if (summary.finish === null || typeof summary.finish !== "object") return null;
+  const finish = asRecord(summary.finish);
+  const lap = finish.last_lap;
+  return {
+    start: positive(summary.starting_position),
+    retired: finish.finished === false ? { lap: typeof lap === "number" && Number.isFinite(lap) && lap >= 0 ? lap : null, position: positive(finish.position_at_end) } : null,
+  };
+}
+
+/** `DNF · L14`, or `DNF` when the lap is unknown. */
+export function retiredText(retired: RaceRetirement): string {
+  return retired.lap === null ? "DNF" : `DNF · L${retired.lap}`;
+}
+
+/** The hover of a retirement: `Running P6 when the recording ended`. */
+export function retiredTitle(retired: RaceRetirement): string {
+  return retired.position !== null ? `Running P${retired.position} when the recording ended` : "The recording ended before the race did";
 }
 
 /** Laps drawn as pace dots (green, timed, the backend's `plot_pace`) and as subdued dots in the caution band (actual times). */
@@ -87,7 +150,7 @@ export function paceTopMargin(tagXs: readonly number[], left: number, k: number)
   return Math.round((crowded ? 56 : 38) * k);
 }
 
-type Hover = { kind: "lap"; lap: InvestigationLap } | { kind: "position"; lap: InvestigationLap } | { kind: "pit"; stop: PitStop; x: number; y: number };
+type Hover = { kind: "lap"; lap: InvestigationLap } | { kind: "position"; point: PositionPoint } | { kind: "pit"; stop: PitStop; x: number; y: number };
 
 /**
  * The race's fastest lap under the one clean rule Traces uses (complete, green, no pit, no incident, on track; else the fastest
@@ -126,9 +189,11 @@ interface ChartProps {
   header: ComponentChildren;
   /** The readout while no chart mark is under the pointer (a run line's hover or tap). */
   note?: string;
+  /** A race's start (lap 0 of the position line) and retirement; null outside a race. */
+  result: RaceResult | null;
 }
 
-function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, traffic, runs, layers, header, note }: ChartProps) {
+function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, traffic, runs, layers, header, note, result }: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
   const k = scaleFor(useRemPx());
@@ -139,13 +204,23 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
   // Each run's observed trend from the server (#90): a straight line over its counted laps, never extended.
   const trends = useMemo(() => inv.runs.map((run) => ({ run: run.runNumber, trend: observedTrend(runs, run.runNumber) })).filter((item): item is { run: number; trend: ObservedTrend } => item.trend !== null), [inv, runs]);
   const on = (key: LayerKey): boolean => layers.includes(key);
-  const placed = inv.laps.filter((lap) => lap.position !== null && lap.position > 0);
-  const hasPositions = placed.length >= 2;
+  const track = useMemo(() => positionTrack(inv.laps, result?.start ?? null), [inv, result]);
+  const retired = result?.retired ?? null;
+  const lastPoint = track.length ? track[track.length - 1]! : null;
+  const hasPositions = track.length >= 2;
+  // The start reads as the start (#96); the last place of a race left before the flag is a running place (#97).
+  const positionLabel = (point: PositionPoint): string =>
+    point.start
+      ? `Lap 0 · Start · P${point.position}`
+      : retired && point === lastPoint
+        ? `Lap ${point.lap} · P${point.position} · DNF, running when the recording ended`
+        : `Lap ${point.lap} · P${point.position}`;
   const colour = (run: number | null): string => identityColour(identities, run);
   const body = (() => {
     if (inv.laps.length === 0) return <div class="ri-empty"><strong>No recorded laps</strong></div>;
     if (width < 40 || height < 40) return null;
-    const minLap = Math.min(...inv.laps.map((lap) => lap.lap));
+    // The start sits at lap 0 (#96), so the lap axis begins there when the line has one.
+    const minLap = Math.min(...inv.laps.map((lap) => lap.lap), ...(track[0]?.start ? [0] : []));
     const maxLap = Math.max(...inv.laps.map((lap) => lap.lap));
     const times = [...plotted.map((lap) => lap.lapTimeS as number), ...trends.flatMap(({ trend }) => [trendAt(trend, trend.firstLap), trendAt(trend, trend.lastLap)])];
     const min = times.length ? Math.min(...times) : 0;
@@ -165,7 +240,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
     const positionGap = hasPositions ? Math.round(20 * k) : 0;
     const bottomSpace = below + (hasPositions ? positionGap + bandHeight : 0) + axisBand;
     const pace = new PlotScale(left, top, Math.max(60, width - left - right), Math.max(60, height - top - bottomSpace), minLap - 0.5, Math.max(minLap + 1, maxLap) + 0.5, min - pad, max + pad);
-    const positions = placed.map((lap) => lap.position as number);
+    const positions = track.map((point) => point.position);
     const posMin = hasPositions ? Math.min(...positions) : 1;
     const posMax = hasPositions ? Math.max(posMin + 1, ...positions) : 2;
     // Position band: P-best at the top.
@@ -310,18 +385,25 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
                 <text x={n(posScale.left - 6)} y={n(py(position) + drop)} text-anchor="end" class="ri-axis" data-position-tick={position}>{`P${position}`}</text>
               </g>
             ))}
-            {positionSegments(inv.laps).map((segment) => (
-              <line key={`s${segment.to.lap}`} x1={n(posScale.x(segment.from.lap))} y1={n(py(segment.from.position!))} x2={n(posScale.x(segment.to.lap))} y2={n(py(segment.to.position!))} class={`ri-position-seg ${segment.tone}`} data-tone={segment.tone} />
+            {/* A race left before the flag (#97): no finish, the band's corner says so and where he was running is its hover. */}
+            {retired && (
+              <g class="ri-dnf" data-retired={retired.lap ?? ""}>
+                <title>{retiredTitle(retired)}</title>
+                <text x={n(posScale.right)} y={n(posScale.top - Math.round(8 * k))} text-anchor="end" class="ri-axis-title ri-dnf-text">{retiredText(retired)}</text>
+              </g>
+            )}
+            {positionSegments(track).map((segment) => (
+              <line key={`s${segment.to.lap}`} x1={n(posScale.x(segment.from.lap))} y1={n(py(segment.from.position))} x2={n(posScale.x(segment.to.lap))} y2={n(py(segment.to.position))} class={`ri-position-seg ${segment.tone}`} data-tone={segment.tone} />
             ))}
-            {placed.map((lap) => (
-              <circle key={`pd${lap.lap}`} cx={n(posScale.x(lap.lap))} cy={n(py(lap.position!))} r={n(Math.max(2.2, Math.min(3.4, lapWidth * 0.32)))} class={`ri-pos-dot${hover?.kind === "position" && hover.lap.lap === lap.lap ? " on" : ""}`}
-                data-position-lap={lap.lap} tabIndex={-1} onPointerEnter={() => setHover({ kind: "position", lap })}>
-                <title>{`Lap ${lap.lap} · P${lap.position}`}</title>
+            {track.map((point) => (
+              <circle key={`pd${point.lap}`} cx={n(posScale.x(point.lap))} cy={n(py(point.position))} r={n(Math.max(2.2, Math.min(3.4, lapWidth * 0.32)))} class={`ri-pos-dot${point.start ? " start" : ""}${hover?.kind === "position" && hover.point.lap === point.lap ? " on" : ""}`}
+                data-position-lap={point.lap} data-position={point.position} data-position-start={point.start ? "" : undefined} tabIndex={-1} onPointerEnter={() => setHover({ kind: "position", point })}>
+                <title>{positionLabel(point)}</title>
               </circle>
             ))}
             {/* Wide invisible hit columns so a lap's position reads without hitting a 3 px dot. */}
-            {placed.map((lap) => (
-              <rect key={`ph${lap.lap}`} x={n(posScale.x(lap.lap) - lapWidth / 2)} y={n(posScale.top - 6)} width={n(Math.max(2, lapWidth))} height={n(posScale.height + 12)} class="ri-hit" onPointerEnter={() => setHover({ kind: "position", lap })} />
+            {track.map((point) => (
+              <rect key={`ph${point.lap}`} x={n(posScale.x(point.lap) - lapWidth / 2)} y={n(posScale.top - 6)} width={n(Math.max(2, lapWidth))} height={n(posScale.height + 12)} class="ri-hit" onPointerEnter={() => setHover({ kind: "position", point })} />
             ))}
           </g>
         )}
@@ -339,7 +421,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
     return parts.join(" · ");
   };
   const readout = hover?.kind === "position"
-    ? `Lap ${hover.lap.lap} · P${hover.lap.position}`
+    ? positionLabel(hover.point)
     : hover?.kind === "lap"
       ? lapReadout(hover.lap)
       : hover?.kind === "pit"
@@ -426,9 +508,12 @@ export interface RaceViewProps {
   race?: RaceViewData;
   runs?: readonly unknown[];
   sessionType?: string | null;
+  /** The session's start and retirement from the shell (`SessionOverview`; null: not a race); without it the race view's own. */
+  result?: RaceResult | null;
 }
 
-export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
+export function RaceView({ inv, race, runs, sessionType, result: given }: RaceViewProps) {
+  const result = useMemo(() => raceResult(race, given), [race, given]);
   const allStops = useMemo(() => (race ? pitStops(race, { runs: runs ?? [] }, null) : []), [race, runs]);
   const stops = useMemo(() => inRaceStops(allStops), [allStops]);
   const knownPitLaps = useMemo(() => new Set(allStops.map((stop) => stop.lap)), [allStops]);
@@ -463,7 +548,7 @@ export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
   return (
     <div class="ri-race-view" data-ri-view="race">
       <div class="ri-card ri-fill">
-        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} traffic={traffic} runs={runs ?? NO_RUNS} layers={layers} header={header} note={note ?? undefined} />
+        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} traffic={traffic} runs={runs ?? NO_RUNS} layers={layers} header={header} note={note ?? undefined} result={result} />
         {lines.length > 0 && (
           <ul class="ri-run-lines" aria-label="Runs">
             {lines.map(({ run, parts }) => {

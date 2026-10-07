@@ -2379,6 +2379,12 @@ export interface components {
             best_green_lap_s?: number | null;
             /** @description Median `lap_time_s` over the same laps as `best_green_lap_s` (4 decimals; the mean of the middle pair on an even count). `green_pace_median_s` stays the median of the screened laps. The Sessions race line shows it as Pace. Null when no lap qualifies. Always sent. */
             race_pace_median_s?: number | null;
+            /** @description Races only: whether the race reached its finish while the recording ran, the backend's `race_summary.finish.finished` (backlog #97). True when the race session's `SessionState` reached checkered or cool-down; false when it reached racing and never either, so the recording stopped before the race did (he left after a wreck) and `final_position` is where he was running, not a finish; null when unknown, for other sessions, and for analyses from before the field. Read, never decided by the server. Always sent. */
+            finished?: boolean | null;
+            /** @description With `finished` false: the lap in progress when the recording ended (`race_summary.finish.last_lap`); the Sessions Finish slot reads `DNF · L14`. Null otherwise. Always sent. */
+            retired_lap?: number | null;
+            /** @description With `finished` false: the position recorded when the recording ended (`race_summary.finish.position_at_end`), a running place, never a finish. Null otherwise. Always sent. */
+            retired_position?: number | null;
             pace_consistency_percent?: number | null;
             best_clean_lap_s?: number | null;
             fuel_used_gal?: number | null;
@@ -2514,6 +2520,11 @@ export interface components {
                 [key: string]: unknown;
             };
             race_summary: {
+                /** @description The backend's `race_summary.finish` (backlog #97), null outside a Race: `status` (`checkered`: the race session's `SessionState` reached checkered or cool-down in the recording; `recording_ended`: it reached racing and never either, so the recording stopped before the race did; `unknown`), `finished` (true, false, null for those three), `last_lap` (the lap in progress at the end of the recording), `position_at_end` (that lap's last recorded position), `last_session_state`, `laps_remaining_at_end` (`SessionLapsRemainEx` at the last sample; null without a lap limit), `evidence_class` (`measured_session_state`) and `rule`. */
+                finish?: {
+                    [key: string]: unknown;
+                } | null;
+            } & {
                 [key: string]: unknown;
             };
             race_grades?: {

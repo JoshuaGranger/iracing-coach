@@ -75,7 +75,7 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v25"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v26"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
@@ -1570,6 +1570,84 @@ def _racing_state(number: float | None) -> bool:
 
 def _on_track(location: float | None) -> bool:
     return location is not None and int(location) == 3  # irsdk_TrkLoc::OnTrack
+
+
+# irsdk_SessionState values, as race_foundations.SESSION_STATES names them.
+_SESSION_STATE_LABELS = {
+    0: "invalid",
+    1: "get_in_car",
+    2: "warmup",
+    3: "parade_laps",
+    4: "racing",
+    5: "checkered",
+    6: "cooldown",
+}
+# SessionLapsRemainEx reads 32767 in a race without a lap limit.
+_UNLIMITED_LAPS = 32767
+RACE_FINISH_RULE = (
+    "Race sessions only, over the recorded samples of this race session (SessionNum). "
+    "checkered: SessionState reached checkered (5) or cool-down (6), so the race ended "
+    "while the recording ran. recording_ended: SessionState reached racing (4) and never "
+    "checkered or cool-down, so the recording stopped before the race did and the finish "
+    "is not in this data; last_lap is the lap in progress and position_at_end the "
+    "position recorded at its end. unknown: no SessionState, or the race never reached "
+    "racing in the recording."
+)
+
+
+def _race_finish(table: TelemetryTable, laps: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """Whether the recorded race reached its finish (backlog #97); None outside a Race.
+
+    A driver who wrecks out and leaves stops the recording mid-race: his last
+    recorded position is where he was running, not where he finished. The
+    session's own state says which: the sim moves SessionState to checkered
+    when the leader takes the flag and to cool-down after, for every car.
+    """
+
+    if str(table.metadata.get("sim_session_type") or "").strip().lower() != "race":
+        return None
+    last = laps[-1] if laps else None
+    position = last.get("position") if isinstance(last, Mapping) else None
+    finish: dict[str, Any] = {
+        "status": "unknown",
+        "finished": None,
+        "last_lap": last.get("lap") if isinstance(last, Mapping) else None,
+        "position_at_end": position.get("end") if isinstance(position, Mapping) else None,
+        "last_session_state": None,
+        "laps_remaining_at_end": None,
+        "evidence_class": "measured_session_state",
+        "rule": RACE_FINISH_RULE,
+    }
+    if not table.has("SessionState"):
+        return finish
+    states = table.normalized("SessionState")[0]
+    race_number = _numeric_text(table.metadata.get("sim_session_num"))
+    numbers = table.normalized("SessionNum")[0] if table.has("SessionNum") else None
+    scoped = [
+        index
+        for index in range(table.length)
+        if states[index] is not None
+        and (
+            numbers is None
+            or race_number is None
+            or numbers[index] is None
+            or numbers[index] == race_number
+        )
+    ]
+    if not scoped:
+        return finish
+    codes = {int(states[index]) for index in scoped}
+    end = scoped[-1]
+    finish["last_session_state"] = _SESSION_STATE_LABELS.get(int(states[end]), "unknown")
+    if table.has("SessionLapsRemainEx"):
+        remaining = _finite(table.get("SessionLapsRemainEx")[end])
+        if remaining is not None and 0 <= remaining < _UNLIMITED_LAPS:
+            finish["laps_remaining_at_end"] = int(remaining)
+    if codes & {5, 6}:
+        finish["status"], finish["finished"] = "checkered", True
+    elif 4 in codes:
+        finish["status"], finish["finished"] = "recording_ended", False
+    return finish
 
 
 # The close-traffic screen's share of a lap (clean_context.traffic_rule).
@@ -9086,6 +9164,9 @@ def analyze_telemetry(
             completed_race_laps[-1].get("position", {}).get("end")
             if completed_race_laps else None
         ),
+        # Whether the race ended inside the recording (backlog #97): a recording
+        # that stops mid-race has no finish, only the last running position.
+        "finish": _race_finish(table, laps),
         "fuel_used_l": _round(fuel_used),
         "fuel_used_gal": _round(fuel_used / 3.785411784),
         "damage_repair": {

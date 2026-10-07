@@ -378,9 +378,37 @@ export function startPosition(s: Session): number | null {
   return finite(v) && v > 0 ? v : null;
 }
 
-/** `P12 → P4`, or `P4` when only one end is known. */
+/** A race left before the flag (backlog #97): the lap he was on and where he was running when the recording ended. */
+export interface Retirement {
+  lap: number | null;
+  position: number | null;
+}
+
+/**
+ * The race's recording stopped while the race was still running (`SessionOverview.finished` false, the backend's
+ * `race_summary.finish`): its last recorded place is a running place, not a finish. Null for a finished or unknown race, outside a
+ * race, and when a later recording of the event lists the official results (`results_position`), which stand as before.
+ */
+export function retirement(s: Session): Retirement | null {
+  if (phaseOf(s.session_type).code !== "R") return null;
+  const o = s.overview;
+  if (o.finished !== false) return null;
+  if (finite(o.results_position) && o.results_position > 0) return null;
+  const lap: unknown = o.retired_lap;
+  const position: unknown = o.retired_position;
+  return { lap: finite(lap) && lap >= 0 ? lap : null, position: finite(position) && position > 0 ? position : null };
+}
+
+/** `DNF · L14`, or `DNF` when the lap is unknown. */
+export function retirementText(r: Retirement): string {
+  return r.lap === null ? "DNF" : `DNF · L${r.lap}`;
+}
+
+/** `P12 → P4`, or `P4` when only one end is known; `P2 → DNF · L35` for a race left before the flag. */
 export function resultText(s: Session): string {
   const from = startPosition(s);
+  const retired = retirement(s);
+  if (retired) return from != null ? `P${from} → ${retirementText(retired)}` : retirementText(retired);
   const to = s.overview.final_position;
   if (from != null && to != null) return `P${from} → P${to}`;
   return to != null ? `P${to}` : from != null ? `P${from} → ${NONE}` : NONE;
@@ -393,8 +421,9 @@ export interface PositionChange {
   gained: number;
 }
 
-/** Race only: qualifying and practice show their classification and no change. */
+/** Race only: qualifying and practice show their classification and no change; a race left before the flag has none (#97). */
 export function positionChange(s: Session): PositionChange | null {
+  if (retirement(s)) return null;
   const from = startPosition(s);
   const to = s.overview.final_position;
   if (from == null || to == null) return null;
@@ -422,7 +451,7 @@ export function burnPerLap(s: Session): number | null {
 }
 
 export function isWin(s: Session): boolean {
-  return phaseOf(s.session_type).code === "R" && s.overview.final_position === 1;
+  return phaseOf(s.session_type).code === "R" && s.overview.final_position === 1 && retirement(s) === null;
 }
 
 /** Race result edge: win, gain or loss; nothing when the position did not change or is unknown. */
@@ -595,7 +624,14 @@ export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
   const out: Slot[] = [];
 
   const final = o.final_position;
-  if (final == null) out.push(missingSlot("pos", label, label === "Finish" ? "Finish position" : "Classification"));
+  const retired = retirement(s);
+  if (retired) {
+    // Left before the flag (#97): no finish and no change; where he was running is the hover.
+    const from = startPosition(s);
+    const running = retired.position !== null ? `Running P${retired.position} when the recording ended` : "The recording ended before the race did";
+    const title = from !== null ? `${running}, started P${from}` : running;
+    out.push({ key: "pos", label, title, parts: [{ text: retirementText(retired) }], missing: false });
+  } else if (final == null) out.push(missingSlot("pos", label, label === "Finish" ? "Finish position" : "Classification"));
   else {
     const parts: SlotPart[] = [{ text: formatPosition(final) }];
     const change = positionChange(s);

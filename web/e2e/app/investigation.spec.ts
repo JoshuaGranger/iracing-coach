@@ -87,6 +87,8 @@ for (const device of DEVICES) {
 const ANALYSIS = buildTrafficAnalysis("an-103");
 // RI_SHOTS names another release record's folder (relative to web/); the default is round 6's B90 (#90–#93).
 const SHOTS = path.resolve(process.cwd(), process.env.RI_SHOTS ?? path.join("target", "round6", "b90"));
+// Backlog #96/#97's screenshots: B96_SHOTS, else the round's folder.
+const B96_SHOTS = path.resolve(process.cwd(), process.env.B96_SHOTS ?? path.join("target", "round6", "b96"));
 // The traffic marker's own screenshots (#67, #92): RI_T67_SHOTS, else the same folder.
 const T67_SHOTS = path.resolve(process.cwd(), process.env.RI_T67_SHOTS ?? path.join("target", "round6", "b90"));
 
@@ -701,6 +703,61 @@ for (const device of ROUND2_DEVICES) {
       await page.locator("[data-run-card]").first().click();
       await page.waitForTimeout(200);
       await page.screenshot({ path: path.join(SHOTS, `runs-run1-hidden-${width}.png`), fullPage: width < 700 });
+    });
+
+    test("#96 #97: the position line starts at the official start on lap 0, joined to lap 1; a race left before the flag reads DNF", async ({ page }) => {
+      // Session 103: gridded P12 (`start_position`), P4 after lap 1 in the synthetic race.
+      await open(page, "race");
+      const start = page.locator("[data-position-start]");
+      await expect(start).toHaveCount(1);
+      await expect(start).toHaveAttribute("data-position-lap", "0");
+      await expect(start).toHaveAttribute("data-position", "12");
+      await expect(page.locator("[data-position-lap='1']")).toHaveAttribute("data-position", "4");
+      // The lap axis begins at 0 and the start is joined to lap 1 by the opening lap's change.
+      const joined = await page.evaluate(() => {
+        const dot = (lap: number) => document.querySelector(`[data-position-lap='${lap}']`)!.getBoundingClientRect();
+        const [a, b] = [dot(0), dot(1)];
+        const centre = (r: DOMRect) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+        const [p, q] = [centre(a), centre(b)];
+        return [...document.querySelectorAll(".ri-position-seg")].some((seg) => {
+          const r = seg.getBoundingClientRect();
+          return Math.abs(r.left - Math.min(p.x, q.x)) < 3 && Math.abs(r.right - Math.max(p.x, q.x)) < 3 && Math.abs(r.top - Math.min(p.y, q.y)) < 3 && Math.abs(r.bottom - Math.max(p.y, q.y)) < 3;
+        });
+      });
+      expect(joined, "a segment from lap 0 to lap 1").toBe(true);
+      await expect(page.locator(".ri-plot-svg text.ri-axis", { hasText: /^0$/ })).toHaveCount(1);
+      await point(page, "[data-position-start]");
+      await expect(page.locator("[data-race-readout]")).toHaveText("Lap 0 · Start · P12");
+      await expect(page.locator("[data-retired]")).toHaveCount(0);
+      await expectNoHorizontalScroll(page);
+      mkdirSync(B96_SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(B96_SHOTS, `race-start-${width}.png`), fullPage: width < 700 });
+
+      // The race left before the flag (#97): the session says so, the band's corner reads DNF and the lap, its hover the running place.
+      await page.route("**/api/v1/sessions/103", async (route: Route) => {
+        const res = await route.fetch();
+        const body = (await res.json()) as { session: { overview: Record<string, unknown> } };
+        body.session.overview = { ...body.session.overview, finished: false, retired_lap: 82, retired_position: 2 };
+        await route.fulfill({ response: res, json: body });
+      });
+      await page.reload();
+      const dnf = page.locator("[data-retired]");
+      await expect(dnf).toHaveAttribute("data-retired", "82");
+      await expect(dnf.locator("text")).toHaveText("DNF · L82");
+      await expect(dnf.locator("title")).toHaveText("Running P2 when the recording ended");
+      // Inside the chart, clear of the Position title.
+      const clear = await page.evaluate(() => {
+        const label = document.querySelector("[data-retired] text")!.getBoundingClientRect();
+        const svg = document.querySelector(".ri-plot-svg")!.getBoundingClientRect();
+        const title = [...document.querySelectorAll(".ri-position-band .ri-axis-title")].find((el) => el.textContent === "Position")!.getBoundingClientRect();
+        return label.right <= svg.right + 0.5 && label.left >= svg.left && (label.left >= title.right + 4 || label.top >= title.bottom);
+      });
+      expect(clear, "the DNF label sits inside the chart, clear of the Position title").toBe(true);
+      const last = page.locator(".ri-pos-dot").last();
+      await point(page, `[data-position-lap='${await last.getAttribute("data-position-lap")}']`);
+      await expect(page.locator("[data-race-readout]")).toContainText("DNF, running when the recording ended");
+      await expectNoHorizontalScroll(page);
+      await page.screenshot({ path: path.join(B96_SHOTS, `race-dnf-${width}.png`), fullPage: width < 700 });
     });
 
     test("screenshots of the traffic marker on Race and Runs for the release record (#67, #92)", async ({ page }) => {
