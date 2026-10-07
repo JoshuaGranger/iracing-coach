@@ -66,7 +66,17 @@ pub fn always_sent() -> impl Iterator<Item = &'static str> {
 /// The backend's lap exclusion reasons (`race.json` `laps[].exclusion_reasons`) that describe the
 /// race around the car, not the lap itself: a green lap with only these still counts as racing
 /// pace (`green_laps`).
-const RACING_CONTEXT_REASONS: [&str; 2] = ["close_traffic", "restart"];
+const RACING_CONTEXT_REASONS: [&str; 5] = [
+    "close_traffic",
+    "restart",
+    // Driving on with damage: a real race lap, never faster than the car allows (backlog #95).
+    "damage_repair_context",
+    "recorded_repair_evidence",
+    "repair_correlated_candidate",
+];
+
+/// The damage codes that mark the tow or repair episode itself; those laps never count.
+const REPAIR_EPISODE_CODES: [&str; 1] = ["pit_tow_or_repair_episode_overlap"];
 
 /// Fewest clean laps a run needs before its first-to-last difference is reported.
 const PACE_LOSS_MIN_LAPS: usize = 3;
@@ -395,8 +405,8 @@ fn timed_laps(race: &Value) -> Vec<f64> {
 /// The `lap_time_s` of every complete green lap (`race.json` `laps[]`), traffic included: green
 /// for the whole lap (`green_fraction` 1, or `flag_state` green), under a second on pit road and
 /// neither a pit-in nor a pit-out lap, on track (`clean_context.on_track_fraction` at least the
-/// backend's 0.98), no pit, tow or repair evidence (`damage_repair_context`), and no backend
-/// exclusion reason but close traffic or a restart (`RACING_CONTEXT_REASONS`). The backend's own
+/// backend's 0.98), not inside a tow or repair episode (`REPAIR_EPISODE_CODES`; laps driven on with damage count),
+/// and no backend exclusion reason but racing context (`RACING_CONTEXT_REASONS`). The backend's own
 /// rows and figures; nothing is measured again here.
 fn green_laps(race: &Value) -> Vec<f64> {
     let Some(laps) = race["laps"].as_array() else {
@@ -418,11 +428,14 @@ fn green_laps(race: &Value) -> Vec<f64> {
                 .is_none_or(|f| f >= 0.98)
         })
         .filter(|lap| {
-            let damage = &lap["damage_repair_context"];
-            damage["automatic_coaching_reference_eligible"] != false
-                && damage["exclusion_reason_codes"]
-                    .as_array()
-                    .is_none_or(|codes| codes.is_empty())
+            lap["damage_repair_context"]["exclusion_reason_codes"]
+                .as_array()
+                .is_none_or(|codes| {
+                    !codes.iter().any(|c| {
+                        c.as_str()
+                            .is_some_and(|c| REPAIR_EPISODE_CODES.contains(&c))
+                    })
+                })
         })
         .filter(|lap| {
             lap["exclusion_reasons"].as_array().is_none_or(|reasons| {
@@ -586,7 +599,9 @@ pub async fn refresh_on_start(app: &AppState) -> Result<usize> {
                 "best_green_lap_s",
             ]
             .iter()
-            .any(|key| before.get(key).is_none());
+            .any(|key| before.get(key).is_none())
+            // a null best is recomputed at every start: the green-lap rule may have widened (#95)
+            || before.get("best_green_lap_s").is_some_and(Value::is_null);
         let after = if stale {
             from_views(&app.cfg.views_dir(&analysis_id, version))
         } else {
@@ -1077,8 +1092,12 @@ QualifyResultsInfo:
         // a restart lap is racing context like traffic
         let mut restart = race_row(12, 28.7);
         restart["exclusion_reasons"] = json!(["restart", "close_traffic"]);
+        // a lap driven on with damage is a real race lap (backlog #95)
+        let mut damaged = race_row(13, 28.8);
+        damaged["exclusion_reasons"] = json!(["damage_repair_context", "close_traffic"]);
+        damaged["damage_repair_context"]["exclusion_reason_codes"] = json!(["post_damage_lap"]);
         laps.extend([
-            partial, caution, pit_in, pit_out, off, tow, pit_road, lap_zero, restart,
+            partial, caution, pit_in, pit_out, off, tow, pit_road, lap_zero, restart, damaged,
         ]);
         r["laps"] = json!(laps);
         let o = session_overview(&r, None);
@@ -1087,7 +1106,10 @@ QualifyResultsInfo:
             "the screened best stays the backend's"
         );
         assert_eq!(o["best_green_lap_s"], 28.4);
-        assert_eq!(o["race_pace_median_s"], 28.6, "29.5 28.5 28.4 28.6 28.7");
+        assert_eq!(
+            o["race_pace_median_s"], 28.65,
+            "29.5 28.5 28.4 28.6 28.7 28.8"
+        );
         assert_eq!(
             o["green_pace_median_s"],
             Value::Null,
