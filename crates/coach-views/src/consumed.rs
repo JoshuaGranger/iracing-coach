@@ -54,6 +54,7 @@ pub const BACKEND_RUN: &[&str] = &[
     "pit_service.fuel_added_l",
     "pit_service.tires_changed_observed",
     "pit_service.penalty_served_s",
+    "observed_trend",
 ];
 
 pub const TRACE_LAP: &[&str] = &[

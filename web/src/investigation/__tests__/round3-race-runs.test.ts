@@ -8,7 +8,7 @@ import { inspectSectionEntry } from "../ui/comparison-model";
 import { PitCard } from "../ui/PitPictogram";
 import { availableLayers, lapContexts, layerReadout, layersReadout, parseLayers, readLayers, writeLayers } from "../ui/race-layers";
 import { paceTopMargin } from "../ui/RaceView";
-import { fitOnLaps, fitSegment, runIdentities, shadeColour, smoothPath, toggleRun } from "../ui/runs-model";
+import { runIdentities, shadeColour, toggleRun } from "../ui/runs-model";
 import type { RaceViewData } from "../types";
 
 const analysis = buildRound3Analysis();
@@ -67,37 +67,6 @@ describe("run identity by tire set (#42)", () => {
     const ids = runIdentities([1, 2, 3, 4], chain);
     expect([...ids.values()].map((id) => [id.set, id.shade])).toEqual([[1, 0], [1, 1], [1, 2], [1, 3]]);
     expect(shadeColour(1, 3)).not.toBe(shadeColour(1, 2));
-  });
-});
-
-describe("the fit is the only line (#44)", () => {
-  it("evaluates the backend's line at each lap's reported exposure inside the fitted span only", () => {
-    const run = inv.runs[0]!;
-    const points = fitOnLaps(run, inv.laps);
-    const segment = fitSegment(run)!;
-    expect(points[0]!.lap).toBe(3);
-    expect(points[points.length - 1]!.lap).toBe(24);
-    expect(points[0]!.y).toBeCloseTo(segment.y1, 9);
-    expect(points[points.length - 1]!.y).toBeCloseTo(segment.y2, 9);
-    for (const point of points) {
-      const lap = inv.laps.find((item) => item.lap === point.lap)!;
-      expect(lap.greenExposure).toBeGreaterThanOrEqual(3);
-      expect(lap.greenExposure).toBeLessThanOrEqual(24);
-    }
-    expect(fitOnLaps(inv.runs[2]!, inv.laps)).toEqual([]);
-  });
-
-  it("draws a smooth monotone curve that never leaves the values it joins", () => {
-    expect(smoothPath([[0, 0]])).toBe("");
-    expect(smoothPath([[0, 0], [10, 5]])).toBe("M0,0L10,5");
-    const pts: [number, number][] = [[0, 50], [10, 40], [20, 38], [30, 20], [40, 20]];
-    const d = smoothPath(pts);
-    expect(d.startsWith("M0,50C")).toBe(true);
-    const ys = [...d.matchAll(/C[\d.-]+,([\d.-]+) [\d.-]+,([\d.-]+) [\d.-]+,([\d.-]+)/g)].flatMap((m) => [Number(m[1]), Number(m[2])]);
-    for (const y of ys) {
-      expect(y).toBeGreaterThanOrEqual(20 - 1e-6);
-      expect(y).toBeLessThanOrEqual(50 + 1e-6);
-    }
   });
 });
 

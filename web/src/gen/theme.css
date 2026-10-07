@@ -90,6 +90,9 @@
   --text-hero: 2.75rem;
   --text-figure: 1.25rem;
   --text-heading: 2.125rem;
+  --text-list-name: 1rem;
+  --text-list-figure: 1.125rem;
+  --text-item-title: 1.5rem;
   --control-height: max(36px, 2.25rem);
   --touch-target: max(44px, 2.75rem);
   --weight-regular: 400;

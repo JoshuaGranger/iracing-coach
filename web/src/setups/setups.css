@@ -1,4 +1,9 @@
 /*
+ * Type (backlog #89): the Sessions list's scale through the shared list tokens. A car section or card heading is a list name
+ * (`--text-list-name`, display caps at the semibold weight, as a Sessions track name), a setup's name the same size in the UI face (as a
+ * Sessions phase name), figures at the data size and the medium weight, labels and counts at the compact size; the detail heading is
+ * `--text-item-title`. No bold-on-bold, no sizes of the page's own.
+ *
  * Setups, setup detail and Find a baseline in the chosen visual language (docs/08-rewrite/design/README.md):
  * Broadcast pages (car cards, pills, display numerals) with Pit-wall boards (fixed column tracks) for every list and table.
  * Colour is racing data: race hues carry race meaning, car colours carry the car, interaction is light.
@@ -162,7 +167,7 @@
   padding: 0 var(--space-3);
   border-radius: 0.8125rem;
   font-size: var(--text-compact);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   white-space: nowrap;
 }
 .ds .vk {
@@ -182,10 +187,10 @@
   font-family: var(--ds-disp);
   font-stretch: condensed;
   font-size: var(--text-compact);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
 }
 
 /* ---- filters -------------------------------------------------------------------- */
@@ -263,9 +268,11 @@
 }
 .ds .s-car-name {
   font-family: var(--ds-disp);
-  font-stretch: semi-condensed;
-  font-size: 1.375rem;
-  font-weight: 700;
+  font-stretch: condensed;
+  font-size: var(--text-list-name);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .ds .s-car-head::before {
   content: "";
@@ -285,9 +292,8 @@
   color: var(--color-text-muted);
 }
 .ds .s-car-head .n strong {
-  font-size: var(--text-control);
-  font-stretch: semi-condensed;
-  color: var(--color-text-primary);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
 }
 /* Past ten rows a car section keeps its ten-row height (measured and set inline by the page; this is the first-paint guess) and scrolls
    inside. Native overflow scrolling: the page takes the wheel or the finger at the region's ends (no overscroll containment). */
@@ -358,10 +364,12 @@
   text-decoration: none;
 }
 .ds .s-title {
-  font-family: var(--ds-disp);
-  font-stretch: semi-condensed;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-family: var(--font-ui);
+  font-size: var(--text-list-name);
+  font-weight: var(--weight-semibold);
+  font-stretch: normal;
+  letter-spacing: normal;
+  text-transform: none;
   overflow-wrap: anywhere;
 }
 .ds .s-name small {
@@ -378,7 +386,7 @@
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface3);
   box-shadow: 2px -2px 0 -1px var(--color-surface1), 2px -2px 0 0 var(--color-border-strong);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   color: var(--color-text-primary);
 }
 .ds button.s-toggle {
@@ -413,7 +421,7 @@
   font-family: var(--ds-disp);
   font-stretch: condensed;
   font-size: var(--text-control);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -428,8 +436,6 @@
 }
 .ds .s-version .s-title {
   font-size: var(--text-body);
-  font-weight: 600;
-  font-stretch: normal;
 }
 .ds .s-entry.unknown {
   background: transparent;
@@ -549,7 +555,8 @@
   box-shadow: 0 0 14px var(--car, transparent);
 }
 .ds .d-head h1 {
-  font-size: 2rem;
+  font-size: var(--text-item-title);
+  font-weight: var(--weight-semibold);
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
@@ -560,6 +567,7 @@
   align-items: center;
   gap: var(--space-2) var(--space-3);
   color: var(--color-text-secondary);
+  font-size: var(--text-compact);
 }
 .ds .d-card {
   margin-top: var(--space-4);
@@ -575,14 +583,15 @@
 .ds .d-card > h2 {
   font-family: var(--ds-disp);
   font-stretch: condensed;
-  font-size: 1.25rem;
+  font-size: var(--text-list-name);
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .ds .d-card > h2 .count {
   margin-left: var(--space-2);
   color: var(--color-text-muted);
-  font-size: var(--text-control);
+  font-size: var(--text-compact);
 }
 .ds .d-card h3 {
   font-family: var(--ds-disp);
@@ -647,8 +656,6 @@
 }
 .ds .v-head .s-title {
   font-size: var(--text-body);
-  font-weight: 600;
-  font-stretch: normal;
 }
 .ds .v-head .date,
 .ds .v-head .num {
@@ -696,7 +703,7 @@
   font-family: var(--ds-disp);
   font-stretch: semi-condensed;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .ds .v-changes td:last-child {
   color: var(--color-text-muted);
@@ -763,7 +770,7 @@
 .ds .value-group dd {
   font-family: var(--ds-disp);
   font-stretch: semi-condensed;
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .ds .compare th small {
   display: block;
@@ -778,7 +785,7 @@
 }
 .ds .compare tr[data-kind="changed"] td {
   color: var(--color-text-primary);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 .ds .compare tr[data-kind="changed"] td:last-child {
   box-shadow: inset 3px 0 0 var(--color-text-secondary);
@@ -886,7 +893,7 @@
     padding-left: var(--space-5);
   }
   .ds .d-head h1 {
-    font-size: 1.625rem;
+    font-size: var(--text-section-title);
   }
 }
 
@@ -935,10 +942,9 @@
   font-weight: 600;
 }
 .ds .b-cand .nm {
-  font-family: var(--ds-disp);
-  font-stretch: semi-condensed;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-family: var(--font-ui);
+  font-size: var(--text-list-name);
+  font-weight: var(--weight-semibold);
   overflow-wrap: anywhere;
 }
 .ds .b-cand .fp {

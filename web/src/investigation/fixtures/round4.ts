@@ -1,5 +1,6 @@
 import { buildRound3Analysis } from "./round3";
 import type { SyntheticAnalysis } from "./synthetic";
+import { withObservedTrends } from "./trend";
 
 /**
  * The round-3 synthetic race dressed for the round-4 Race, Runs and Traces checks (#58–#63, #66). Every value is invented; nothing
@@ -39,5 +40,5 @@ export function buildRound4Analysis(analysisId = "round4-82-lap"): SyntheticAnal
     const burn = ROUND4_BURN_GAL[run.run_number as number];
     if (burn !== undefined) run.fuel = { ...(run.fuel as Json), green_gal_per_lap: burn, green_l_per_lap: burn * 3.785411784 };
   }
-  return analysis;
+  return withObservedTrends(analysis);
 }

@@ -140,7 +140,7 @@ export function PhaseLine({ s, ev, customerId, now }: { s: Session; ev: EventGro
         <div class="sx-slot sx-head">
           <b class={quiet ? "sx-qv sx-phase" : "sx-v sx-phase"}>
             <span class="sx-badge" aria-hidden="true">
-              {badge}
+              <span>{badge}</span>
             </span>
             {phase.label}
             {type !== null && type !== ev.setupType ? <SetupLock type={type} /> : null}
@@ -179,7 +179,7 @@ export function PhaseLine({ s, ev, customerId, now }: { s: Session; ev: EventGro
 /**
  * One card per event (backlog #50), a gap between cards: the identity block at the left behind a divider, vertically centred against
  * the phase lines (#71, #72) it sits beside (above them when the card is under 62 rem wide); the phases are full-width lines stacked
- * in session order, a missing phase has no line (#72). The identity is the silhouette beside three lines on one left edge: the track,
+ * race, qualifying, practice (#86), a missing or hidden (#88) phase has no line (#72). The identity is the silhouette beside three lines on one left edge: the track,
  * `config · date`, the car behind its colour bar; the setup lock sits in the block's top-right corner (#69).
  */
 export function EventRow({ ev, customerId, now }: { ev: EventGroup; customerId: number; now: Date }) {

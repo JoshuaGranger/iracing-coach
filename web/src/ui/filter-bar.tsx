@@ -13,6 +13,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
  * no chip row; each dropdown button carries its own selection (`Car · Supra`, `Car · 2`) at a fixed width and clears from
  * inside its list, and the collapsed button has a fixed width too.
  *
+ * An `aside` (the Sessions R · Q · P chips, backlog #88) is a fixed-width view control that stays visible: it sits just left of the
+ * controls (or of the `Filters` button), and when the title, the aside and the collapsed button do not fit on one row it takes its own
+ * row under the title. Its width is measured like the title's, so it never changes the decision when it is used.
+ *
  * The bar is stateless about selections. The page owns them and saves them per page through the driver's prefs
  * (`session_filters`, `setup_filters`), so they survive navigation and Back; the popover only shows them.
  */
@@ -52,6 +56,18 @@ export function fitsInline({ rowWidth, titleWidth, controlRems, rootPx }: FitInp
   return titleWidth + (TITLE_GAP_REM + controls) * rootPx <= rowWidth;
 }
 
+/** Width of the collapsed `Filters` button (`.fb-trigger`), in rem. */
+export const TRIGGER_REM = 7.5;
+
+/**
+ * True when an aside has to take its own row: the title, the aside and the collapsed button, with their gaps, do not fit. Never when
+ * the controls are inline (they fit beside the aside by `fitsInline`) or there is no aside.
+ */
+export function stacksAside({ rowWidth, titleWidth, asideWidth, rootPx, inline }: { rowWidth: number; titleWidth: number; asideWidth: number; rootPx: number; inline: boolean }): boolean {
+  if (inline || !(asideWidth > 0)) return false;
+  return titleWidth + asideWidth + (2 * TITLE_GAP_REM + TRIGGER_REM) * rootPx > rowWidth;
+}
+
 /** The label of the collapsed button: `Filters`, or `Filters · N` while N are chosen. */
 export function filtersLabel(activeCount: number): string {
   return activeCount > 0 ? `Filters · ${activeCount}` : "Filters";
@@ -79,19 +95,23 @@ export function FilterBar({
   title,
   controls,
   activeCount,
+  aside,
 }: {
   /** The page title. A string becomes the `h1`; pass a node (an `h1` with a Live now link beside it) for more. */
   title: ComponentChildren;
   controls: readonly FilterControl[];
   /** How many choices are in force; the collapsed button reads `Filters · N`. */
   activeCount: number;
+  /** A fixed-width view control kept visible beside the controls (see above). */
+  aside?: ComponentChildren;
 }) {
   const row = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   const id = useRef(`fb-${++uid}`).current;
-  const [size, setSize] = useState({ row: 0, title: 0, root: 16 });
+  const [size, setSize] = useState({ row: 0, title: 0, aside: 0, root: 16 });
   const [open, setOpen] = useState(false);
   const touch = useMedia("(pointer: coarse)");
 
@@ -99,23 +119,27 @@ export function FilterBar({
     const measure = () => {
       const r = row.current?.getBoundingClientRect().width ?? 0;
       const t = titleRef.current?.getBoundingClientRect().width ?? 0;
+      const a = asideRef.current?.getBoundingClientRect().width ?? 0;
       const root = rootPx();
-      setSize((p) => (Math.abs(p.row - r) < 0.5 && Math.abs(p.title - t) < 0.5 && p.root === root ? p : { row: r, title: t, root }));
+      setSize((p) => (Math.abs(p.row - r) < 0.5 && Math.abs(p.title - t) < 0.5 && Math.abs(p.aside - a) < 0.5 && p.root === root ? p : { row: r, title: t, aside: a, root }));
     };
     measure();
     if (typeof ResizeObserver !== "function") return undefined;
     const observer = new ResizeObserver(measure);
     if (row.current) observer.observe(row.current);
     if (titleRef.current) observer.observe(titleRef.current);
+    if (asideRef.current) observer.observe(asideRef.current);
     return () => observer.disconnect();
   }, []);
 
+  const asideRoom = size.aside > 0 ? size.aside + TITLE_GAP_REM * size.root : 0;
   const inline = fitsInline({
     rowWidth: size.row,
-    titleWidth: size.title,
+    titleWidth: size.title + asideRoom,
     controlRems: controls.map((c) => c.minRem ?? DEFAULT_CONTROL_REM),
     rootPx: size.root,
   });
+  const stacked = stacksAside({ rowWidth: size.row, titleWidth: size.title, asideWidth: size.aside, rootPx: size.root, inline });
 
   // The surface is only open while collapsed; widening the window closes it.
   useEffect(() => {
@@ -166,10 +190,17 @@ export function FilterBar({
 
   return (
     <div class="fb" data-layout={inline ? "inline" : "collapsed"} onKeyDown={onKey}>
-      <header class="page-head fb-row" ref={row}>
+      <header class="page-head fb-row" ref={row} data-aside={aside ? (stacked ? "stacked" : "beside") : undefined}>
         <div class="fb-title" ref={titleRef}>
           {heading}
         </div>
+        {aside ? (
+          <div class="fb-aside">
+            <div class="fb-aside-in" ref={asideRef}>
+              {aside}
+            </div>
+          </div>
+        ) : null}
         {inline ? (
           <div class="fb-controls" role="search" aria-label="Filters">
             {controls.map((c) => (

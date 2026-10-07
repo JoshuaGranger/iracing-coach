@@ -6,10 +6,10 @@ import { incidentPointsByLap, inRaceStops, pitStops, type PitStop } from "../geo
 import { fastestCleanLap } from "../geometry/trace-model";
 import { asArray, asRecord, type RaceViewData, type TraceLapData } from "../types";
 import { useElementSize } from "./hooks";
-import { LapDot, markRadius } from "./LapDot";
+import { LapDot } from "./LapDot";
 import { PitCard, PitGlyph, pitLabel } from "./PitPictogram";
 import { availableLayers, fuelPath, lapContexts, layersReadout, readLayers, refills, seriesSegments, writeLayers, type LapContext, type LayerKey } from "./race-layers";
-import { fitDrawn, fitOnLaps, identityColour, runIdentities, runLineParts, runLineReadout, smoothPath, type RunIdentity } from "./runs-model";
+import { identityColour, observedTrend, runIdentities, runLineParts, runLineReadout, trendAt, trendHover, trendText, type ObservedTrend, type RunIdentity } from "./runs-model";
 import { lapKind, lapTraffic, trafficText, type LapTraffic } from "./traffic";
 import { scaleFor, useRemPx } from "./unit";
 
@@ -120,13 +120,15 @@ interface ChartProps {
   contexts: ReadonlyMap<number, LapContext>;
   /** The backend's traffic share per lap (and the side, when it names one), for the traffic laps' readout. */
   traffic: ReadonlyMap<number, LapTraffic>;
+  /** The runs view's runs: each run's observed trend (`observed_trend`, #90). */
+  runs: readonly unknown[];
   layers: readonly LayerKey[];
   header: ComponentChildren;
   /** The readout while no chart mark is under the pointer (a run line's hover or tap). */
   note?: string;
 }
 
-function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, traffic, layers, header, note }: ChartProps) {
+function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities, contexts, traffic, runs, layers, header, note }: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(host);
   const k = scaleFor(useRemPx());
@@ -134,8 +136,8 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
   const { pace: plotted, caution: cautionDots } = useMemo(() => chartLaps(inv.laps), [inv]);
   const incidents = useMemo(() => inv.timeline.filter((item) => item.kind === "incident"), [inv]);
   const timelinePits = useMemo(() => inv.timeline.filter((item) => item.kind === "pit_service" && !knownPitLaps.has(item.lap)), [inv, knownPitLaps]);
-  // The screened fit only where it covers at least half the run's green laps (#59a).
-  const fits = useMemo(() => inv.runs.filter((run) => fitDrawn(run, inv.laps)).map((run) => ({ run, points: fitOnLaps(run, inv.laps) })).filter((fit) => fit.points.length >= 2), [inv]);
+  // Each run's observed trend from the server (#90): a straight line over its counted laps, never extended.
+  const trends = useMemo(() => inv.runs.map((run) => ({ run: run.runNumber, trend: observedTrend(runs, run.runNumber) })).filter((item): item is { run: number; trend: ObservedTrend } => item.trend !== null), [inv, runs]);
   const on = (key: LayerKey): boolean => layers.includes(key);
   const placed = inv.laps.filter((lap) => lap.position !== null && lap.position > 0);
   const hasPositions = placed.length >= 2;
@@ -145,7 +147,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
     if (width < 40 || height < 40) return null;
     const minLap = Math.min(...inv.laps.map((lap) => lap.lap));
     const maxLap = Math.max(...inv.laps.map((lap) => lap.lap));
-    const times = plotted.map((lap) => lap.lapTimeS as number);
+    const times = [...plotted.map((lap) => lap.lapTimeS as number), ...trends.flatMap(({ trend }) => [trendAt(trend, trend.firstLap), trendAt(trend, trend.lastLap)])];
     const min = times.length ? Math.min(...times) : 0;
     const max = times.length ? Math.max(...times) : 1;
     const pad = Math.max(0.08, (max - min) * 0.06);
@@ -187,7 +189,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
     const dotY = (lap: InvestigationLap): number => clampY(lap.lapTimeS as number);
     const lapHover = (lap: InvestigationLap) => () => setHover({ kind: "lap", lap });
     return (
-      <svg class="ri-plot-svg" viewBox={`0 0 ${n(width)} ${n(height)}`} role="group" aria-label="Race progression: lap time, run pace fit, cautions, pit stops, incidents and position by lap" onPointerLeave={(event: PointerEvent) => { if (event.pointerType !== "touch") setHover(null); }}>
+      <svg class="ri-plot-svg" viewBox={`0 0 ${n(width)} ${n(height)}`} role="group" aria-label="Race progression: lap time, run pace trend, cautions, pit stops, incidents and position by lap" onPointerLeave={(event: PointerEvent) => { if (event.pointerType !== "touch") setHover(null); }}>
         {cautionLaps.map((lap) => (
           <rect key={`c${lap.lap}`} data-caution-lap={lap.lap} x={n(pace.x(lap.lap) - lapWidth / 2)} y={n(pace.top)} width={n(Math.max(1.5, lapWidth))} height={n(bandBottom - pace.top)} class="ri-caution-shade" />
         ))}
@@ -259,16 +261,26 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
             </g>
           );
         })}
-        {/* The backend's screened fit per run: a smooth curve over the laps of its supported span; the dots are the observations. */}
-        {fits.map(({ run, points }) => {
-          const d = smoothPath(points.map((point) => [pace.x(point.lap), clampY(point.y)] as const));
-          return (
-            <g key={`f${run.runNumber}`} class="ri-fit-group" data-fit-run={run.runNumber} data-fit-span={`${points[0]!.lap}-${points[points.length - 1]!.lap}`} style={`--run:${colour(run.runNumber)}`}>
-              <path d={d} class="ri-fit-halo" />
-              <path d={d} class="ri-fit" stroke-dasharray={identities.get(run.runNumber)?.dash || undefined} />
-            </g>
-          );
-        })}
+        {/* The observed trend per run (#90): a straight line from its first to its last counted lap, the slope at its end. */}
+        {(() => {
+          const placed: number[] = [];
+          return trends.map(({ run, trend }) => {
+            const [x1, x2] = [pace.x(trend.firstLap), pace.x(trend.lastLap)];
+            const [y1, y2] = [clampY(trendAt(trend, trend.firstLap)), clampY(trendAt(trend, trend.lastLap))];
+            // The label sits above the line's end; one that would print over another moves up a line.
+            let labelY = Math.max(pace.top + 10 * k, y2 - 9 * k);
+            while (placed.some((other) => Math.abs(other - labelY) < 14 * k)) labelY -= 14 * k;
+            placed.push(labelY);
+            return (
+              <g key={`t${run}`} class="ri-fit-group" data-trend-run={run} data-trend-span={`${trend.firstLap}-${trend.lastLap}`} style={`--run:${colour(run)}`}>
+                <title>{`${identities.get(run)?.name ?? `Run ${run}`} · ${trendText(trend)} · ${trendHover(trend)}`}</title>
+                <line x1={n(x1)} y1={n(y1)} x2={n(x2)} y2={n(y2)} class="ri-fit-halo" />
+                <line x1={n(x1)} y1={n(y1)} x2={n(x2)} y2={n(y2)} class="ri-fit ri-trend" stroke-dasharray={identities.get(run)?.dash || undefined} />
+                <text x={n(x2)} y={n(labelY)} text-anchor="end" class="ri-fit-label" data-trend-label={run}>{trendText(trend)}</text>
+              </g>
+            );
+          });
+        })()}
         {cautionDots.map((lap) => {
           const off = (lap.lapTimeS as number) > pace.yMax;
           return (
@@ -278,7 +290,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
             </circle>
           );
         })}
-        {/* Open air: the plain dot. Screened for close traffic alone: a double ring. Screened for anything else: the hollow dot (#67). */}
+        {/* Open air: the solid dot. Screened for close traffic alone: the same dot, fainter, outlined (#92). Anything else: the hollow dot. */}
         {plotted.map((lap) => (
           <LapDot
             key={lap.lap} lap={lap.lap} kind={lapKind(lap)} side={traffic.get(lap.lap)?.side ?? null} cx={pace.x(lap.lap)} cy={dotY(lap)} r={dotRadius} colour={colour(lap.runNumber)}
@@ -287,7 +299,7 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
         ))}
         {/* The fastest lap: a magenta ring around its mark. */}
         {fastestLap !== null && lapAt.has(fastestLap) && (
-          <circle cx={n(pace.x(fastestLap))} cy={n(dotY(lapAt.get(fastestLap)!))} r={n(markRadius(lapKind(lapAt.get(fastestLap)!), traffic.get(fastestLap)?.side ?? null, dotRadius) + 2.6)} class="ri-best-ring" data-fastest={fastestLap} />
+          <circle cx={n(pace.x(fastestLap))} cy={n(dotY(lapAt.get(fastestLap)!))} r={n(dotRadius + 2.6)} class="ri-best-ring" data-fastest={fastestLap} />
         )}
         {posScale && (
           <g class="ri-position-band" data-position-band>
@@ -407,6 +419,8 @@ function useLayers(): [LayerKey[], (key: LayerKey) => void] {
   return [layers, toggle];
 }
 
+const NO_RUNS: readonly unknown[] = [];
+
 export interface RaceViewProps {
   inv: Investigation;
   race?: RaceViewData;
@@ -449,7 +463,7 @@ export function RaceView({ inv, race, runs, sessionType }: RaceViewProps) {
   return (
     <div class="ri-race-view" data-ri-view="race">
       <div class="ri-card ri-fill">
-        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} traffic={traffic} layers={layers} header={header} note={note ?? undefined} />
+        <ProgressChart inv={inv} stops={stops} knownPitLaps={knownPitLaps} fastestLap={fastestLap} word={word} identities={identities} contexts={contexts} traffic={traffic} runs={runs ?? NO_RUNS} layers={layers} header={header} note={note ?? undefined} />
         {lines.length > 0 && (
           <ul class="ri-run-lines" aria-label="Runs">
             {lines.map(({ run, parts }) => {

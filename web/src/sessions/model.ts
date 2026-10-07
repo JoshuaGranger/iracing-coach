@@ -102,7 +102,7 @@ export interface EventGroup {
   key: string;
   /** The race when the event has one, else its last phase: the session that names the event's car, track and series. */
   head: Session;
-  /** Phases in running order (practice, qualifying, race). */
+  /** Phases as the card lists them: race, qualifying, practice (`compareLines`, backlog #86). */
   sessions: Session[];
   /** Earliest session start, UTC ISO. */
   start: string | null;
@@ -116,16 +116,37 @@ export function bestLap(s: Session): number | null {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
 }
 
+/**
+ * A race's fastest green lap, traffic included (`SessionOverview.best_green_lap_s`, backlog #85): the clean best leaves out close
+ * traffic, which is nearly every race lap, so the race line reads this one. Null reads as absent.
+ */
+export function raceBestLap(s: Session): number | null {
+  const v: unknown = s.overview.best_green_lap_s;
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/** The best lap a phase line shows: the race its green best (#85), practice and qualifying their clean best. */
+export function phaseBestLap(s: Session): number | null {
+  return phaseOf(s.session_type).code === "R" ? raceBestLap(s) : bestLap(s);
+}
+
 export function comparePhases(a: Session, b: Session): number {
   return phaseOf(a.session_type).rank - phaseOf(b.session_type).rank || (a.sim_session_num ?? 0) - (b.sim_session_num ?? 0) || (a.start_time_utc ?? "").localeCompare(b.start_time_utc ?? "") || a.session_id - b.session_id;
 }
 
+/** Order of the lines in an event card (backlog #86): race, warmup, qualifying, practice; then running order within a type. */
+const LINE_RANK: Record<PhaseCode, number> = { R: 0, W: 1, Q: 2, P: 3, T: 3 };
+
+export function compareLines(a: Session, b: Session): number {
+  return LINE_RANK[phaseOf(a.session_type).code] - LINE_RANK[phaseOf(b.session_type).code] || comparePhases(a, b);
+}
+
 /**
- * Events in the order the server sent them (newest first); phases inside an event in running order. With a selection, each event
+ * Events in the order the server sent them (newest first); phases inside an event race first, then qualifying, then practice (#86). With a selection, each event
  * keeps the phases that match it and events with none are dropped; the event best, head and setup type still come from every phase
  * of the event, so filtering never turns a slower lap into the event best (review finding 13).
  */
-export function groupEvents(sessions: readonly Session[], sel?: Selection): EventGroup[] {
+export function groupEvents(sessions: readonly Session[], sel?: Selection, phases?: PhaseToggles): EventGroup[] {
   const order: string[] = [];
   const byKey = new Map<string, Session[]>();
   for (const s of sessions) {
@@ -138,14 +159,51 @@ export function groupEvents(sessions: readonly Session[], sel?: Selection): Even
   }
   return order.flatMap((key) => {
     const list = byKey.get(key)!.slice().sort(comparePhases);
-    const shown = sel ? filterSessions(list, sel) : list;
+    const filtered = sel ? filterSessions(list, sel) : list;
+    const shown = (phases ? filtered.filter((s) => phaseShown(phases, s)) : filtered).sort(compareLines);
     if (shown.length === 0) return [];
     const head = list.find((s) => phaseOf(s.session_type).code === "R") ?? list[list.length - 1]!;
     const starts = list.map((s) => s.start_time_utc).filter((v): v is string => !!v).sort();
-    const bests = list.map(bestLap).filter((v): v is number => v !== null);
+    const bests = list.map(phaseBestLap).filter((v): v is number => v !== null);
     const setupType = setupTypeOf(head) ?? list.map(setupTypeOf).find((v) => v !== null) ?? null;
     return [{ key, head, sessions: shown, start: starts[0] ?? null, setupType, bestLapS: bests.length ? Math.min(...bests) : null }];
   });
+}
+
+/* ---- phase toggles (backlog #88) --------------------------------------------------- */
+
+/** The three toggle chips in the heading, in the card's line order. A warmup or test line follows the practice chip. */
+export const TOGGLE_CODES = ["R", "Q", "P"] as const;
+export type ToggleCode = (typeof TOGGLE_CODES)[number];
+export type PhaseToggles = Record<ToggleCode, boolean>;
+
+export function allPhases(): PhaseToggles {
+  return { R: true, Q: true, P: true };
+}
+
+/** The chip a session's line answers to. */
+export function toggleOf(s: Session): ToggleCode {
+  const code = phaseOf(s.session_type).code;
+  return code === "R" ? "R" : code === "Q" ? "Q" : "P";
+}
+
+export function phaseShown(t: PhaseToggles, s: Session): boolean {
+  return t[toggleOf(s)];
+}
+
+/** Flip one chip; the last chip on stays on, so the list never goes empty by toggling. */
+export function togglePhase(t: PhaseToggles, code: ToggleCode): PhaseToggles {
+  const next = { ...t, [code]: !t[code] };
+  return TOGGLE_CODES.some((c) => next[c]) ? next : t;
+}
+
+/** A stored value read back: anything unreadable, or with every chip off, is all on. */
+export function parsePhaseToggles(raw: unknown): PhaseToggles {
+  if (!raw || typeof raw !== "object") return allPhases();
+  const r = raw as Record<string, unknown>;
+  const out = allPhases();
+  for (const c of TOGGLE_CODES) if (typeof r[c] === "boolean") out[c] = r[c] as boolean;
+  return TOGGLE_CODES.some((c) => out[c]) ? out : allPhases();
 }
 
 /* ---- filters --------------------------------------------------------------------- */
@@ -380,6 +438,8 @@ const FIGURE_FIELDS = [
   "green_laps_estimated",
   "caution_laps_estimated",
   "best_clean_lap_s",
+  "best_green_lap_s",
+  "race_pace_median_s",
   "pace_slope_s_per_lap",
   "pit_stops_detected",
   "longest_green_run",
@@ -496,9 +556,12 @@ export interface Slot {
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const count = (v: number | null | undefined): number | null => (finite(v) ? v : null);
 
-/** The median green-lap time of the phase (`SessionOverview.green_pace_median_s`, the backend's own screen). Null reads as absent: the slot shows `—`. */
-export function greenPace(s: Session): number | null {
-  const v: unknown = s.overview.green_pace_median_s;
+/**
+ * The race's median green lap, traffic included (`SessionOverview.race_pace_median_s`, backlog #85), over the same laps as its best.
+ * Null reads as absent: the slot shows `—`.
+ */
+export function racePace(s: Session): number | null {
+  const v: unknown = s.overview.race_pace_median_s;
   return finite(v) && v > 0 ? v : null;
 }
 
@@ -561,22 +624,18 @@ export function phaseSlots(s: Session, eventBest: number | null): Slot[] {
       missing: false,
     });
 
-  const best = bestLap(s);
-  if (best === null) out.push(missingSlot("best", "Best", "Best clean lap"));
-  else {
-    const isEventBest = eventBest !== null && best === eventBest;
-    out.push({ key: "best", label: "Best", title: isEventBest ? "Best clean lap, fastest of the event" : "Best clean lap", parts: [{ text: lapText(best) }], missing: false, eventBest: isEventBest || undefined });
-  }
+  out.push(lapSlot("best", "Best", "Fastest green lap, traffic included", raceBestLap(s), eventBest));
 
-  const median = greenPace(s);
+  const median = racePace(s);
   const slope = o.pace_slope_s_per_lap;
   const trend = finite(slope);
-  if (median === null && !trend) out.push(missingSlot("pace", "Pace", "Green pace and its trend, s per lap"));
+  const paceTitle = "Median green lap, traffic included, and the trend, s per lap";
+  if (median === null && !trend) out.push(missingSlot("pace", "Pace", paceTitle));
   else {
     const parts: SlotPart[] = [];
     if (median !== null) parts.push({ text: lapText(median) });
     if (trend) parts.push({ text: formatPace(slope), tone: median !== null ? "unit" : undefined });
-    out.push({ key: "pace", label: "Pace", title: "Green pace and its trend, s per lap", parts, missing: false });
+    out.push({ key: "pace", label: "Pace", title: paceTitle, parts, missing: false });
   }
 
   const stops = count(o.pit_stops_detected);

@@ -6,7 +6,7 @@ import type { RaceViewData } from "../types";
 import { exposureWord, lapLabel, RunSwatch } from "./RaceView";
 import { useElementSize, useSessionNumbers } from "./hooks";
 import { LapDot } from "./LapDot";
-import { fitDrawn, fitLabel, fitSegment, identityColour, runCards, runIdentities, runsChartLaps, sparkGeometry, toggleRun, type RunCard, type RunIdentity } from "./runs-model";
+import { identityColour, observedTrend, runCards, runIdentities, runsChartLaps, sparkGeometry, toggleRun, trendLabel, trendOnExposure, type RunCard, type RunIdentity } from "./runs-model";
 import { lapKind, lapTraffic } from "./traffic";
 import { scaleFor, useRemPx } from "./unit";
 
@@ -34,19 +34,17 @@ function RunCardView({ card, identity, shown, locked, onToggle }: { card: RunCar
       </span>
       <svg class="ri-spark" viewBox="0 0 96 24" aria-hidden="true">
         {spark.fit && <line x1={spark.fit[0]} y1={spark.fit[1]} x2={spark.fit[2]} y2={spark.fit[3]} class="ri-spark-fit" stroke-dasharray={identity?.dash || undefined} />}
-        {/* The chart's three marks, small: open air a dot, traffic a dot in a ring, any other screen a hollow dot (#67). */}
-        {spark.dots.map((dot, index) => dot.kind === "traffic"
-          ? <g key={index} class="ri-spark-traffic" data-spark-traffic><circle cx={dot.cx} cy={dot.cy} r="0.9" class="ri-spark-dot" /><circle cx={dot.cx} cy={dot.cy} r="2.5" class="ri-spark-ring" /></g>
-          : <circle key={index} cx={dot.cx} cy={dot.cy} r="1.6" class={`ri-spark-dot${dot.kind === "screened" ? " hollow" : ""}`} />)}
+        {/* The chart's three marks, small: open air a solid dot, traffic the same dot fainter and outlined, any other screen a hollow dot. */}
+        {spark.dots.map((dot, index) => (
+          <circle key={index} cx={dot.cx} cy={dot.cy} r="1.6" class={`ri-spark-dot${dot.kind === "screened" ? " hollow" : dot.kind === "traffic" ? " traffic" : ""}`} data-spark-mark={dot.kind} />
+        ))}
       </svg>
       <span class="ri-facts">
-        {/* Wide figures in the first column: the fit and the fuel band; the observed fall-off beside the fit (#59a). */}
-        <span class="ri-fact"><span class="ri-fact-label">Fit</span><b class="ri-fact-value" data-run-slope>{card.slope ?? "—"}</b></span>
-        <span class="ri-fact" title={card.fallOffHover ?? undefined}><span class="ri-fact-label">Fall-off</span><b class="ri-fact-value" data-run-falloff>{card.fallOff ?? "—"}</b></span>
+        <span class="ri-fact wide" title={card.slopeHover ?? undefined}><span class="ri-fact-label">Fit</span><b class="ri-fact-value" data-run-slope>{card.slope ?? "—"}</b></span>
+        <span class="ri-fact wide"><span class="ri-fact-label">Fuel</span><b class="ri-fact-value" data-run-fuel>{card.fuelBand ?? "—"}</b></span>
         <span class="ri-fact"><span class="ri-fact-label">Used</span><b class="ri-fact-value" data-run-used>{card.used}</b></span>
-        <span class="ri-fact"><span class="ri-fact-label">Fuel</span><b class="ri-fact-value">{card.fuelBand ?? "—"}</b></span>
-        <span class="ri-fact"><span class="ri-fact-label">Tire laps</span><b class="ri-fact-value">{card.tireLaps ?? "—"}</b></span>
         <span class="ri-fact"><span class="ri-fact-label">Screened</span><b class="ri-fact-value" data-run-screened>{card.screened}</b></span>
+        <span class="ri-fact"><span class="ri-fact-label">Tire laps</span><b class="ri-fact-value" data-run-tires>{card.tireLaps ?? "—"}</b></span>
       </span>
     </button>
   );
@@ -68,8 +66,11 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
   const traffic = useMemo(() => lapTraffic(race), [race]);
   const allPoints = useMemo(() => runsChartLaps(inv.laps), [inv]);
   const points = useMemo(() => allPoints.filter((lap) => lap.runNumber === null || !hidden.has(lap.runNumber)), [allPoints, hidden]);
-  // The screened fit only where it covers at least half the run's green laps (#59a), as on Race.
-  const fits = useMemo(() => inv.runs.filter((run) => !hidden.has(run.runNumber) && fitDrawn(run, inv.laps)).map((run) => ({ run, segment: fitSegment(run), label: fitLabel(run) })).filter((fit) => fit.segment !== null), [inv, hidden]);
+  // Each visible run's observed trend from the server (#90), as on Race, its ends at their laps' green exposure.
+  const fits = useMemo(() => inv.runs.filter((run) => !hidden.has(run.runNumber)).map((run) => {
+    const trend = observedTrend(runs ?? [], run.runNumber);
+    return { run, trend, segment: trend ? trendOnExposure(trend, inv.laps) : null, label: trend ? trendLabel(trend) : null };
+  }).filter((fit) => fit.segment !== null), [inv, runs, hidden]);
   const cards = useMemo(() => runCards(inv, runs ?? []), [inv, runs]);
   // The chart's scale follows the visible runs: their laps and their fits.
   const plot = useMemo(() => {
@@ -128,8 +129,8 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
                   ))}
                   <text x={n(plot.left)} y={n(Math.round(15 * k))} class="ri-axis-title">Lap time · s</text>
                   <text x={n(plot.right)} y={n(plot.bottom + 42 * k)} text-anchor="end" class="ri-axis-title">{word === "clean" ? "Clean laps into run" : "Green laps into run"}</text>
-                  {/* The backend's screened fit, only over the span it fitted, labelled with its slope and eligible count. The dots are the observations. */}
-                  {fits.map(({ run, segment, label }) => {
+                  {/* The observed trend, only over its counted laps, labelled with its slope and lap count. The dots are the observations. */}
+                  {fits.map(({ run, trend, segment, label }) => {
                     const s = segment!;
                     const x1 = plot.x(s.x1);
                     const x2 = plot.x(s.x2);
@@ -137,10 +138,10 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
                     const y2 = plot.y(Math.min(plot.yMax, Math.max(plot.yMin, s.y2)));
                     const dash = identities.get(run.runNumber)?.dash;
                     return (
-                      <g key={`f${run.runNumber}`} class="ri-fit-group" data-fit-run={run.runNumber} data-fit-span={`${s.x1}-${s.x2}`} style={`--run:${identityColour(identities, run.runNumber)}`}>
+                      <g key={`f${run.runNumber}`} class="ri-fit-group" data-trend-run={run.runNumber} data-trend-span={`${trend!.firstLap}-${trend!.lastLap}`} style={`--run:${identityColour(identities, run.runNumber)}`}>
                         <line x1={n(x1)} y1={n(y1)} x2={n(x2)} y2={n(y2)} class="ri-fit-halo" />
-                        <line x1={n(x1)} y1={n(y1)} x2={n(x2)} y2={n(y2)} class="ri-fit" stroke-dasharray={dash || undefined} />
-                        {label && <text x={n(Math.min(x2, plot.right) - 2)} y={n(labelY.get(run.runNumber) ?? y2 - 9 * k)} text-anchor="end" class="ri-fit-label" data-fit-label>{label}</text>}
+                        <line x1={n(x1)} y1={n(y1)} x2={n(x2)} y2={n(y2)} class="ri-fit ri-trend" stroke-dasharray={dash || undefined} />
+                        {label && <text x={n(Math.min(x2, plot.right) - 2)} y={n(labelY.get(run.runNumber) ?? y2 - 9 * k)} text-anchor="end" class="ri-fit-label" data-trend-label={run.runNumber}>{label}</text>}
                       </g>
                     );
                   })}

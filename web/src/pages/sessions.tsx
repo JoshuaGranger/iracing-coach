@@ -14,7 +14,10 @@ import {
   FILTER_IDS,
   FILTER_LABEL,
   type FilterId,
+  type PhaseToggles,
   type Selection,
+  TOGGLE_CODES,
+  allPhases,
   carColorIndex,
   emptySelection,
   facetOptions,
@@ -22,8 +25,11 @@ import {
   groupEvents,
   isEmptySelection,
   selectionCount,
+  parsePhaseToggles,
   parseSelection,
+  phaseOf,
   toSessionFilters,
+  togglePhase,
 } from "../sessions/model";
 import { MultiSelect, type Option } from "../ui/multi-select";
 import { watchTabs } from "../sessions/tab-memory";
@@ -75,6 +81,55 @@ function useSelection(customerId: number): [Selection, (next: Selection) => void
   ];
 }
 
+/** The phase chips are a view choice of this device (backlog #88), not a filter: they follow no driver and no prefs. */
+const PHASES_KEY = "coach.sessions.phases";
+
+function usePhaseToggles(): [PhaseToggles, (next: PhaseToggles) => void] {
+  const [t, setT] = useState<PhaseToggles>(() => parsePhaseToggles(readJson<unknown>(PHASES_KEY, null)));
+  return [
+    t,
+    (next) => {
+      setT(next);
+      writeJson(PHASES_KEY, next);
+    },
+  ];
+}
+
+/**
+ * R · Q · P (backlog #88): one toggle per phase in its hue, all on by default. Off hides that phase's lines in every card; the last
+ * chip on cannot be turned off (it reads disabled). Fixed widths, so the heading never moves when one is toggled.
+ */
+function PhaseChips({ value, onChange }: { value: PhaseToggles; onChange: (next: PhaseToggles) => void }) {
+  const on = TOGGLE_CODES.filter((c) => value[c]).length;
+  return (
+    <div class="seg sx-toggles" role="group" aria-label="Phases shown">
+      {TOGGLE_CODES.map((code) => {
+        const label = phaseOf(code === "R" ? "Race" : code === "Q" ? "Qualify" : "Practice").label;
+        const last = value[code] && on === 1;
+        return (
+          <button
+            key={code}
+            type="button"
+            class="sx-toggle"
+            data-phase={code}
+            aria-pressed={value[code]}
+            aria-disabled={last || undefined}
+            aria-label={label}
+            title={last ? `${label} · the last phase shown` : value[code] ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+            onClick={(e) => {
+              onChange(togglePhase(value, code));
+              // pointer use leaves no focus ring (#78)
+              if (e.detail > 0) (e.currentTarget as HTMLButtonElement).blur();
+            }}
+          >
+            <span>{code}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The car's own accent (`core/palette.ts`), the same on the event cards, on Setups and in the filter. */
 function CarStripe({ car }: { car: string }) {
   return <i class="sx-stripe" style={`--car:${carAccent(car)}`} aria-hidden="true" />;
@@ -87,6 +142,7 @@ export function SessionsPage({ customerId }: { customerId: number }) {
   const all = lib.data;
   const sessions = all ?? [];
   const [sel, setSel] = useSelection(customerId);
+  const [phases, setPhases] = usePhaseToggles();
   const [shown, setShown] = useState(BATCH);
   useEffect(() => setShown(BATCH), [customerId, sel, library]);
 
@@ -96,7 +152,7 @@ export function SessionsPage({ customerId }: { customerId: number }) {
     for (const id of FILTER_IDS) out[id] = facetOptions(id, sessions, colors);
     return out;
   }, [all, colors]);
-  const events = useMemo(() => groupEvents(sessions, sel), [all, sel]);
+  const events = useMemo(() => groupEvents(sessions, sel, phases), [all, sel, phases]);
   const now = useMemo(() => new Date(), [all]);
 
   const drivers = useResource(paths.drivers, () => api.drivers());
@@ -136,7 +192,7 @@ export function SessionsPage({ customerId }: { customerId: number }) {
     })),
   ];
 
-  const filtered = !isEmptySelection(sel);
+  const filtered = !isEmptySelection(sel) || TOGGLE_CODES.some((c) => !phases[c]);
   const visible = events.slice(0, shown);
 
   return (
@@ -154,6 +210,7 @@ export function SessionsPage({ customerId }: { customerId: number }) {
         }
         controls={controls}
         activeCount={selectionCount(sel)}
+        aside={<PhaseChips value={phases} onChange={setPhases} />}
       />
       {lib.error && !all ? <ErrorLine error={lib.error} /> : null}
       {lib.error && all ? <Notice tone="warn">Could not refresh {"·"} {lib.error.message}</Notice> : null}
@@ -161,7 +218,11 @@ export function SessionsPage({ customerId }: { customerId: number }) {
       {all && events.length === 0 ? (
         filtered ? (
           <Empty title="No matching sessions">
-            <button type="button" class="sx-act" onClick={() => setSel(emptySelection())}>
+            <button type="button" class="sx-act" onClick={() => {
+                setSel(emptySelection());
+                setPhases(allPhases());
+              }}
+            >
               Clear filters
             </button>
           </Empty>

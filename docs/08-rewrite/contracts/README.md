@@ -35,6 +35,24 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 Each contract change adds one entry here in the same commit; review per the rule at the top.
 
+### 2026-10-06, B90: each run's observed pace trend on the runs view (web round 6, backlog #90 #91 #93; additive optional field, no review needed; one new projection version)
+
+Reason: backlog #90, the Race chart draws each run's best-fit line with its slope, traffic laps included, and #91, the run's fall-off read `−0.10 s/lap` on a slowing run because it took the restart lap as the run's first. The fit comes from the server, not the browser.
+
+- `api.openapi.yaml`: `BackendRun.observed_trend` (`ObservedTrend` or null; added to `x-consumed-fields` so the shrink ladder keeps it): `slope_s_per_lap`, `intercept_s` (the line's time at lap 0), `first_lap`, `last_lap`, `laps_used`, the least squares of `lap_time_s` on lap over the run's projected `race.json` lap rows that are complete, green, under 1 s on pit road, neither pit-in nor pit-out, timed, with no `exclusion_reasons` but `close_traffic`, and not an incident's `candidate_lap`; null under three such laps. Projector-computed (`crates/coach-views/src/trend.rs`, `#[doc(hidden)] pub mod trend` so the server can reuse the rule); distinct from the backend's screened fit.
+- `crate-api.md`: `PROJECTION_VERSION` 4 becomes 5 so stored analyses are re-projected (the server queues the projection on the first request for a stale view). Overviews are rebuilt from the views at that projection.
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+- Proof: `cargo test -p coach-views` (unit tests in `trend.rs`: a hand-computed four-lap vector, the exclusions, and the 10/02 Vegas run 1 shape, +0.0756 s/lap over laps 11–27 where the old first-to-last read −0.095; `tests/synthetic.rs` checks every run carries the field and the view validates).
+
+### 2026-10-06, B85: a race's best and median green lap with traffic included on the Sessions row (web round 6, backlog #85; additive optional fields, no review needed)
+
+Reason: backlog #85, the Sessions race line read `—` for Best and Pace on 21 of 26 races: `best_clean_lap_s` and `green_pace_median_s` are over the laps the backend screened as clean, and the screen leaves out close traffic, which is nearly every race lap.
+
+- `api.openapi.yaml`: `SessionOverview.best_green_lap_s` and `race_pace_median_s`, the minimum and the median of the backend's `lap_time_s` over its `race.json` `laps[]` rows that are complete, green for the whole lap, under 1 s on pit road, neither pit-in nor pit-out, on track, without pit, tow or repair evidence and without a backend exclusion reason other than `close_traffic` or `restart` (`server/src/overview.rs`, `green_laps`). Both always sent, null when no lap qualifies. `best_clean_lap_s` and `green_pace_median_s` are unchanged.
+- Server, no schema change: at start, overviews at the current projection version without `best_green_lap_s` are rebuilt from their views (`overview::refresh_on_start`). No re-projection: the lap rows are already in `race.json`.
+- Regenerated: `pnpm gen:wire` (`web/src/gen/api.d.ts`, `crates/coach-wire/schema/wire.schema.json`).
+- Proof: `cargo test -p coach-server` (`tests/round6_fields.rs`; unit tests in `src/overview.rs`, including the sanitized traffic-heavy race `test-data/g2/race.json`: best 28.408 s, pace 28.5105 s where `best_clean_lap_s` is null).
+
 ### 2026-10-05, traffic side: `clean_context.traffic_ahead_fraction`, `traffic_behind_fraction`, `traffic_side` (web round 5, backlog #67 and #75; additive optional fields, no review needed)
 
 Reason: backlog #67 and #75, the Race chart's traffic marker and the Sections `Traffic` column name the side the other car was on; the backend stated only how much of the lap had close traffic.

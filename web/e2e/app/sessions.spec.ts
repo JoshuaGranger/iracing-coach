@@ -126,16 +126,16 @@ for (const device of ROUND2_DEVICES) {
     const phone = d.viewport.width < 700;
     const wide = d.viewport.width >= 1400;
 
-    test("one card per event: the identity block, then the phases as full-width lines stacked in session order (#72)", async ({ page }) => {
+    test("one card per event: the identity block, then the phases as full-width lines stacked race, qualifying, practice (#72, #86)", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const row = bristol(page);
       await expect(row.getByRole("heading", { name: "Bristol Motor Speedway" })).toBeVisible();
       await expect(row.locator(".sx-meta span").first()).toHaveText("Oval · Mon Sep 28");
       await expect(row.getByRole("img", { name: "Fixed setup" })).toHaveCount(1);
       await expect(row.locator(".sx-car")).toContainText("NASCAR Xfinity Toyota Supra");
-      await expect(row.locator(".sx-phase")).toHaveText([/Practice$/, /Qualifying$/, /Race$/]);
-      await expect(row.locator(".sx-head .sx-l")).toHaveText(["1:00 pm", "1:30 pm", "2:00 pm · 2 rec"]);
-      expect(await row.locator("li.session-row").evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")))).toEqual(["practice", "qualify", "race"]);
+      await expect(row.locator(".sx-phase")).toHaveText([/Race$/, /Qualifying$/, /Practice$/]);
+      await expect(row.locator(".sx-head .sx-l")).toHaveText(["2:00 pm · 2 rec", "1:30 pm", "1:00 pm"]);
+      expect(await row.locator("li.session-row").evaluateAll((els) => els.map((e) => e.getAttribute("data-kind")))).toEqual(["race", "qualify", "practice"]);
       await expect(page.locator(".sx-events details, .sx-events [aria-expanded]")).toHaveCount(0);
 
       const id = (await row.locator(".sx-id").boundingBox())!;
@@ -341,7 +341,7 @@ for (const device of ROUND2_DEVICES) {
       await expect(race).not.toContainText(/from P\d/);
       await expect(value(race, "laps")).toHaveText("60·20");
       await expect(value(race, "best")).toHaveText("15.234");
-      await expect(value(race, "pace")).toHaveText("15.612+0.021");
+      await expect(value(race, "pace")).toHaveText("15.598+0.021");
       await expect(value(race, "stops")).toHaveText("3");
       await expect(value(race, "burn")).toHaveText("0.47gal/lap");
       await expect(value(race, "run")).toHaveText("41");
@@ -397,7 +397,7 @@ for (const device of ROUND2_DEVICES) {
     test("round 4: P, Q and R badges and phase hues; the green count in green, caution in amber (#52, #53)", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/sessions`));
       const row = bristol(page);
-      await expect(row.locator(".sx-badge")).toHaveText(["P", "Q", "R"]);
+      await expect(row.locator(".sx-badge")).toHaveText(["R", "Q", "P"]);
       // The badge is the line's left mark: first at its left edge, inside it.
       for (const c of await row.locator("li.session-row").all()) {
         const [cb, bb] = [(await c.boundingBox())!, (await c.locator(".sx-badge").boundingBox())!];
@@ -406,7 +406,7 @@ for (const device of ROUND2_DEVICES) {
         expect(bb.y + bb.height).toBeLessThanOrEqual(cb.y + cb.height - 4);
       }
       const bg = (l: Locator) => l.evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(await Promise.all((await row.locator(".sx-badge").all()).map(bg))).toEqual([PHASE_P, PHASE_Q, PHASE_R]);
+      expect(await Promise.all((await row.locator(".sx-badge").all()).map(bg))).toEqual([PHASE_R, PHASE_Q, PHASE_P]);
       const edge = (id: number) => cell(page, id).locator(".sx-line-body").evaluate((el) => getComputedStyle(el).boxShadow);
       expect(await edge(101)).toContain(PHASE_P);
       expect(await edge(102)).toContain(PHASE_Q);
@@ -423,6 +423,109 @@ for (const device of ROUND2_DEVICES) {
       expect(await seg("Race").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(PHASE_R);
       expect(await seg("Practice").evaluate((el) => getComputedStyle(el, "::after").backgroundColor)).toBe(PHASE_P);
       expect(await seg("Qualifying").evaluate((el) => getComputedStyle(el, "::after").backgroundColor)).toBe(PHASE_Q);
+    });
+
+    test("round 6 #85: a race run in traffic shows its green best and pace, where the screened figures are absent", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      // Event 3's race (the win): no clean lap survived the traffic screen (best_clean_lap_s and green_pace_median_s null in the mock).
+      const pack = cell(page, 110);
+      await expect(value(pack, "best")).toHaveText("15.484");
+      await expect(value(pack, "pace")).toHaveText("15.898+0.031");
+      await expect(slot(pack, "best")).toHaveAttribute("title", "Fastest green lap, traffic included");
+      await expect(slot(pack, "pace")).toHaveAttribute("title", "Median green lap, traffic included, and the trend, s per lap");
+      // Practice keeps its own clean best.
+      await expect(quiet(cell(page, 101), "best")).toHaveText("15.500");
+    });
+
+    test("round 6 #87: the P, Q or R letter sits on its badge's centre and the badge on its line's centre", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const row = bristol(page);
+      for (const c of await row.locator("li.session-row").all()) {
+        const m = await c.evaluate((el) => {
+          const badge = el.querySelector(".sx-badge")!;
+          const letter = badge.querySelector("span")!;
+          const name = el.querySelector(".sx-phase")!;
+          const r = (e: Element) => e.getBoundingClientRect();
+          // The letter's ink: a range over its text, trimmed to the capitals by the control recipe.
+          const range = document.createRange();
+          range.selectNodeContents(letter);
+          const ink = range.getBoundingClientRect();
+          const cs = getComputedStyle(badge);
+          const mid = (b: DOMRect) => [b.left + b.width / 2, b.top + b.height / 2];
+          return { badge: mid(r(badge)), letter: mid(ink), line: mid(r(name)), display: cs.display, align: cs.alignItems, justify: cs.justifyContent, lh: cs.lineHeight, size: parseFloat(cs.fontSize) };
+        });
+        // inline-flex, blockified to flex as an item of the head
+        expect(m.display).toMatch(/^(inline-)?flex$/);
+        expect(m.align).toBe("center");
+        expect(m.justify).toBe("center");
+        expect(Math.abs(m.letter[0]! - m.badge[0]!), "letter centred across").toBeLessThanOrEqual(1);
+        expect(Math.abs(m.letter[1]! - m.badge[1]!), "letter centred down").toBeLessThanOrEqual(1);
+        expect(Math.abs(m.badge[1]! - m.line[1]!), "badge on the line's centre").toBeLessThanOrEqual(1);
+      }
+    });
+
+    test("round 6 #88: R, Q and P chips beside the filters hide a phase's lines; the heading never moves; the last chip stays on; remembered", async ({ page }) => {
+      await page.goto(hash(`/d/${DRIVER}/sessions`));
+      const chips = page.getByRole("group", { name: "Phases shown" });
+      const chip = (name: string) => chips.getByRole("button", { name, exact: true });
+      await expect(chips.getByRole("button")).toHaveText(["R", "Q", "P"]);
+      for (const n of ["Race", "Qualifying", "Practice"]) await expect(chip(n)).toHaveAttribute("aria-pressed", "true");
+      // In the heading row: beside the filter controls (or the Filters button) when they fit, on its own row under the title on a phone.
+      const head = page.locator(".fb-row");
+      const chipsBox = (await chips.boundingBox())!;
+      const headBox = (await head.boundingBox())!;
+      expect(chipsBox.y).toBeGreaterThanOrEqual(headBox.y - 1);
+      expect(chipsBox.y + chipsBox.height).toBeLessThanOrEqual(headBox.y + headBox.height + 1);
+      if (!phone) {
+        const filters = page.locator(".fb-controls, .fb-anchor").first();
+        const fb = (await filters.boundingBox())!;
+        expect(fb.x - (chipsBox.x + chipsBox.width), "just left of the filters").toBeGreaterThanOrEqual(0);
+        expect(fb.x - (chipsBox.x + chipsBox.width)).toBeLessThan(24);
+      }
+      // the phase hues
+      const bg = (l: Locator) => l.evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect([await bg(chip("Race")), await bg(chip("Qualifying")), await bg(chip("Practice"))]).toEqual([PHASE_R, PHASE_Q, PHASE_P]);
+
+      const layout = () =>
+        page.evaluate(() => [...document.querySelectorAll(".fb-row, .fb-title, .fb-aside-in, .fb-controls, .fb-anchor, .sx-toggle")].map((el) => {
+          const r = el.getBoundingClientRect();
+          return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)].join(",");
+        }));
+      const before = await layout();
+      const events = page.locator(".sx-event");
+      const all = await events.count();
+
+      // Practice off: no practice line anywhere; Lime Rock (practice only) leaves the list.
+      await chip("Practice").click();
+      await expect(chip("Practice")).toHaveAttribute("aria-pressed", "false");
+      await expect(page.locator('li.session-row[data-kind="practice"]')).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Lime Rock Park - Grand Prix" })).toHaveCount(0);
+      await expect(bristol(page).locator(".sx-badge")).toHaveText(["R", "Q"]);
+      expect(await events.count()).toBeLessThan(all);
+      expect(await layout(), "the heading does not move").toEqual(before);
+      expect(await bg(chip("Practice"))).not.toBe(PHASE_P);
+      // No focus ring survives a pointer click (#78).
+      expect(await chip("Practice").evaluate((el) => el === document.activeElement)).toBe(false);
+
+      // Race off too: only qualifying lines; the last chip on cannot be turned off.
+      await chip("Race").click();
+      await expect(page.locator("li.session-row")).not.toHaveCount(0);
+      expect(await page.locator("li.session-row").evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute("data-kind")))])).toEqual(["qualify"]);
+      await chip("Qualifying").click({ force: true });
+      await expect(chip("Qualifying")).toHaveAttribute("aria-pressed", "true");
+      await expect(chip("Qualifying")).toHaveAttribute("aria-disabled", "true");
+      expect(await layout(), "the heading does not move").toEqual(before);
+
+      // Remembered on this device.
+      await page.reload();
+      await expect(chip("Race")).toHaveAttribute("aria-pressed", "false");
+      await expect(chip("Practice")).toHaveAttribute("aria-pressed", "false");
+      await expect(chip("Qualifying")).toHaveAttribute("aria-pressed", "true");
+      await chip("Race").click();
+      await chip("Practice").click();
+      await expect(bristol(page).locator(".sx-badge")).toHaveText(["R", "Q", "P"]);
+      await expectNoHorizontalScroll(page);
+      if (d.touch) await expectTouchTargets(page);
     });
 
     test("round 4: each event its own card with a gap, the setup lock in the top-right corner of the identity block (#50, #51, #69)", async ({ page }) => {

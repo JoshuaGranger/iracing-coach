@@ -27,7 +27,9 @@ describe("finding 13: the event best comes from the whole event, whatever the fi
     const event = raceOnly.find((ev) => ev.sessions.some((s) => s.session_id === 110))!;
     expect(event.sessions.map((s) => s.session_id)).toEqual([110]);
     expect(event.bestLapS).toBe(15.31);
-    expect(event.sessions[0]!.overview.best_clean_lap_s).toBe(15.534);
+    // the race ran in traffic (#85): no clean best, its green best 15.484 is still slower than qualifying
+    expect(event.sessions[0]!.overview.best_clean_lap_s).toBeNull();
+    expect(event.sessions[0]!.overview.best_green_lap_s).toBe(15.484);
     // Events without a matching phase are dropped; no filter keeps every event and phase.
     expect(raceOnly.every((ev) => ev.sessions.length > 0)).toBe(true);
     expect(groupEvents(sessions).flatMap((ev) => ev.sessions).length).toBe(sessions.length);

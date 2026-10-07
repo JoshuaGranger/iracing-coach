@@ -377,7 +377,14 @@ fn race_runs_and_investigation_pass_backend_subtrees_through_with_unknown_fields
     assert_eq!(lap["pit_in"], false);
     assert_eq!(lap["run_age_laps"], 1.0);
     let runs = view(&out, "runs.json");
-    assert_eq!(runs["runs"], doc["runs"]);
+    // Every run gains the projector's observed trend (backlog #90); the rest passes through.
+    let mut passed = runs["runs"].clone();
+    for run in passed.as_array_mut().unwrap() {
+        let trend = run.as_object_mut().unwrap().remove("observed_trend");
+        assert!(trend.is_some(), "every run carries observed_trend");
+    }
+    assert_eq!(passed, doc["runs"]);
+    assert_valid("RunsView", &runs);
     assert_eq!(
         runs["runs"][0]["future_backend_field"],
         json!({"kept": [1, 2, 3]})

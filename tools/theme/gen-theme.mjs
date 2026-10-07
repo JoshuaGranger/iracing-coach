@@ -45,6 +45,11 @@ add("--text-metric", rem(t.metricPx));
 if (t.heroPx) add("--text-hero", rem(t.heroPx));
 if (t.figurePx) add("--text-figure", rem(t.figurePx));
 if (t.headingPx) add("--text-heading", rem(t.headingPx));
+// The list scale (backlog #89, measured on the Sessions list): the name of a listed item (a track, a car section, a setup, a card
+// heading), the primary figure of a list line, and the title of one item's own page. Every list page uses these, never its own sizes.
+if (t.listNamePx) add("--text-list-name", rem(t.listNamePx));
+if (t.listFigurePx) add("--text-list-figure", rem(t.listFigurePx));
+if (t.itemTitlePx) add("--text-item-title", rem(t.itemTitlePx));
 add("--control-height", `max(${t.controlHeightPx}px, ${rem(t.controlHeightPx)})`);
 add("--touch-target", `max(${t.touchTargetPx}px, ${rem(t.touchTargetPx)})`);
 t.weights.forEach((w, i) => add(`--weight-${["regular", "medium", "semibold"][i] ?? w}`, w));

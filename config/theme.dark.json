@@ -97,7 +97,10 @@
     "displayFamilies": ["Bahnschrift", "DIN Alternate", "Barlow Semi Condensed", "Segoe UI Variable Text", "Segoe UI", "sans-serif"],
     "heroPx": 44,
     "figurePx": 20,
-    "headingPx": 34
+    "headingPx": 34,
+    "listNamePx": 16,
+    "listFigurePx": 18,
+    "itemTitlePx": 24
   },
   "spacingPx": [4, 8, 12, 16, 20, 24, 28, 32],
   "radiiPx": {

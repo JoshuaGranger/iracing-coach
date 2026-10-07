@@ -12,5 +12,5 @@ fn signatures_match_the_contract() {
     let _: fn(&Path, &Path) -> Result<ProjectionSummary, ProjectError> = project;
     let _: fn(&Path, Option<&str>, Option<&str>, u64) -> Result<Vec<u8>, SelectError> =
         select_traces;
-    assert_eq!(PROJECTION_VERSION, 4);
+    assert_eq!(PROJECTION_VERSION, 5);
 }

@@ -13,7 +13,7 @@ import {
 } from "../fixtures/traffic";
 import { parseInvestigation, type InvestigationLap } from "../investigation-model";
 import type { RaceViewData } from "../types";
-import { LapDot, markRadius, TRAFFIC_IN, TRAFFIC_OUT } from "../ui/LapDot";
+import { LapDot, TRAFFIC_OPACITY } from "../ui/LapDot";
 import { chartLaps, fitStatus, lapLabel } from "../ui/RaceView";
 import { runCards, sparkGeometry } from "../ui/runs-model";
 import { lapKind, lapTraffic, trafficText, type LapKind, type LapTraffic } from "../ui/traffic";
@@ -153,39 +153,18 @@ describe("the mark", () => {
     expect(hollow!.props).toMatchObject({ class: "ri-dot excluded", fill: "var(--ri-card)", stroke: "var(--run-2)", "data-mark": "screened" });
   });
 
-  it("is a double ring in the run colour for a traffic lap: the outer ring takes the pointer, the inner one is decoration", () => {
-    const [outer, inner, ...rest] = parts(LapDot({ ...props, kind: "traffic" }));
-    expect(rest).toEqual([]);
-    expect(outer!.props).toMatchObject({ class: "ri-dot traffic", fill: "var(--ri-card)", stroke: "var(--run-2)", "data-lap": 20, "data-mark": "traffic", tabIndex: 0, "aria-label": props.label });
-    expect(inner!.props).toMatchObject({ class: "ri-dot-ring", fill: "none", stroke: "var(--run-2)", "aria-hidden": "true", "data-traffic-ring": 20 });
-    expect(inner!.props).not.toHaveProperty("tabIndex");
-    expect(num(outer!.props.r)).toBeCloseTo(3.4 + TRAFFIC_OUT, 2);
-    expect(num(inner!.props.r)).toBeCloseTo(3.4 - TRAFFIC_IN, 2);
-    for (const ring of [outer!, inner!]) expect([num(ring.props.cx), num(ring.props.cy)]).toEqual([100, 50]);
-    // Two rings stay two rings on the smallest dot, a 390 px chart: the inner one keeps a hole width off the centre.
-    const [, small] = parts(LapDot({ ...props, r: 2.4, kind: "traffic" }));
-    expect(num(small!.props.r)).toBeGreaterThanOrEqual(1.1);
-  });
-
-  it("is the plain dot with a chevron on the leading side for a car ahead and the trailing side for a car behind, when the backend names the side", () => {
-    for (const [side, toward] of [["ahead", 1], ["behind", -1]] as const) {
-      const [dot, chevron, ...rest] = parts(LapDot({ ...props, kind: "traffic", side }));
-      expect(rest).toEqual([]);
-      expect(dot!.props).toMatchObject({ class: "ri-dot", fill: "var(--run-2)", "data-mark": "traffic", "data-traffic-side": side });
-      expect(chevron!.props).toMatchObject({ class: "ri-dot-chevron", stroke: "var(--run-2)", "aria-hidden": "true" });
-      const xs = [...String(chevron!.props.d).matchAll(/[ML]([-\d.]+),/g)].map((m) => Number(m[1]));
-      expect(xs).toHaveLength(3);
-      for (const x of xs) expect((x - 100) * toward, `${side} chevron x ${x}`).toBeGreaterThan(3.4);
-      expect(xs[1]! * toward).toBeGreaterThan(xs[0]! * toward);
+  it("is the same solid dot for a traffic lap, at 55 % fill with a thin outline in the run colour: no ring, no chevron (#92)", () => {
+    for (const side of [null, "ahead", "behind", "both"] as const) {
+      const [dot, ...rest] = parts(LapDot({ ...props, kind: "traffic", side }));
+      expect(rest, `side ${side}: one element`).toEqual([]);
+      expect(dot!.props).toMatchObject({ class: "ri-dot traffic", fill: "var(--run-2)", "fill-opacity": TRAFFIC_OPACITY, stroke: "var(--run-2)", "data-lap": 20, "data-mark": "traffic", tabIndex: 0, "aria-label": props.label });
+      expect(num(dot!.props.r), "the plain dot's size").toBe(3.4);
+      expect([num(dot!.props.cx), num(dot!.props.cy)]).toEqual([100, 50]);
+      expect(dot!.props["data-traffic-side"]).toBe(side ?? undefined);
     }
-    // A side means nothing on a lap that is not a traffic lap.
-    expect(parts(LapDot({ ...props, kind: "open", side: "ahead" }))).toHaveLength(1);
-  });
-
-  it("clears the fastest-lap ring: the outer radius is the plain dot, plus the traffic ring when it has one", () => {
-    expect(markRadius("open", null, 3.4)).toBe(3.4);
-    expect(markRadius("screened", null, 3.4)).toBe(3.4);
-    expect(markRadius("traffic", null, 3.4)).toBeCloseTo(3.4 + TRAFFIC_OUT, 9);
-    expect(markRadius("traffic", "ahead", 3.4)).toBe(3.4);
+    expect(TRAFFIC_OPACITY).toBeCloseTo(0.55, 9);
+    // Open air and other screens carry no opacity of their own, and a side means nothing on them.
+    expect(parts(LapDot({ ...props, kind: "open", side: "ahead" }))[0]!.props["fill-opacity"]).toBeUndefined();
+    expect(parts(LapDot({ ...props, kind: "screened" }))[0]!.props["fill-opacity"]).toBeUndefined();
   });
 });

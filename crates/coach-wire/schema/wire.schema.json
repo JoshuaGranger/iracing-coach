@@ -414,6 +414,20 @@
           ],
           "description": "Burn per green lap, US gallons: the backend's `strategy.measured_green_fuel_gal_per_lap` (the median of its runs' green-lap burn over laps with fuel readings), never recomputed. Null when the backend measured none. Always sent."
         },
+        "best_green_lap_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Fastest green lap of the phase, seconds, traffic included: the minimum backend `lap_time_s` over its `race.json` `laps[]` rows that are complete, green for the whole lap (`green_fraction` 1 or `flag_state` green), under 1 s on pit road, neither a pit-in nor a pit-out lap, on track (`clean_context.on_track_fraction` at least 0.98 when given), carry no pit, tow or repair evidence (`damage_repair_context`) and no backend `exclusion_reasons` other than `close_traffic` or `restart`. Unlike `best_clean_lap_s` it does not leave out laps in close traffic, so a race run in a pack has one. The Sessions race line shows it. Null when no lap qualifies. Always sent."
+        },
+        "race_pace_median_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Median `lap_time_s` over the same laps as `best_green_lap_s` (4 decimals; the mean of the middle pair on an even count). `green_pace_median_s` stays the median of the screened laps. The Sessions race line shows it as Pace. Null when no lap qualifies. Always sent."
+        },
         "pace_consistency_percent": {
           "type": [
             "number",
@@ -1181,8 +1195,59 @@
         "pit_service.end_time",
         "pit_service.fuel_added_l",
         "pit_service.tires_changed_observed",
-        "pit_service.penalty_served_s"
-      ]
+        "pit_service.penalty_served_s",
+        "observed_trend"
+      ],
+      "properties": {
+        "observed_trend": {
+          "description": "Projector-computed, not a backend field (web round 6, backlog #90): the run's observed pace trend. Set on every run of `RunsView.runs[]` with a `run_number`, null under three counted laps; absent on Progressive Tuning's `representative_runs`.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ObservedTrend"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ObservedTrend": {
+      "type": "object",
+      "description": "The straight least-squares line of the backend's `lap_time_s` against the lap number over one run's counted laps: the run's `race.json` `laps[]` rows (by `run_number`) that are complete, `flag_state` green, under 1 s on pit road, neither pit-in nor pit-out, timed, carry no `exclusion_reasons` but `close_traffic` (so close traffic is included; caution, partial, pit, not-racing-state, off-track, tow or repair and the `restart` lap after a caution are not), and are not the `candidate_lap` of a `damage_repair.incident_points` event. An observed trend, distinct from the backend's screened pace fit (`race_investigation.runs[].fit`), which leaves traffic laps out; it is drawn only between `first_lap` and `last_lap`, never extended.",
+      "required": [
+        "slope_s_per_lap",
+        "intercept_s",
+        "first_lap",
+        "last_lap",
+        "laps_used"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "slope_s_per_lap": {
+          "type": "number",
+          "description": "Seconds per lap, 4 decimals; positive is slowing."
+        },
+        "intercept_s": {
+          "type": "number",
+          "description": "The line's lap time at lap 0, seconds, 4 decimals: the time at lap x is intercept_s + slope_s_per_lap * x."
+        },
+        "first_lap": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "First counted lap."
+        },
+        "last_lap": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Last counted lap."
+        },
+        "laps_used": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Counted laps."
+        }
+      }
     },
     "InvestigationView": {
       "allOf": [

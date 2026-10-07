@@ -1,4 +1,5 @@
 import { buildSyntheticAnalysis, type SyntheticAnalysis } from "./synthetic";
+import { withObservedTrends } from "./trend";
 
 /**
  * The synthetic race dressed for the round-2 investigation checks (e2e and the A3 screenshots): three comparisons (two runs; one run
@@ -162,6 +163,6 @@ export function buildRound2Analysis(analysisId = "round2-82-lap"): SyntheticAnal
       run.fit = { method: "ordinary_least_squares", eligible_count: run.run_number === 1 ? 18 : 21, laps: [], slope_s_per_green_lap: slope, domain: [3, 24], points: [{ x: 1, y: y0 }, { x: 25, y: y0 + slope * 24 }] };
     }
   }
-  return analysis;
+  return withObservedTrends(analysis);
 }
 

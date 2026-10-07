@@ -1,0 +1,89 @@
+{
+  "viewport": {
+    "width": 1024,
+    "height": 768
+  },
+  "arrow": {
+    "text": "▲8",
+    "title": "up 8 from P12",
+    "ariaLabel": "up 8 from P12",
+    "role": "img",
+    "raceFinishText": "P4▲8"
+  },
+  "lock": {
+    "title": "Fixed setup",
+    "ariaLabel": "Fixed setup",
+    "insideIdentity": true,
+    "fromIdentityRight": 4,
+    "fromIdentityTop": 4
+  },
+  "identity": {
+    "leftEdges": [
+      81,
+      81,
+      81
+    ],
+    "block": {
+      "x": 17,
+      "y": 139,
+      "w": 990,
+      "h": 85
+    },
+    "silhouette": {
+      "x": 33,
+      "y": 149,
+      "w": 36,
+      "h": 24
+    }
+  },
+  "lines": [
+    {
+      "phase": "R",
+      "x": 29,
+      "y": 236,
+      "w": 966,
+      "h": 66,
+      "padding": [
+        "12px",
+        "12px",
+        "12px",
+        "16px"
+      ],
+      "columnGap": "20px",
+      "rowGap": "10px",
+      "figures": 7
+    },
+    {
+      "phase": "Q",
+      "x": 29,
+      "y": 310,
+      "w": 966,
+      "h": 63,
+      "padding": [
+        "12px",
+        "12px",
+        "12px",
+        "16px"
+      ],
+      "columnGap": "20px",
+      "rowGap": "10px",
+      "figures": 3
+    },
+    {
+      "phase": "P",
+      "x": 29,
+      "y": 381,
+      "w": 966,
+      "h": 63,
+      "padding": [
+        "12px",
+        "12px",
+        "12px",
+        "16px"
+      ],
+      "columnGap": "20px",
+      "rowGap": "10px",
+      "figures": 4
+    }
+  ]
+}

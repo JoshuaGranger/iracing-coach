@@ -1,5 +1,6 @@
 import { buildRound4Analysis } from "./round4";
 import type { SyntheticAnalysis } from "./synthetic";
+import { withObservedTrends } from "./trend";
 
 /**
  * The round-4 synthetic race dressed for the traffic marker (#67): the lap kinds the Race and Runs charts tell apart, each with the
@@ -63,5 +64,5 @@ export function buildTrafficAnalysis(analysisId = "traffic-82-lap"): SyntheticAn
     const fit = run.fit as Json | null;
     if (fit) fit.laps = (fit.laps as number[]).filter((lap) => !(lap in SCREENED));
   }
-  return analysis;
+  return withObservedTrends(analysis);
 }

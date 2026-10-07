@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONTROL_GAP_REM, DEFAULT_CONTROL_REM, TITLE_GAP_REM, filtersLabel, fitsInline } from "./filter-bar";
+import { CONTROL_GAP_REM, DEFAULT_CONTROL_REM, TITLE_GAP_REM, TRIGGER_REM, filtersLabel, fitsInline, stacksAside } from "./filter-bar";
 
 const root = 16;
 const controls = (n: number, rem = DEFAULT_CONTROL_REM) => Array.from({ length: n }, () => rem);
@@ -29,6 +29,19 @@ describe("fitsInline", () => {
   it("never fits an unmeasured row, and always fits no controls", () => {
     expect(fitsInline({ rowWidth: 0, titleWidth: 0, controlRems: controls(2), rootPx: root })).toBe(false);
     expect(fitsInline({ rowWidth: 0, titleWidth: 0, controlRems: [], rootPx: root })).toBe(true);
+  });
+});
+
+describe("stacksAside (#88)", () => {
+  const room = (title: number, aside: number) => title + aside + (2 * TITLE_GAP_REM + TRIGGER_REM) * root;
+  it("keeps the aside beside the Filters button while the three fit, and gives it its own row one pixel less", () => {
+    expect(stacksAside({ rowWidth: room(130, 150), titleWidth: 130, asideWidth: 150, rootPx: root, inline: false })).toBe(false);
+    expect(stacksAside({ rowWidth: room(130, 150) - 1, titleWidth: 130, asideWidth: 150, rootPx: root, inline: false })).toBe(true);
+  });
+  it("never stacks with the controls inline or without an aside; a phone stacks the Sessions chips", () => {
+    expect(stacksAside({ rowWidth: 100, titleWidth: 130, asideWidth: 150, rootPx: root, inline: true })).toBe(false);
+    expect(stacksAside({ rowWidth: 100, titleWidth: 130, asideWidth: 0, rootPx: root, inline: false })).toBe(false);
+    expect(stacksAside({ rowWidth: 390 - 32, titleWidth: 120, asideWidth: 150, rootPx: root, inline: false })).toBe(true);
   });
 });
 

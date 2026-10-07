@@ -1098,6 +1098,31 @@ button.chip-action {
   position: relative;
   margin-left: auto;
 }
+/* A view control kept visible beside the filters (FilterBar `aside`): just left of them, or on its own row under the title when the
+   title, it and the Filters button do not fit on one. */
+.fb-aside {
+  display: flex;
+  margin-left: auto;
+}
+.fb-aside-in {
+  display: inline-flex;
+  flex: none;
+}
+.fb-aside + .fb-controls,
+.fb-aside + .fb-anchor {
+  margin-left: 0;
+}
+.fb-row[data-aside="stacked"] {
+  flex-wrap: wrap;
+}
+.fb-row[data-aside="stacked"] .fb-aside {
+  order: 3;
+  flex: 1 0 100%;
+  margin-left: 0;
+}
+.fb-row[data-aside="stacked"] .fb-anchor {
+  margin-left: auto;
+}
 /* A fixed width, so `Filters` and `Filters · 3` take the same room: the heading does not change when a filter is set. */
 .fb-trigger {
   width: 7.5rem;

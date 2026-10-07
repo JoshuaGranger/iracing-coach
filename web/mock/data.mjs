@@ -41,9 +41,12 @@ function overviewFor(e, phase, state) {
     const start = e === 3 ? 3 : 12;
     const final = e === 3 ? 1 : 4 + e;
     const slope = [0.021, -0.012, 0.004, 0.031, 0.0, 0.012][e] ?? 0.004;
+    // Round 6 (#85): the green best and median with traffic included. Event 3 (the win from P3) ran in a pack all race, so the screen
+    // kept no clean lap and only these two figures exist.
+    const traffic = e === 3;
     // Round 4 (#56, #57): the grid the finish is measured against (event 0's first recorded position was 14, its grid 12); burn per
     // green lap (event 5 measured none). A race's own results are never final in its recordings: no field size.
-    return { starting_position: e === 0 ? 14 : start, start_position: start, field_size: null, results_position: null, fuel_per_lap_gal: e === 5 ? null : 0.47 - e * 0.01, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: 15.234 + e * 0.1, green_pace_median_s: 15.612 + e * 0.1, fuel_used_gal: 21.6 - e };
+    return { starting_position: e === 0 ? 14 : start, start_position: start, field_size: null, results_position: null, fuel_per_lap_gal: e === 5 ? null : 0.47 - e * 0.01, final_position: final, recorded_laps: 82 + e, green_laps_estimated: 60 + e * 2, caution_laps_estimated: e % 2 === 0 ? 20 - e : 0, pit_stops_detected: 3, runs_detected: 4, longest_green_run: 41 - e, pace_slope_s_per_lap: slope, best_clean_lap_s: traffic ? null : 15.234 + e * 0.1, green_pace_median_s: traffic ? null : 15.612 + e * 0.1, best_green_lap_s: Math.round((15.234 + e * 0.1 - (traffic ? 0.05 : 0)) * 1000) / 1000, race_pace_median_s: Math.round((15.598 + e * 0.1) * 1000) / 1000, fuel_used_gal: 21.6 - e };
   }
   const qualify = phase === "Qualify";
   const best = qualify ? 15.41 + e * 0.1 - (e === 3 ? 0.4 : 0) : 15.5 + e * 0.1;

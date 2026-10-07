@@ -9,7 +9,7 @@ import * as comparisonModel from "../ui/comparison-model";
 import { comparisonLaps, comparisonName, lapRanges, rangesText, sectionTone } from "../ui/comparison-model";
 import { lapChipStatus } from "../ui/LapRail";
 import { chartLaps, fitStatus, lapLabel } from "../ui/RaceView";
-import { fitLabel, fitSegment, runCards, sparkGeometry } from "../ui/runs-model";
+import { observedTrend, runCards, sparkGeometry, trendLabel } from "../ui/runs-model";
 import type { TraceLapData } from "../types";
 
 const analysis = buildRound2Analysis();
@@ -74,27 +74,22 @@ describe("Not used in pace fit (round 2, #28a)", () => {
   });
 });
 
-describe("runs: the fit confined to its span, run cards (round 2, #28f)", () => {
-  it("clips the fit to the backend's domain and labels it with the backend's slope and eligible count", () => {
-    const run = inv.runs.find((item) => item.runNumber === 1)!;
-    const segment = fitSegment(run)!;
-    expect(segment.x1).toBe(3);
-    expect(segment.x2).toBe(24);
-    expect(segment.y1).toBeCloseTo(30.04 + 0.033 * 2, 9);
-    expect(segment.y2).toBeCloseTo(30.04 + 0.033 * 23, 9);
-    expect(fitLabel(run)).toBe("+0.033 s/lap · 18 laps");
-    expect(fitLabel(inv.runs.find((item) => item.runNumber === 2)!)).toBe("+0.029 s/lap · 21 laps");
-    const none = inv.runs.find((item) => item.runNumber === 3)!;
-    expect(fitSegment(none)).toBeNull();
-    expect(fitLabel(none)).toBeNull();
+describe("runs: the observed trend, run cards (round 2, #28f; round 6, #90 #93)", () => {
+  it("reads the server's observed trend per run and labels it with its slope and laps", () => {
+    const runs = analysis.runs.runs as unknown[];
+    const trend = observedTrend(runs, 1)!;
+    expect(trend.firstLap).toBeLessThan(trend.lastLap);
+    expect(trendLabel(trend)).toMatch(/^[+−]?\d\.\d\d s\/lap · \d+ laps$/);
+    expect(observedTrend(runs, 9)).toBeNull();
+    expect(observedTrend([{ run_number: 1, observed_trend: null }], 1)).toBeNull();
+    expect(observedTrend([{ run_number: 1, observed_trend: { slope_s_per_lap: 0.1, intercept_s: 30, first_lap: 5, last_lap: 5, laps_used: 3 } }], 1)).toBeNull();
   });
 
   it("builds one card per run with used and screened counts, the fuel band as a range, and tire laps", () => {
     const cards = runCards(inv, analysis.runs.runs as unknown[]);
     expect(cards.map((card) => card.runNumber)).toEqual([1, 2, 3]);
-    expect(cards[0]!.slope).toBe("+0.033 s/lap · 18 laps");
-    expect(cards[2]!.slope).toBeNull();
-    expect(cards[2]!.fallOff).not.toBeNull();
+    const runs = analysis.runs.runs as unknown[];
+    expect(cards.map((card) => card.slope)).toEqual([1, 2, 3].map((run) => trendLabel(observedTrend(runs, run)!)));
     expect(cards[0]!.fuelBand).toBe(`${(60 / 3.785411784).toFixed(1)} → ${(14.3 / 3.785411784).toFixed(1)} gal`);
     expect(cards[1]!.tireLaps).toBe("25–52");
     expect(cards[0]!.tireLaps).toBe("27");
@@ -109,7 +104,7 @@ describe("runs: the fit confined to its span, run cards (round 2, #28f)", () => 
       expect(dot.cy).toBeGreaterThanOrEqual(0);
       expect(dot.cy).toBeLessThanOrEqual(24);
     }
-    expect(sparkGeometry(cards[2]!, 96, 24).fit).toBeNull();
+    expect(sparkGeometry({ ...cards[2]!, fit: null }, 96, 24).fit).toBeNull();
   });
 
   it("colours runs from the ordered palette", () => {

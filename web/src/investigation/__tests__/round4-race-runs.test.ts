@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { buildRound4Analysis, ROUND4_NO_FUEL_LAP, ROUND4_SERVICE_LAP } from "../fixtures/round4";
 import { parseInvestigation, type InvestigationLap, type RunView } from "../investigation-model";
 import { fuelPath, lapContexts, layersReadout, refills, seriesSegments, type SeriesPoint } from "../ui/race-layers";
-import { fallOff, fallOffHover, fallOffText, fitDrawn, greenLaps, perLapText, runCards, runIdentities, runLine, runLineParts, runLineReadout, runSpan } from "../ui/runs-model";
+import { greenLaps, observedTrend, perLapText, runCards, runIdentities, runLine, runLineParts, runLineReadout, runSpan, trendLabel } from "../ui/runs-model";
 
-/** Round 4, Race and Runs (#59a, #60–#63): observed fall-off, the fit's coverage rule, the fuel line. */
+/** Round 4, Race and Runs (#59a, #60–#63): the run span, the fuel line; the fall-off is round 6's observed trend (#90). */
 
 const lap = (n: number, time: number | null, over: Partial<InvestigationLap> = {}): InvestigationLap => ({
   lap: n, lapTimeS: time, position: null, flagState: "green", eligible: true, exclusionReasons: [], runNumber: 1, plotPace: true, greenExposure: n, ...over,
@@ -13,11 +13,10 @@ const run = (fit: RunView["fit"]): RunView => ({
   runNumber: 1, plottedLapCount: 0, firstLap: 1, lastLap: 30, fitUnavailableReason: null,
   trend: { method: null, coveredLapCount: 0, segments: [], gaps: [] }, fit,
 });
-const fit = (eligibleCount: number): RunView["fit"] => ({ method: "ols", eligibleCount, slopeSPerGreenLap: 0.05, domain: [1, 20], points: [{ x: 1, y: 30 }, { x: 20, y: 31 }], laps: [] });
 
-describe("observed fall-off per run (#59a)", () => {
-  // Laps 3–24: green from 3, a close-traffic lap screened out of the fit (still observed), a caution lap and a pit lap that are not
-  // green-pace laps, a lap of another run.
+describe("the run's green span (#59a)", () => {
+  // Laps 3–24: green from 3, close-traffic laps (still observed), a caution lap and a pit lap that are not green-pace laps, a lap
+  // of another run.
   const laps = [
     lap(1, 31.9, { plotPace: false, flagState: "caution" }),
     lap(2, 30.6, { plotPace: false }),
@@ -30,33 +29,11 @@ describe("observed fall-off per run (#59a)", () => {
     lap(29, 29.5, { runNumber: 2 }),
   ];
 
-  it("is the last green lap less the first, over the laps between, traffic laps included", () => {
-    const f = fallOff({ runNumber: 1 }, laps)!;
-    expect(f.first.lap).toBe(3);
-    expect(f.last.lap).toBe(24);
-    expect(f.greenLaps).toBe(4);
-    expect(f.sPerLap).toBeCloseTo((31.27 - 29.8) / 21, 12);
-    expect(fallOffText(f)).toBe("fall-off +0.07 s/lap");
-    expect(fallOffHover(f)).toBe("observed · L3 29.800 s → L24 31.270 s");
+  it("spans the run's green laps, traffic laps included, and signs a gain with a minus", () => {
     expect(runSpan(run(null), laps)).toBe("L3–24");
-  });
-
-  it("is null under three green laps and signs a gain with a minus", () => {
-    expect(fallOff({ runNumber: 1 }, laps.slice(0, 4))).toBeNull();
-    expect(fallOff({ runNumber: 2 }, laps)).toBeNull();
+    expect(greenLaps({ runNumber: 1 }, laps).map((item) => item.lap)).toEqual([3, 4, 12, 24]);
     expect(perLapText(-0.024)).toBe("−0.02 s/lap");
     expect(perLapText(0.0004)).toBe("0.00 s/lap");
-    expect(greenLaps({ runNumber: 1 }, laps).map((item) => item.lap)).toEqual([3, 4, 12, 24]);
-  });
-});
-
-describe("the screened fit is drawn only at half the run's green laps (#59a)", () => {
-  const twenty = Array.from({ length: 20 }, (_, i) => lap(i + 1, 30 + i * 0.01));
-  it("draws at 10 of 20 and not at 9 of 20; never without a fit", () => {
-    expect(fitDrawn(run(fit(10)), twenty)).toBe(true);
-    expect(fitDrawn(run(fit(9)), twenty)).toBe(false);
-    expect(fitDrawn(run(null), twenty)).toBe(false);
-    expect(fitDrawn(run(fit(5)), [])).toBe(false);
   });
 });
 
@@ -100,23 +77,24 @@ describe("the round-4 fixture end to end through the models", () => {
     expect(refills(segments[1]!).map((p) => p.lap)).toEqual([57]);
   });
 
-  it("writes `Run · green span · fall-off · burn` and draws only the fit that covers half the green laps", () => {
+  it("writes `Run · green span · fall-off · burn`, the fall-off being the server's observed trend (#90)", () => {
     const ids = runIdentities([1, 2, 3], []);
     for (const item of inv.runs) {
       const green = inv.laps.filter((l) => l.runNumber === item.runNumber && l.plotPace && (l.lapTimeS ?? 0) > 0).sort((a, b) => a.lap - b.lap);
       const [first, last] = [green[0]!, green[green.length - 1]!];
-      const rate = ((last.lapTimeS as number) - (first.lapTimeS as number)) / (last.lap - first.lap);
+      const trend = observedTrend(runs, item.runNumber)!;
       const burn = item.runNumber === 3 ? "0.43" : "0.42";
-      expect(runLine(item, ids.get(item.runNumber), runs, inv.laps)).toBe(`Run ${item.runNumber} · L${first.lap}–${last.lap} · fall-off ${perLapText(rate)} · ${burn} gal/lap`);
+      expect(runLine(item, ids.get(item.runNumber), runs, inv.laps)).toBe(`Run ${item.runNumber} · L${first.lap}–${last.lap} · fall-off ${perLapText(trend.slopeSPerLap)} · ${burn} gal/lap`);
     }
     const parts = runLineParts(inv.runs[0]!, ids.get(1), runs, inv.laps);
-    expect(parts.find((part) => part.key === "falloff")!.hover).toMatch(/^observed · L\d+ \d+\.\d{3} s → L\d+ \d+\.\d{3} s$/);
-    expect(runLineReadout(parts)).toMatch(/^Run 1 · fall-off [+−]?\d\.\d\d s\/lap · observed · L\d+ .* · 0\.42 gal\/lap$/);
-    expect(inv.runs.map((item) => fitDrawn(item, inv.laps))).toEqual([true, false, false]);
+    expect(parts.find((part) => part.key === "falloff")!.hover).toMatch(/^observed trend · L\d+–\d+ · \d+ laps, traffic included$/);
+    expect(runLineReadout(parts)).toMatch(/^Run 1 · fall-off [+−]?\d\.\d\d s\/lap · observed trend · L\d+–\d+ · \d+ laps, traffic included · 0\.42 gal\/lap$/);
     const cards = runCards(inv, runs);
-    expect(cards.map((card) => card.slope)).toEqual(["+0.033 s/lap · 18 laps", null, null]);
-    expect(cards.map((card) => card.fit !== null)).toEqual([true, false, false]);
-    expect(cards.every((card) => card.fallOff !== null)).toBe(true);
+    expect(cards.map((card) => card.slope)).toEqual([1, 2, 3].map((n) => trendLabel(observedTrend(runs, n)!)));
+    expect(cards.map((card) => card.fit !== null)).toEqual([true, true, true]);
+    // Without the server's trend: no figure, no line.
+    expect(runLineParts(inv.runs[0]!, ids.get(1), [], inv.laps).map((part) => part.key)).toEqual(["name", "span"]);
+    expect(runCards(inv, [])[0]).toMatchObject({ slope: null, fit: null });
     // No word about why a fit is not drawn.
     for (const card of cards) expect(JSON.stringify(card)).not.toMatch(/insufficient|no fit|coverage|screened fit/i);
   });

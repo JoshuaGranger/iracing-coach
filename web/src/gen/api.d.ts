@@ -2375,6 +2375,10 @@ export interface components {
             start_position?: number | null;
             /** @description Burn per green lap, US gallons: the backend's `strategy.measured_green_fuel_gal_per_lap` (the median of its runs' green-lap burn over laps with fuel readings), never recomputed. Null when the backend measured none. Always sent. */
             fuel_per_lap_gal?: number | null;
+            /** @description Fastest green lap of the phase, seconds, traffic included: the minimum backend `lap_time_s` over its `race.json` `laps[]` rows that are complete, green for the whole lap (`green_fraction` 1 or `flag_state` green), under 1 s on pit road, neither a pit-in nor a pit-out lap, on track (`clean_context.on_track_fraction` at least 0.98 when given), carry no pit, tow or repair evidence (`damage_repair_context`) and no backend `exclusion_reasons` other than `close_traffic` or `restart`. Unlike `best_clean_lap_s` it does not leave out laps in close traffic, so a race run in a pack has one. The Sessions race line shows it. Null when no lap qualifies. Always sent. */
+            best_green_lap_s?: number | null;
+            /** @description Median `lap_time_s` over the same laps as `best_green_lap_s` (4 decimals; the mean of the middle pair on an even count). `green_pace_median_s` stays the median of the screened laps. The Sessions race line shows it as Pace. Null when no lap qualifies. Always sent. */
+            race_pace_median_s?: number | null;
             pace_consistency_percent?: number | null;
             best_clean_lap_s?: number | null;
             fuel_used_gal?: number | null;
@@ -2569,7 +2573,23 @@ export interface components {
         };
         /** @description One backend run, passed through. Read by Runs, Traces (tire wear row) and Progressive Tuning. */
         BackendRun: {
+            /** @description Projector-computed, not a backend field (web round 6, backlog #90): the run's observed pace trend. Set on every run of `RunsView.runs[]` with a `run_number`, null under three counted laps; absent on Progressive Tuning's `representative_runs`. */
+            observed_trend?: components["schemas"]["ObservedTrend"] | null;
+        } & {
             [key: string]: unknown;
+        };
+        /** @description The straight least-squares line of the backend's `lap_time_s` against the lap number over one run's counted laps: the run's `race.json` `laps[]` rows (by `run_number`) that are complete, `flag_state` green, under 1 s on pit road, neither pit-in nor pit-out, timed, carry no `exclusion_reasons` but `close_traffic` (so close traffic is included; caution, partial, pit, not-racing-state, off-track, tow or repair and the `restart` lap after a caution are not), and are not the `candidate_lap` of a `damage_repair.incident_points` event. An observed trend, distinct from the backend's screened pace fit (`race_investigation.runs[].fit`), which leaves traffic laps out; it is drawn only between `first_lap` and `last_lap`, never extended. */
+        ObservedTrend: {
+            /** @description Seconds per lap, 4 decimals; positive is slowing. */
+            slope_s_per_lap: number;
+            /** @description The line's lap time at lap 0, seconds, 4 decimals: the time at lap x is intercept_s + slope_s_per_lap * x. */
+            intercept_s: number;
+            /** @description First counted lap. */
+            first_lap: number;
+            /** @description Last counted lap. */
+            last_lap: number;
+            /** @description Counted laps. */
+            laps_used: number;
         };
         InvestigationView: components["schemas"]["ViewEnvelope"] & {
             race_investigation: {

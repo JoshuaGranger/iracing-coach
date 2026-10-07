@@ -1,5 +1,6 @@
 import { encodeCcol, type CcolEncodeChannel } from "../ccol";
 import type { InvestigationViewData, RaceViewData, RunsViewData, TraceCatalogData, TraceSignalData, TrackGeometryData } from "../types";
+import { withObservedTrends } from "./trend";
 
 /**
  * Deterministic synthetic analysis for tests and the G2 harness: an 82-lap race on an invented closed
@@ -337,5 +338,5 @@ export function buildSyntheticAnalysis(options: SyntheticOptions = {}): Syntheti
       steering: { basis: "road_wheel", steering_ratio: 12 },
     },
   };
-  return { analysisId, laps, bins, race, runs, investigation, catalog, track, ccol };
+  return withObservedTrends({ analysisId, laps, bins, race, runs, investigation, catalog, track, ccol });
 }

@@ -49,13 +49,24 @@ pub const ROUND4_KEYS: [&str; 4] = [
     "fuel_per_lap_gal",
 ];
 
+/// The round-6 race figures (backlog #85): the fastest and the median green lap with traffic
+/// included, so a race whose every lap had close traffic still shows a best and a pace. Always
+/// sent like `ROUND2_KEYS`.
+pub const ROUND6_KEYS: [&str; 2] = ["best_green_lap_s", "race_pace_median_s"];
+
 /// Every key the server always sends on `SessionSummary.overview`, null when not measured.
 pub fn always_sent() -> impl Iterator<Item = &'static str> {
     ROUND2_KEYS
         .into_iter()
         .chain(ROUND3_KEYS)
         .chain(ROUND4_KEYS)
+        .chain(ROUND6_KEYS)
 }
+
+/// The backend's lap exclusion reasons (`race.json` `laps[].exclusion_reasons`) that describe the
+/// race around the car, not the lap itself: a green lap with only these still counts as racing
+/// pace (`green_laps`).
+const RACING_CONTEXT_REASONS: [&str; 2] = ["close_traffic", "restart"];
 
 /// Fewest clean laps a run needs before its first-to-last difference is reported.
 const PACE_LOSS_MIN_LAPS: usize = 3;
@@ -98,6 +109,12 @@ pub fn session_overview(race: &Value, investigation: Option<&Value>) -> Value {
                 .and_then(|((run, _), inv)| run_pace_loss(inv, run))
         ),
     );
+    let green = green_laps(race);
+    out.insert(
+        "best_green_lap_s".into(),
+        json!(green.iter().copied().min_by(f64::total_cmp)),
+    );
+    out.insert("race_pace_median_s".into(), json!(median(green)));
     let timed = timed_laps(race);
     out.insert("timed_lap_1_s".into(), json!(timed.first()));
     out.insert("timed_lap_2_s".into(), json!(timed.get(1)));
@@ -375,10 +392,56 @@ fn timed_laps(race: &Value) -> Vec<f64> {
     timed.into_iter().take(2).map(|(_, t)| t).collect()
 }
 
+/// The `lap_time_s` of every complete green lap (`race.json` `laps[]`), traffic included: green
+/// for the whole lap (`green_fraction` 1, or `flag_state` green), under a second on pit road and
+/// neither a pit-in nor a pit-out lap, on track (`clean_context.on_track_fraction` at least the
+/// backend's 0.98), no pit, tow or repair evidence (`damage_repair_context`), and no backend
+/// exclusion reason but close traffic or a restart (`RACING_CONTEXT_REASONS`). The backend's own
+/// rows and figures; nothing is measured again here.
+fn green_laps(race: &Value) -> Vec<f64> {
+    let Some(laps) = race["laps"].as_array() else {
+        return Vec::new();
+    };
+    laps.iter()
+        .filter(|lap| lap["complete"] == true)
+        .filter(|lap| {
+            lap["green_fraction"].as_f64().is_some_and(|f| f >= 1.0)
+                || lap["flag_state"]
+                    .as_str()
+                    .is_some_and(|f| f.eq_ignore_ascii_case("green"))
+        })
+        .filter(|lap| lap["pit_time_s"].as_f64().unwrap_or(0.0) < 1.0)
+        .filter(|lap| lap["pit_in"] != true && lap["pit_out"] != true)
+        .filter(|lap| {
+            lap["clean_context"]["on_track_fraction"]
+                .as_f64()
+                .is_none_or(|f| f >= 0.98)
+        })
+        .filter(|lap| {
+            let damage = &lap["damage_repair_context"];
+            damage["automatic_coaching_reference_eligible"] != false
+                && damage["exclusion_reason_codes"]
+                    .as_array()
+                    .is_none_or(|codes| codes.is_empty())
+        })
+        .filter(|lap| {
+            lap["exclusion_reasons"].as_array().is_none_or(|reasons| {
+                reasons.iter().all(|r| {
+                    r.as_str()
+                        .is_some_and(|r| RACING_CONTEXT_REASONS.contains(&r))
+                })
+            })
+        })
+        .filter(|lap| lap["lap"].as_i64().is_some_and(|n| n > 0))
+        .filter_map(|lap| lap["lap_time_s"].as_f64())
+        .filter(|t| t.is_finite() && *t > 0.0)
+        .collect()
+}
+
 /// Median `lap_time_s` of the green laps the backend's screen kept (`race_investigation.laps[]`
 /// with `eligible: true`); None when it kept none.
 fn green_pace_median(investigation: &Value) -> Option<f64> {
-    let mut times: Vec<f64> = investigation["laps"]
+    let times: Vec<f64> = investigation["laps"]
         .as_array()?
         .iter()
         .filter(|lap| lap["eligible"] == true)
@@ -390,6 +453,11 @@ fn green_pace_median(investigation: &Value) -> Option<f64> {
         .filter_map(|lap| lap["lap_time_s"].as_f64())
         .filter(|t| t.is_finite() && *t > 0.0)
         .collect();
+    median(times)
+}
+
+/// The median of lap times, rounded to 4 decimals; None when there are none.
+fn median(mut times: Vec<f64>) -> Option<f64> {
     if times.is_empty() {
         return None;
     }
@@ -485,7 +553,7 @@ pub async fn backfill_results(app: &AppState) -> Result<usize> {
 
 /// At start, in the background: recordings stored before the results summary gain it
 /// (`backfill_results`); sessions whose current analysis is projected at this version but whose
-/// stored overview predates the round-2, round-3 or round-4 figures get them from their views;
+/// stored overview predates the round-2, round-3, round-4 or round-6 figures get them from their views;
 /// every such overview then takes its session-info figures (`merge_results`) from the stored
 /// results. Returns how many overviews changed. Idempotent; a session whose views cannot be read
 /// keeps its view figures.
@@ -515,6 +583,7 @@ pub async fn refresh_on_start(app: &AppState) -> Result<usize> {
                 "pace_slope_supported",
                 "longest_run_laps",
                 "fuel_per_lap_gal",
+                "best_green_lap_s",
             ]
             .iter()
             .any(|key| before.get(key).is_none());
@@ -965,5 +1034,91 @@ QualifyResultsInfo:
         let o = session_overview(&with_laps, Some(&json!({"race_investigation": inv})));
         assert_eq!(o["longest_run_laps"], 12);
         assert_eq!(o["longest_run_pace_loss_s"], 0.16);
+    }
+
+    /// A `race.json` race lap row: complete, green, on track, with close traffic.
+    fn race_row(n: i64, t: f64) -> Value {
+        json!({"lap": n, "lap_time_s": t, "complete": true, "green_fraction": 1.0, "flag_state": "green",
+               "pit_time_s": 0.0, "pit_in": false, "pit_out": false,
+               "clean_context": {"on_track_fraction": 1.0, "traffic_proximity_fraction": 0.6},
+               "damage_repair_context": {"automatic_coaching_reference_eligible": true, "exclusion_reason_codes": []},
+               "exclusion_reasons": ["close_traffic"]})
+    }
+
+    #[test]
+    fn a_race_in_traffic_has_a_best_and_a_pace_over_its_green_laps() {
+        let mut r = race(Value::Null);
+        r["race_summary"]["best_clean_lap_s"] = Value::Null;
+        let mut laps = vec![
+            race_row(1, 29.5),
+            race_row(2, 28.5),
+            race_row(3, 28.4),
+            race_row(4, 28.6),
+        ];
+        // left out: partial, caution, pit in, pit out, off track, tow, pit-road time, lap 0
+        let mut partial = race_row(5, 3.9);
+        partial["complete"] = json!(false);
+        let mut caution = race_row(6, 40.0);
+        caution["green_fraction"] = json!(0.0);
+        caution["flag_state"] = json!("caution");
+        let mut pit_in = race_row(7, 35.0);
+        pit_in["pit_in"] = json!(true);
+        let mut pit_out = race_row(8, 45.0);
+        pit_out["pit_out"] = json!(true);
+        let mut off = race_row(9, 27.0);
+        off["clean_context"]["on_track_fraction"] = json!(0.9);
+        off["exclusion_reasons"] = json!(["off_track", "close_traffic"]);
+        let mut tow = race_row(10, 26.0);
+        tow["damage_repair_context"]["exclusion_reason_codes"] =
+            json!(["pit_tow_or_repair_episode_overlap"]);
+        let mut pit_road = race_row(11, 33.0);
+        pit_road["pit_time_s"] = json!(4.0);
+        let lap_zero = race_row(0, 20.0);
+        // a restart lap is racing context like traffic
+        let mut restart = race_row(12, 28.7);
+        restart["exclusion_reasons"] = json!(["restart", "close_traffic"]);
+        laps.extend([
+            partial, caution, pit_in, pit_out, off, tow, pit_road, lap_zero, restart,
+        ]);
+        r["laps"] = json!(laps);
+        let o = session_overview(&r, None);
+        assert!(
+            o.get("best_clean_lap_s").is_none(),
+            "the screened best stays the backend's"
+        );
+        assert_eq!(o["best_green_lap_s"], 28.4);
+        assert_eq!(o["race_pace_median_s"], 28.6, "29.5 28.5 28.4 28.6 28.7");
+        assert_eq!(
+            o["green_pace_median_s"],
+            Value::Null,
+            "the screened pace is unchanged"
+        );
+    }
+
+    #[test]
+    fn no_green_lap_is_null() {
+        let o = session_overview(&race(Value::Null), None);
+        for key in ROUND6_KEYS {
+            assert_eq!(o[key], Value::Null, "{key} is always sent");
+        }
+        let mut r = race(Value::Null);
+        let mut out_lap = race_row(1, 40.0);
+        out_lap["pit_out"] = json!(true);
+        r["laps"] = json!([out_lap]);
+        let o = session_overview(&r, None);
+        assert_eq!(o["best_green_lap_s"], Value::Null);
+        assert_eq!(o["race_pace_median_s"], Value::Null);
+    }
+
+    #[test]
+    fn the_sanitized_traffic_heavy_race() {
+        // every lap of this 82-lap race had close traffic, so the screen kept none
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-data/g2/race.json");
+        let race: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(race["race_summary"]["best_clean_lap_s"], Value::Null);
+        let o = session_overview(&race, None);
+        // 80 of 83 laps: the partial last lap and the two pit-stop laps are left out
+        assert_eq!(o["best_green_lap_s"], 28.408);
+        assert_eq!(o["race_pace_median_s"], 28.5105);
     }
 }

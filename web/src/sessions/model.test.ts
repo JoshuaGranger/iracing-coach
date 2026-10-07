@@ -33,6 +33,10 @@ import {
   startPosition,
   classification,
   burnPerLap,
+  allPhases,
+  compareLines,
+  parsePhaseToggles,
+  togglePhase,
 } from "./model";
 
 beforeEach(() => resetCarOrder());
@@ -60,21 +64,24 @@ function session(over: Partial<Session> & Record<string, unknown> = {}): Session
 }
 
 describe("phases and events", () => {
-  it("names phases and orders them in running order", () => {
+  it("names phases and lists them race, qualifying, practice in the card (#86)", () => {
     expect(phaseOf("Lone Qualify")).toMatchObject({ code: "Q", label: "Qualifying" });
     expect(phaseOf("Offline Testing").code).toBe("T");
     expect(phaseOf("Warmup").code).toBe("W");
     const race = session({ session_type: "Race", sim_session_num: 2 });
     const prac = session({ session_type: "Practice", sim_session_num: 0 });
     const qual = session({ session_type: "Qualify", sim_session_num: 1 });
-    const [ev] = groupEvents([race, qual, prac]);
-    expect(ev!.sessions.map((s) => phaseOf(s.session_type).code)).toEqual(["P", "Q", "R"]);
+    const [ev] = groupEvents([prac, qual, race]);
+    expect(ev!.sessions.map((s) => phaseOf(s.session_type).code)).toEqual(["R", "Q", "P"]);
+    // the investigation's P · Q · R selector keeps running order
+    expect(eventPhaseOptions(race.session_id, [race, qual, prac]).map((o) => phaseOf(o.sessionType).code)).toEqual(["P", "Q", "R"]);
     expect(ev!.head).toBe(race);
   });
 
   it("keeps events in the server's order and takes the earliest start and the fastest best lap of one event", () => {
     const a1 = session({ event_key: "a", session_type: "Practice", start_time_utc: "2026-09-28T18:00:00Z", overview: { best_clean_lap_s: 15.5 } });
-    const a2 = session({ event_key: "a", session_type: "Race", start_time_utc: "2026-09-28T19:00:00Z", overview: { best_clean_lap_s: 15.2 } });
+    // the race's best is its green best, traffic included (#85); its clean best (15.1) is not what the race line shows
+    const a2 = session({ event_key: "a", session_type: "Race", start_time_utc: "2026-09-28T19:00:00Z", overview: { best_clean_lap_s: 15.1, best_green_lap_s: 15.2 } });
     const b = session({ event_key: "b", overview: { best_clean_lap_s: 14 } });
     const events = groupEvents([b, a1, a2]);
     expect(events.map((e) => e.key)).toEqual(["b", "a"]);
@@ -294,7 +301,7 @@ describe("local dates (audit S1)", () => {
 describe("phase cell slots (web round 2)", () => {
   const race = session({
     session_type: "Race",
-    overview: { starting_position: 14, start_position: 12, final_position: 4, recorded_laps: 82, green_laps_estimated: 60, caution_laps_estimated: 20, pit_stops_detected: 3, longest_green_run: 41, pace_slope_s_per_lap: 0.021, best_clean_lap_s: 15.234, fuel_used_gal: 21.6, fuel_per_lap_gal: 0.471 },
+    overview: { starting_position: 14, start_position: 12, final_position: 4, recorded_laps: 82, green_laps_estimated: 60, caution_laps_estimated: 20, pit_stops_detected: 3, longest_green_run: 41, pace_slope_s_per_lap: 0.021, best_clean_lap_s: 15.3, best_green_lap_s: 15.234, fuel_used_gal: 21.6, fuel_per_lap_gal: 0.471 },
   });
   const text = (s: ReturnType<typeof phaseSlots>[number]) => s.parts.map((p) => p.text).join(" ");
 
@@ -362,33 +369,86 @@ describe("phase cell slots (web round 2)", () => {
     // No green lap: no green colour.
     expect(tones(phaseSlots(session({ overview: { green_laps_estimated: 0, caution_laps_estimated: 0 } }), null))).toEqual([]);
     // Pace trend, best and burn never carry a colour whatever their value.
-    const hot = session({ overview: { ...race.overview, pace_slope_s_per_lap: 0.2, best_clean_lap_s: 14.9 } });
+    const hot = session({ overview: { ...race.overview, pace_slope_s_per_lap: 0.2, best_green_lap_s: 14.9 } });
     expect(phaseSlots(hot, 14.9).filter((s) => ["best", "pace", "stops", "burn", "run"].includes(s.key)).flatMap((s) => s.parts).every((p) => !p.tone || p.tone === "unit")).toBe(true);
   });
 
-  it("marks the event's fastest lap without colour, and reads a green pace the server may add", () => {
+  it("marks the event's fastest lap without colour, and reads the race pace the server sends", () => {
     expect(phaseSlots(race, 15.234).find((s) => s.key === "best")!.eventBest).toBe(true);
     expect(phaseSlots(race, 15.0).find((s) => s.key === "best")!.eventBest).toBeUndefined();
-    const withPace = session({ overview: { ...race.overview, green_pace_median_s: 76.204 } });
+    const withPace = session({ overview: { ...race.overview, race_pace_median_s: 76.204 } });
     expect(text(phaseSlots(withPace, null).find((s) => s.key === "pace")!)).toBe("1:16.204 +0.021");
+  });
+
+  it("shows a race run in traffic its green best and pace, where the screened figures are absent (#85)", () => {
+    const pack = session({ overview: { final_position: 7, best_clean_lap_s: null, green_pace_median_s: null, best_green_lap_s: 28.408, race_pace_median_s: 28.5105, pace_slope_s_per_lap: null } });
+    const slots = phaseSlots(pack, null);
+    expect(text(slots.find((s) => s.key === "best")!)).toBe("28.408");
+    expect(text(slots.find((s) => s.key === "pace")!)).toBe("28.511");
+    expect(slots.find((s) => s.key === "best")!.title).toBe("Fastest green lap, traffic included");
+    // the screened figures alone are not the race line's: a stored overview without the new fields shows a dash
+    const old = session({ overview: { best_clean_lap_s: 15.2, green_pace_median_s: 15.5 } });
+    expect(phaseSlots(old, null).filter((s) => s.key === "best" || s.key === "pace").every((s) => s.missing)).toBe(true);
+    expect(hasFigures(session({ overview: { best_green_lap_s: 28.4 } }))).toBe(true);
+    // practice keeps its own clean best
+    const prac = session({ session_type: "Practice", overview: { best_clean_lap_s: 15.5, best_green_lap_s: 15.1 } });
+    expect(text(practiceSlots(prac, null).find((s) => s.key === "best")!)).toBe("15.500");
   });
 });
 
 describe("phase lines (round 4, #72)", () => {
   const codes = (sessions: readonly Session[]) => groupEvents(sessions)[0]!.sessions.map((s) => phaseOf(s.session_type).code);
-  it("has one line per recorded phase in running order, whatever order the server lists them in", () => {
+  it("has one line per recorded phase, race first, then qualifying, then practice, whatever order the server lists them in (#86)", () => {
     const [p, q, r] = [session({ session_type: "Practice", sim_session_num: 0 }), session({ session_type: "Qualify", sim_session_num: 1 }), session({ session_type: "Race", sim_session_num: 2 })];
-    expect(codes([r, p, q])).toEqual(["P", "Q", "R"]);
+    expect(codes([r, p, q])).toEqual(["R", "Q", "P"]);
+    expect(codes([p, q, r])).toEqual(["R", "Q", "P"]);
     expect(groupEvents([r, q, p])[0]!.sessions).toHaveLength(3);
   });
   it("gives a missing phase no line: a race-only event is one line, practice and race two", () => {
     expect(codes([session({ session_type: "Race", sim_session_num: 2 })])).toEqual(["R"]);
-    expect(codes([session({ session_type: "Race", sim_session_num: 2 }), session({ session_type: "Practice", sim_session_num: 0 })])).toEqual(["P", "R"]);
+    expect(codes([session({ session_type: "Race", sim_session_num: 2 }), session({ session_type: "Practice", sim_session_num: 0 })])).toEqual(["R", "P"]);
   });
-  it("puts a test or warmup among the practice lines and keeps running order when a phase repeats", () => {
-    expect(codes([session({ session_type: "Race", sim_session_num: 3 }), session({ session_type: "Offline Testing", sim_session_num: 0 })])).toEqual(["T", "R"]);
-    expect(codes([session({ session_type: "Practice", sim_session_num: 1 }), session({ session_type: "Practice", sim_session_num: 0 }), session({ session_type: "Race", sim_session_num: 2 })])).toEqual(["P", "P", "R"]);
+  it("puts a test among the practice lines, a warmup between race and qualifying, and keeps running order when a phase repeats", () => {
+    expect(codes([session({ session_type: "Race", sim_session_num: 3 }), session({ session_type: "Offline Testing", sim_session_num: 0 })])).toEqual(["R", "T"]);
+    expect(codes([session({ session_type: "Practice", sim_session_num: 1 }), session({ session_type: "Practice", sim_session_num: 0 }), session({ session_type: "Race", sim_session_num: 2 })])).toEqual(["R", "P", "P"]);
+    expect(codes([session({ session_type: "Qualify", sim_session_num: 1 }), session({ session_type: "Warmup", sim_session_num: 2 }), session({ session_type: "Race", sim_session_num: 3 })])).toEqual(["R", "W", "Q"]);
+    const [p0, p1] = [session({ session_type: "Practice", sim_session_num: 0 }), session({ session_type: "Practice", sim_session_num: 1 })];
+    expect(compareLines(p0, p1)).toBeLessThan(0);
     expect(cellKind(session({ session_type: "Offline Testing" }))).toBe("practice");
+  });
+});
+
+describe("phase toggles (#88)", () => {
+  const ev = (key: string, ...types: string[]) => types.map((t, n) => session({ event_key: key, session_type: t, sim_session_num: n }));
+  const lib = [...ev("a", "Practice", "Qualify", "Race"), ...ev("b", "Practice"), ...ev("c", "Race"), ...ev("d", "Offline Testing", "Warmup", "Race")];
+  const codes = (t: ReturnType<typeof allPhases>) => groupEvents(lib, undefined, t).map((e) => `${e.key}:${e.sessions.map((s) => phaseOf(s.session_type).code).join("")}`);
+
+  it("shows every phase with every chip on", () => {
+    expect(codes(allPhases())).toEqual(["a:RQP", "b:P", "c:R", "d:RWT"]);
+  });
+  it("hides a phase's lines in every card and drops an event left with none", () => {
+    expect(codes({ R: false, Q: true, P: true })).toEqual(["a:QP", "b:P", "d:WT"]);
+    expect(codes({ R: true, Q: false, P: false })).toEqual(["a:R", "c:R", "d:R"]);
+    expect(codes({ R: false, Q: true, P: false })).toEqual(["a:Q"]);
+  });
+  it("keeps the event best and head from every phase when lines are hidden", () => {
+    const p = session({ event_key: "x", session_type: "Practice", sim_session_num: 0, overview: { best_clean_lap_s: 15.0 } });
+    const r = session({ event_key: "x", session_type: "Race", sim_session_num: 1, overview: { best_green_lap_s: 15.4 } });
+    const [shown] = groupEvents([p, r], undefined, { R: true, Q: true, P: false });
+    expect(shown!.sessions).toEqual([r]);
+    expect(shown!.bestLapS).toBe(15.0);
+    expect(shown!.head).toBe(r);
+  });
+  it("never turns the last chip off", () => {
+    expect(togglePhase(allPhases(), "P")).toEqual({ R: true, Q: true, P: false });
+    expect(togglePhase({ R: true, Q: false, P: false }, "R")).toEqual({ R: true, Q: false, P: false });
+    expect(togglePhase({ R: true, Q: false, P: false }, "Q")).toEqual({ R: true, Q: true, P: false });
+  });
+  it("reads a stored value back, all on when unreadable or all off", () => {
+    expect(parsePhaseToggles(null)).toEqual(allPhases());
+    expect(parsePhaseToggles("x")).toEqual(allPhases());
+    expect(parsePhaseToggles({ R: false, Q: false, P: false })).toEqual(allPhases());
+    expect(parsePhaseToggles({ Q: false, P: "no" })).toEqual({ R: true, Q: false, P: true });
   });
 });
 

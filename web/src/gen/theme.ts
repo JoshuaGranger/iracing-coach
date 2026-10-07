@@ -138,7 +138,10 @@ export const theme = {
     ],
     "heroPx": 44,
     "figurePx": 20,
-    "headingPx": 34
+    "headingPx": 34,
+    "listNamePx": 16,
+    "listFigurePx": 18,
+    "itemTitlePx": 24
   },
   "spacingPx": [
     4,
@@ -276,6 +279,9 @@ export const cssVariables: Readonly<Record<string, string>> = {
   "--text-hero": "2.75rem",
   "--text-figure": "1.25rem",
   "--text-heading": "2.125rem",
+  "--text-list-name": "1rem",
+  "--text-list-figure": "1.125rem",
+  "--text-item-title": "1.5rem",
   "--control-height": "max(36px, 2.25rem)",
   "--touch-target": "max(44px, 2.75rem)",
   "--weight-regular": "400",
