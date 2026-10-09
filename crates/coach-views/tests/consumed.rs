@@ -27,7 +27,12 @@ fn the_lists_equal_the_contracts() {
     let race = &defs["RaceView"]["allOf"][1]["properties"];
     let runs = &defs["RunsView"]["allOf"][1]["properties"];
     let track = &defs["TrackGeometry"]["allOf"][1]["properties"];
-    let cases: [(&str, &Value, &[&str]); 18] = [
+    let cases: [(&str, &Value, &[&str]); 19] = [
+        (
+            "PaceAttribution",
+            &defs["PaceAttribution"],
+            consumed::PACE_ATTRIBUTION,
+        ),
         ("Lap", &defs["Lap"], consumed::LAP),
         ("BackendRun", &defs["BackendRun"], consumed::BACKEND_RUN),
         ("TraceLap", &defs["TraceLap"], consumed::TRACE_LAP),

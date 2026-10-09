@@ -5,7 +5,7 @@ import type { TelemetryCursor } from "../cursor/telemetry-cursor";
 import { n, percentText, seconds, signedText } from "../format";
 import type { MapGeometry, MapPoint } from "../geometry/map-model";
 import type { TraceData } from "../geometry/trace-model";
-import type { Investigation, Section } from "../investigation-model";
+import type { Investigation, PacePriority, Section } from "../investigation-model";
 import type { RaceViewData } from "../types";
 import { contextTitle, lapContexts, tiresText, trafficCell, type LapContext } from "./section-context";
 import { POSITION_SIGNALS, sectionRacingLines } from "./section-lines";
@@ -22,7 +22,7 @@ import "./sections.css";
  * laps on the tires and the lap's traffic beside the time, select the laps the telemetry draws and `Open in Traces` opens with the
  * cursor at the section start. The right panel draws those laps' speed, throttle, brake and steering over the section with the
  * median lap in grey, cursor-synced with a marker on the section segment. Every figure is the projector's (`section_laps`, the CCOL
- * traces, the race and runs views); this view ranks nothing.
+ * traces, the race and runs views). Section tabs follow the producer's recoverable time, greatest first.
  */
 
 /** The median lap's line: the chart reference grey. */
@@ -122,8 +122,41 @@ export function mapUnits(box: readonly [number, number, number, number], width: 
   return { x: box[0] + (px - (width - box[2] * scale) / 2) / scale, y: box[1] + (py - (height - box[3] * scale) / 2) / scale };
 }
 
+/** First priority for a section is its greatest recoverable time; unattached priorities never display. */
+export function sectionPriorities(inv: Investigation): Map<string, PacePriority> {
+  const detected = new Set(inv.sections.sections.map((s) => s.id));
+  const priorities = new Map<string, PacePriority>();
+  for (const p of [...(inv.paceAttribution?.priorities ?? [])].sort((a, b) => b.recoverableS - a.recoverableS)) {
+    if (p.sectionId !== null && detected.has(p.sectionId) && !priorities.has(p.sectionId)) priorities.set(p.sectionId, p);
+  }
+  return priorities;
+}
+
+export function orderedSections(inv: Investigation): Section[] {
+  const priorities = sectionPriorities(inv);
+  return [...inv.sections.sections].sort((a, b) => (priorities.get(b.id)?.recoverableS ?? -1) - (priorities.get(a.id)?.recoverableS ?? -1));
+}
+
+export function paceFigures(p: PacePriority): { time: string; energy: string | null; energyEvidence: "derived" | "proxy" } {
+  return {
+    time: `${p.recoverableS > 0 ? "-" : ""}${p.recoverableS.toFixed(2)} s · best L${p.bestLap}`,
+    energy: p.tireEnergyShare !== null && p.tireEnergyGrade !== null ? `${(p.tireEnergyShare * 100).toFixed(0)} % tire energy${p.tireEnergyGrade === "load_only" ? " proxy" : ""}` : null,
+    energyEvidence: p.tireEnergyGrade === "load_only" ? "proxy" : "derived",
+  };
+}
+
+function PaceFigures({ priority, tab = false }: { priority: PacePriority | undefined; tab?: boolean }) {
+  if (!priority) return null;
+  const figures = paceFigures(priority);
+  return <span data-pace-figures style={tab ? "display:flex;flex-direction:column;gap:0.125rem;font-size:var(--text-compact);letter-spacing:0;text-transform:none" : "display:flex;flex-wrap:wrap;gap:var(--space-4);text-transform:none;letter-spacing:0"}>
+    <span data-evidence="derived" style="color:var(--evidence-derived)">{figures.time}</span>
+    {figures.energy !== null && <span data-evidence={figures.energyEvidence} style={`color:var(--evidence-${figures.energyEvidence})`}>{figures.energy}</span>}
+  </span>;
+}
+
 export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, onOpenTraces, traces, analysisKey = "", race = null, runs = null }: SectionsViewProps) {
-  const sections = inv.sections.sections;
+  const sections = useMemo(() => orderedSections(inv), [inv]);
+  const priorities = useMemo(() => sectionPriorities(inv), [inv]);
   const entry: SectionLapEntry | null = section ? sectionLaps?.get(section.id) ?? null : null;
   const { fastest, slowest } = useMemo(() => shadedLaps(entry), [entry]);
   const listed = useMemo(() => [...fastest, ...slowest], [fastest, slowest]);
@@ -293,6 +326,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     <>
       <h2>Section {section?.label} <small>{range} % lap</small></h2>
       <div class="ri-sl-facts">
+        <PaceFigures priority={section ? priorities.get(section.id) : undefined} />
         <span>Median<b>{entry?.medianS != null ? `${seconds(entry.medianS)} s` : "—"}</b></span>
         <span>Clean laps<b>{entry ? entry.cleanLapCount : "—"}</b></span>
       </div>
@@ -353,9 +387,10 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
       <div class="ri-sl-laps">
         <div class="ri-sl-tabs" role="tablist" aria-label="Sections">
           {sections.map((s) => (
-            <button type="button" role="tab" key={s.id} class="ri-sl-tab" data-section={s.id} aria-selected={s.id === section?.id} tabIndex={s.id === section?.id ? 0 : -1}
+            <button type="button" role="tab" key={s.id} class="ri-sl-tab" style={priorities.has(s.id) ? "height:auto;min-height:var(--touch-target);padding:0.5rem 0.875rem;background:var(--color-surface2);color:var(--ri-t1)" : undefined} data-section={s.id} aria-selected={s.id === section?.id} tabIndex={s.id === section?.id ? 0 : -1}
               title={`${percentText(s.startPct)}–${percentText(s.endPct)} % lap · ${s.provenance}`} onClick={() => onSelectSection(s.id)} onKeyDown={onTabKey}>
               {s.label}
+              <PaceFigures priority={priorities.get(s.id)} tab />
             </button>
           ))}
         </div>

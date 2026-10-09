@@ -184,6 +184,8 @@ export interface Section {
 }
 
 export interface Investigation {
+  /** Contract-declared derived section priorities; absent on older projections. */
+  paceAttribution?: PaceAttribution | null;
   status: string | null;
   summary: string;
   defaultComparisonId: string | null;
@@ -196,6 +198,44 @@ export interface Investigation {
   trackEvolution: { status: string | null; summary: string | null } | null;
   /** The backend steering declaration (SteeringBasis), read for the change thresholds. */
   steeringBasis: SteeringBasisData | null;
+}
+
+export interface PacePriority extends Json {
+  sectionId: string | null;
+  recoverableS: number;
+  bestLap: number;
+  tireEnergyShare: number | null;
+  tireEnergyGrade: "slip_weighted" | "load_only" | null;
+}
+
+export interface PaceAttribution extends Json {
+  priorities: PacePriority[];
+}
+
+/** Preserve optional producer fields; validate the new contract without deriving telemetry. */
+export function parsePaceAttribution(raw: unknown): PaceAttribution | null {
+  if (raw === undefined || raw === null) return null;
+  const r = asRecord(raw);
+  if (r.schema_version !== 1) throw new InvestigationFormatError("pace_attribution schema_version must be 1");
+  if (!Array.isArray(r.priorities) || r.priorities.length > 32) throw new InvestigationFormatError("pace_attribution priorities must be an array of at most 32");
+  return { ...r, priorities: r.priorities.map((item, index) => {
+    const p = asRecord(item);
+    const path = `pace_attribution.priorities[${index}]`;
+    for (const key of ["section_id", "start_pct", "end_pct", "recoverable_s", "best_lap", "tire_energy_share", "tire_energy_grade"]) {
+      if (!(key in p)) throw new InvestigationFormatError(`${path} is missing "${key}"`);
+    }
+    const recoverableS = num(p.recoverable_s);
+    const bestLap = num(p.best_lap);
+    if (num(p.start_pct) === null || num(p.end_pct) === null || recoverableS === null || recoverableS < 0 || bestLap === null || !Number.isInteger(bestLap) || bestLap < 0) {
+      throw new InvestigationFormatError(`${path} has invalid section timing`);
+    }
+    if (p.section_id !== null && typeof p.section_id !== "string") throw new InvestigationFormatError(`${path} has invalid section_id`);
+    const share = num(p.tire_energy_share);
+    if (p.tire_energy_share !== null && (share === null || share < 0 || share > 1)) throw new InvestigationFormatError(`${path} has invalid tire_energy_share`);
+    const grade = p.tire_energy_grade;
+    if (grade !== null && grade !== "slip_weighted" && grade !== "load_only") throw new InvestigationFormatError(`${path} has invalid tire_energy_grade`);
+    return { ...p, sectionId: p.section_id as string | null, recoverableS, bestLap, tireEnergyShare: share, tireEnergyGrade: grade };
+  }) };
 }
 
 function required<T>(record: Json, key: string, what: string): T {
@@ -366,7 +406,7 @@ function run(raw: unknown): RunView {
   };
 }
 
-export function parseInvestigation(raw: unknown): Investigation {
+export function parseInvestigation(raw: unknown, paceAttribution?: unknown): Investigation {
   const r = asRecord(raw);
   if (Object.keys(r).length === 0) throw new InvestigationFormatError("race_investigation is empty");
   const schema = num(r.schema_version);
@@ -378,6 +418,7 @@ export function parseInvestigation(raw: unknown): Investigation {
   const sections = asRecord(r.sections);
   const evolution = asRecord(r.track_evolution);
   return {
+    paceAttribution: parsePaceAttribution(paceAttribution),
     status: str(r.status),
     summary: str(r.summary) ?? "",
     defaultComparisonId: str(r.default_comparison_id),

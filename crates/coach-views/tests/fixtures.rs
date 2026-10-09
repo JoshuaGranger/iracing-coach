@@ -10,7 +10,16 @@ use common::*;
 use serde_json::{Value, json};
 
 fn vector(name: &str) -> Value {
-    read_json(&repo_file(&format!("test-data/analysis-view-{name}.json")))
+    let mut fixture = read_json(&repo_file(&format!("test-data/analysis-view-{name}.json")));
+    // Scaffold fixtures used an empty object for this formerly unread subtree. Model an older
+    // analysis without the optional producer, leaving the immutable fixture bytes untouched.
+    if fixture["pace_attribution"]
+        .as_object()
+        .is_some_and(|p| p.is_empty())
+    {
+        fixture.as_object_mut().unwrap().remove("pace_attribution");
+    }
+    fixture
 }
 
 /// The analyze result's nested form around a bare envelope fixture.

@@ -512,7 +512,7 @@ pub fn analysis_doc(id: &str, options: &Options) -> Value {
     });
     let rest = json!({
         "laps": laps,
-        "pace_attribution": {"schema_version": 1},
+        "pace_attribution": {"schema_version": 1, "priorities": []},
         "race_grades": {"overall_grade": "B", "rubric_version": "v1", "categories": [{"key": "pace", "label": "Pace", "grade": "B", "score": 80.0}], "unavailable_categories": []},
         "race_investigation": investigation,
         "race_replay": {"available": false},

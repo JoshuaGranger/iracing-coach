@@ -52,6 +52,7 @@ const RETAINED: &[&str] = &[
     "conditions",
     "data_quality",
     "tuning_map",
+    "pace_attribution",
 ];
 
 /// Keys that are only checked for presence and kind.
@@ -62,7 +63,6 @@ const PROBED: &[&str] = &[
     "groove_evolution",
     "setup_telemetry",
     "strategy_planning",
-    "pace_attribution",
 ];
 
 #[derive(Default)]

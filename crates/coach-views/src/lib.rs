@@ -18,6 +18,7 @@ pub mod consumed;
 mod geometry;
 mod laps;
 mod output;
+mod pace_attribution;
 mod parse;
 mod prune;
 mod section_laps;
@@ -353,6 +354,7 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
     let data_quality = take("data_quality");
     let tire_learning = take("tire_learning");
     let corner_tire_age = take("corner_tire_age");
+    let pace_attribution = take("pace_attribution");
 
     // The investigation is absent when the backend has none (an empty object counts as none).
     let investigation_map = investigation.as_object().filter(|m| !m.is_empty());
@@ -374,6 +376,7 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
         }
     }
 
+    let pace_attribution = pace_attribution::project(pace_attribution, investigation_map)?;
     let empty = Obj::new();
     let run_items = runs.as_array().map_or(&[][..], Vec::as_slice);
     let lap_items = lap_values.as_array().map_or(&[][..], Vec::as_slice);
@@ -502,6 +505,7 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
         envelope.apply(&mut view);
         view.insert("race_investigation".into(), investigation);
         view.insert("section_laps".into(), section_laps);
+        view.insert("pace_attribution".into(), pace_attribution);
         views.push((
             ViewKind::Investigation,
             "investigation.json",
@@ -509,7 +513,15 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
                 ViewKind::Investigation,
                 view,
                 INVESTIGATION_BOUND,
-                &[&|v| prune_fields(v, &[("race_investigation", &specs().investigation)])],
+                &[&|v| {
+                    prune_fields(
+                        v,
+                        &[
+                            ("race_investigation", &specs().investigation),
+                            ("pace_attribution", &specs().pace_attribution),
+                        ],
+                    )
+                }],
             )?,
         ));
     }
@@ -632,6 +644,7 @@ struct Specs {
     trace_lap: Spec,
     backend_run: Spec,
     investigation: Spec,
+    pace_attribution: Spec,
     race_identity: Spec,
     race_summary: Spec,
     race_grades: Spec,
@@ -678,6 +691,7 @@ fn specs() -> &'static Specs {
             trace_lap: Spec::parse(&trace_paths),
             backend_run: Spec::parse(consumed::BACKEND_RUN),
             investigation: Spec::parse(consumed::INVESTIGATION),
+            pace_attribution: Spec::parse(consumed::PACE_ATTRIBUTION),
             race_identity: Spec::parse(consumed::RACE_IDENTITY),
             race_summary: Spec::parse(consumed::RACE_RACE_SUMMARY),
             race_grades: Spec::parse(consumed::RACE_RACE_GRADES),

@@ -2,6 +2,17 @@
 //! them with `coach-wire/schema/wire.schema.json`). Syntax: `a.b` nested key, `a[]` each array element,
 //! `a[][]` nested arrays, `*` any key; a path ends in the whole value found there.
 
+pub const PACE_ATTRIBUTION: &[&str] = &[
+    "schema_version",
+    "priorities[].section_id",
+    "priorities[].start_pct",
+    "priorities[].end_pct",
+    "priorities[].recoverable_s",
+    "priorities[].best_lap",
+    "priorities[].tire_energy_share",
+    "priorities[].tire_energy_grade",
+];
+
 pub const LAP: &[&str] = &[
     "lap",
     "lap_time_s",
