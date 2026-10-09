@@ -3,14 +3,14 @@ import { useElementSize } from "../../core/element-size";
 import { theme } from "../../gen/theme";
 import type { TelemetryCursor } from "../cursor/telemetry-cursor";
 import { n, percentText, seconds, signedText } from "../format";
-import type { MapGeometry, MapPoint } from "../geometry/map-model";
+import { mapPointAt, type MapGeometry, type MapPoint } from "../geometry/map-model";
 import type { TraceData } from "../geometry/trace-model";
 import type { Investigation, PacePriority, Section } from "../investigation-model";
 import type { RaceViewData } from "../types";
-import { contextTitle, entryText, greenText, lapContexts, tiresText, trafficCell, type LapContext } from "./section-context";
+import { contextTitle, greenText, lapContexts, tiresText, trafficCell, type LapContext } from "./section-context";
 import { POSITION_SIGNALS, sectionRacingLines } from "./section-lines";
 import { deltaBar, lapsToOpen, shadedLaps, type SectionLapEntry, type SectionLaps, type ShadedLap } from "./section-laps";
-import { entrySpeedDeltas, projectOnSection, SECTION_SIGNALS, sectionPointAt, sectionTrackPoints, sectionWindow, tracedLaps } from "./section-traces-model";
+import { projectOnSection, SECTION_SIGNALS, sectionPointAt, sectionTrackPoints, tracedLaps } from "./section-traces-model";
 import { SectionTraces, type SectionTraceLap, type SectionTraceStatus } from "./SectionTraces";
 import { scaleFor, useRemPx } from "./unit";
 import "./sections.css";
@@ -75,7 +75,7 @@ function countText(count: number): string {
   return `${count} clean ${count === 1 ? "lap" : "laps"} timed`;
 }
 
-function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; context: LapContext | null; entry: number | null; selected: boolean; hot: boolean; onToggle(): void; onHot(lap: number | null): void }) {
+function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; context: LapContext | null; selected: boolean; hot: boolean; onToggle(): void; onHot(lap: number | null): void }) {
   const { lap, context } = props;
   const bar = deltaBar(lap.deltaS, props.listed);
   const tag = contextTitle(context);
@@ -93,9 +93,9 @@ function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; context: 
       <span class={`ri-sl-dl ${bar.side}`}>{signedText(lap.deltaS)}</span>
       <span class="ri-sl-bar" aria-hidden="true">{bar.widthPct > 0 && <i class={bar.side} style={bar.side === "gain" ? `right:50%;width:${n(bar.widthPct)}%` : `left:50%;width:${n(bar.widthPct)}%`} />}</span>
       <span class="ri-sl-tires" data-sl-tires>{tiresText(context?.tires)}</span>
-      {/* Gap ledger G6: green laps into the run (run_age_laps) and entry speed to the median lap at the section start, mph. */}
+      {/* Gap ledger G6: green laps into the run (the backend's run_age_laps). Entry speed reads from the dashed approach on the chart;
+          a per-lap entry figure waits for the backend (race_inspection.comparison_inspection's entry_speed_difference). */}
       <span class="ri-sl-green" data-sl-green>{greenText(context?.green)}</span>
-      <span class={`ri-sl-entry${props.entry == null ? "" : props.entry >= 0.05 ? " gain" : props.entry <= -0.05 ? " loss" : ""}`} data-sl-entry-cell>{entryText(props.entry)}</span>
       {/* One line: the share's bar, the share, and the side in words, which sections.css draws as the Race chart's mark where the
           column is narrow (the words stay for the screen reader and the cell's text). */}
       <span class="ri-sl-traffic" data-sl-traffic>
@@ -267,11 +267,18 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   mapRef.current = map;
   const sizeRef = useRef(mapSize);
   sizeRef.current = mapSize;
-  const placeMarker = (local: number): void => {
+  const placedRef = useRef(placed);
+  placedRef.current = placed;
+  /** The cursor's lap distance, when the chart reported one (the approach lies before the section segment). */
+  const lapPctRef = useRef<number | null>(null);
+  // Inside the section the marker rides the section segment; in the approach (local below 0) it sits at the chart's lap distance on
+  // the track, so the chart and the map name the same place.
+  const placeMarker = (local: number, lapPct?: number): void => {
+    lapPctRef.current = lapPct ?? null;
     const marker = markerRef.current;
     const current = mapRef.current;
     if (!marker || !current) return;
-    const point = sectionPointAt(pointsRef.current, local);
+    const point = local < 0 && lapPct != null && placedRef.current.length > 1 ? mapPointAt(placedRef.current, lapPct) : sectionPointAt(pointsRef.current, local);
     if (!point || sizeRef.current.width <= 0) {
       marker.style.visibility = "hidden";
       return;
@@ -280,7 +287,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     marker.style.transform = `translate3d(${px.toFixed(1)}px,${py.toFixed(1)}px,0)`;
     marker.style.visibility = "";
   };
-  useEffect(() => { placeMarker(fractionRef.current); }, [sectionPoints, mapSize.width, mapSize.height]);
+  useEffect(() => { placeMarker(fractionRef.current, lapPctRef.current ?? undefined); }, [sectionPoints, mapSize.width, mapSize.height]);
   const zoneRect = useRef<DOMRect | null>(null);
   useEffect(() => {
     const drop = (): void => { zoneRect.current = null; };
@@ -328,11 +335,8 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     onSelectSection(next.id);
     (event.currentTarget as HTMLElement).parentElement?.querySelector<HTMLElement>(`[data-section="${next.id}"]`)?.focus();
   };
-  const entries = traceState.data && section
-    ? entrySpeedDeltas(traceState.data, sectionWindow({ startPct: section.startPct, endPct: section.endPct, previousStartPct }), listed.map((lap) => lap.lap), entry?.medianLap ?? null)
-    : new Map<number, number | null>();
   const row = (lap: ShadedLap) => (
-    <LapRow key={lap.lap} lap={lap} listed={listed} context={contexts.get(lap.lap) ?? null} entry={entries.get(lap.lap) ?? null} selected={selected.has(lap.lap)} hot={hot === lap.lap} onToggle={() => toggle(lap.lap)} onHot={setHot} />
+    <LapRow key={lap.lap} lap={lap} listed={listed} context={contexts.get(lap.lap) ?? null} selected={selected.has(lap.lap)} hot={hot === lap.lap} onToggle={() => toggle(lap.lap)} onHot={setHot} />
   );
   const range = section ? `${percentText(section.startPct)}–${percentText(section.endPct)}` : "";
   const head = (
@@ -412,10 +416,10 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
             <>
               <div class="ri-sgrid ri-sl-cols" aria-hidden="true">
                 <span /><span>Lap</span><span class="r">Time<span class="ri-sl-long"> · s</span></span><span class="r">Δ<span class="ri-sl-long"> median</span></span><span />
-                <span class="r">Tires</span><span class="r">Green</span><span class="r">Entry<span class="ri-sl-unit"> · mph</span></span><span class="ri-sl-traffic">Traffic</span>
+                <span class="r">Tires</span><span class="r">Green</span><span class="ri-sl-traffic">Traffic</span>
               </div>
               {fastest.map(row)}
-              <div class="ri-sgrid ri-sl-median" data-sl-median><span /><span>Med</span><span class="r">{seconds(entry?.medianS)}</span><span class="r">0</span><span class="ri-sl-zero" aria-hidden="true" /><span /><span /><span class="r">0</span><span /></div>
+              <div class="ri-sgrid ri-sl-median" data-sl-median><span /><span>Med</span><span class="r">{seconds(entry?.medianS)}</span><span class="r">0</span><span class="ri-sl-zero" aria-hidden="true" /><span /><span /><span /></div>
               {slowest.map(row)}
             </>
           ) : (
@@ -428,7 +432,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
         {section && listed.length > 0 && traces ? (
           <SectionTraces
             data={traceState.data} status={traceState.status} onRetry={() => setAttempt((value) => value + 1)}
-            section={{ id: section.id, startPct: section.startPct, endPct: section.endPct, previousStartPct }} laps={drawnLaps} hot={hot}
+            section={{ id: section.id, startPct: section.startPct, endPct: section.endPct, previousStartPct }} laps={drawnLaps} medianLap={entry?.medianLap ?? null} hot={hot}
             fractionRef={fractionRef} cursorRef={cursorRef} onFraction={placeMarker} analysisKey={analysisKey} head={head}
           />
         ) : (

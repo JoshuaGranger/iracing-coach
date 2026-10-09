@@ -242,43 +242,6 @@ export function gapValues(time: Float64Array | null, lapIndex: number, reference
   return out;
 }
 
-/** A recorded value at a position across the span, read linearly between the two bins around it; NaN when either is missing. */
-export function valueAtPosition(column: Float64Array | null, lapIndex: number, bins: SectionBins, position: number, binCount: number): number {
-  if (!column) return Number.NaN;
-  return seriesAt(bins.bins.map((bin) => column[lapIndex * binCount + bin]!), bins.x, position);
-}
-
-/** A series' value at a position across the span (`x`, its bins' positions), read linearly between the two around it; NaN when either is missing. */
-export function seriesAt(values: ArrayLike<number>, x: ArrayLike<number>, position: number): number {
-  let right = 0;
-  while (right < x.length && x[right]! < position - 1e-12) right++;
-  if (right >= x.length) return Number.NaN;
-  const b = values[right]!;
-  if (Math.abs(x[right]! - position) <= 1e-12) return b;
-  if (right === 0) return Number.NaN;
-  const a = values[right - 1]!;
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.NaN;
-  return a + ((b - a) * (position - x[right - 1]!)) / (x[right]! - x[right - 1]!);
-}
-
-/**
- * Entry speed difference to the reference lap at the section start, mph: each lap's recorded speed at the boundary (the bins either
- * side, read linearly) less the reference lap's. Positive is faster in. null without a reference lap or where either lap has no speed.
- */
-export function entrySpeedDeltas(data: TraceData, window: SectionWindow, laps: readonly number[], referenceLap: number | null): Map<number, number | null> {
-  const out = new Map<number, number | null>();
-  const column = signalColumn(data, "speed");
-  const bins = sectionBins(data.x, windowSpan(window));
-  const reference = referenceLap !== null ? data.lapIndex.get(referenceLap) : undefined;
-  const referenceSpeed = reference !== undefined ? valueAtPosition(column, reference, bins, window.boundary, data.bins) : Number.NaN;
-  for (const lap of laps) {
-    const index = data.lapIndex.get(lap);
-    const speed = index !== undefined ? valueAtPosition(column, index, bins, window.boundary, data.bins) : Number.NaN;
-    out.set(lap, Number.isFinite(speed) && Number.isFinite(referenceSpeed) ? speed - referenceSpeed : null);
-  }
-  return out;
-}
-
 /** One drawn row: its values per drawn lap (in the order given), its drawing scale and the cursor's signal (none when not recorded). */
 export interface SectionRow {
   id: SectionRowId;
@@ -367,17 +330,36 @@ export function sectionPath(values: Float64Array, x: Float64Array, range: Range,
 }
 
 /**
- * One lap's polyline split at the section start: the approach (the bins before the boundary and the first at or after it, so the
- * line reaches the boundary) and the section (from the first bin at or after the boundary). Either is empty when nothing is drawn.
+ * One lap's polyline split exactly at the section start: the approach runs from its bins to the boundary point and the section from
+ * the boundary point on, the boundary point lying on the drawn segment between the two bins around it (the line as drawn, cut where
+ * the boundary crosses it). Where either bin is missing there is no segment to cut and each side ends at its own bins. Either part is
+ * empty when nothing is drawn.
  */
 export function splitSectionPath(values: Float64Array, x: Float64Array, boundary: number, range: Range, frame: PlotFrame): { approach: string; section: string } {
   let first = 0;
   while (first < x.length && x[first]! < boundary - 1e-9) first++;
-  const end = Math.min(x.length, first + 1);
-  return {
-    approach: first > 0 ? sectionPath(values.subarray(0, end), x.subarray(0, end), range, frame) : "",
-    section: sectionPath(values.subarray(first), x.subarray(first), range, frame),
-  };
+  if (first === 0) return { approach: "", section: sectionPath(values, x, range, frame) };
+  if (first >= x.length) return { approach: sectionPath(values, x, range, frame), section: "" };
+  const onBoundary = Math.abs(x[first]! - boundary) <= 1e-9;
+  const a = values[first - 1]!;
+  const b = values[first]!;
+  const cut = onBoundary ? b : Number.isFinite(a) && Number.isFinite(b) ? a + ((b - a) * (boundary - x[first - 1]!)) / (x[first]! - x[first - 1]!) : Number.NaN;
+  const join = (head: ArrayLike<number>, tail: ArrayLike<number>): Float64Array => Float64Array.from([...Array.from(head), ...Array.from(tail)]);
+  const approachValues = join(values.subarray(0, first), Number.isFinite(cut) ? [cut] : []);
+  const approachX = join(x.subarray(0, first), Number.isFinite(cut) ? [boundary] : []);
+  const rest = onBoundary ? first + 1 : first;
+  const sectionValues = join(Number.isFinite(cut) ? [cut] : [], values.subarray(rest));
+  const sectionX = join(Number.isFinite(cut) ? [boundary] : [], x.subarray(rest));
+  return { approach: sectionPath(approachValues, approachX, range, frame), section: sectionPath(sectionValues, sectionX, range, frame) };
+}
+
+/**
+ * The gap row's reference: the section's reported median lap whenever the store has it, also when it is one of the listed laps (then
+ * it keeps its shade and no grey line is drawn); else the drawn median line; null when neither exists.
+ */
+export function gapReference(medianLap: number | null | undefined, drawn: readonly { lap: number; median: boolean }[], hasLap: (lap: number) => boolean): number | null {
+  if (medianLap != null && hasLap(medianLap)) return medianLap;
+  return drawn.find((lap) => lap.median)?.lap ?? null;
 }
 
 /** The pass pair: the fastest and the slowest of the drawn laps (first and last in list order), drawn with the thick stroke. */

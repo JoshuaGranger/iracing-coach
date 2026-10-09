@@ -11,8 +11,7 @@ import { lapTraffic, sideText, trafficText, type LapTraffic } from "./traffic";
  * - Traffic: the race view's `clean_context.traffic_proximity_fraction` and, when the backend names it, the side (`./traffic`): in
  *   words as every traffic readout says them (`ahead`, `behind`, `both sides`), drawn as the Race chart's mark where the column is
  *   narrow (sections.css).
- * - Green exposure (gap ledger G6): the race view's `laps[].run_age_laps`, in the row's hover; `greenText` and `entryText` format
- *   the green-lap and entry-speed cells for the rows.
+ * - Green exposure (gap ledger G6): the race view's `laps[].run_age_laps`, in the row's hover; `greenText` formats the row's Green cell.
  */
 
 export interface LapContext {
@@ -85,13 +84,6 @@ export function lapContexts(race: RaceViewData | null | undefined, runs: readonl
 /** Green exposure as a cell: whole green laps into the run (`12`), `—` without a figure. */
 export function greenText(green: number | null | undefined): string {
   return green == null ? "—" : `${Math.round(green)}`;
-}
-
-/** Entry speed difference to the median lap at the section start as a cell: `+1.4`, `−0.6` (mph), `—` without a figure. */
-export function entryText(delta: number | null | undefined): string {
-  if (delta == null || !Number.isFinite(delta)) return "—";
-  const rounded = Math.round(delta * 10) / 10;
-  return (rounded > 0 ? "+" : rounded < 0 ? "−" : "") + Math.abs(rounded).toFixed(1);
 }
 
 /** The Tires cell: whole laps, `—` without a figure. */

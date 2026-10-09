@@ -62,10 +62,10 @@
 /* The list is the container the Traffic column sizes itself by (below). */
 .ri-sl-list { container: sl-list / inline-size; flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--space-1); }
 /* One template for the header, the six rows and the median line: swatch, lap, section time, Δ to the median, Δ bar, laps on the
-   tires, green laps, entry speed, traffic (bar, share and side). Each row is its own grid, so every track but the Δ bar is fixed to keep the columns aligned.
+   tires, green laps, traffic (bar, share and side). Each row is its own grid, so every track but the Δ bar is fixed to keep the columns aligned.
    A list wide enough says the side in words; a narrower one draws the side as the Race chart's mark, so the cell stays on one line
    at every width. */
-.ri-sgrid { display: grid; grid-template-columns: 1.25rem 2.25rem 4.5rem 4.25rem minmax(1.5rem, 12rem) 2.5rem 2.75rem 4.5rem var(--sl-traffic-w, 6.5rem); column-gap: 0.5rem; align-items: center; justify-content: start; padding: 0 var(--space-3); }
+.ri-sgrid { display: grid; grid-template-columns: 1.25rem 2.25rem 4.5rem 4.25rem minmax(1.5rem, 12rem) 2.5rem 2.75rem var(--sl-traffic-w, 6.5rem); column-gap: 0.5rem; align-items: center; justify-content: start; padding: 0 var(--space-3); }
 .ri-sl-cols { height: 1.625rem; color: var(--ri-t3); font-family: var(--ri-disp); font-size: var(--text-compact); font-weight: var(--weight-semibold); font-stretch: condensed; letter-spacing: 0.09em; text-transform: uppercase; white-space: nowrap; }
 .ri-sl-cols .r, .ri-sl-median .r { text-align: right; }
 .ri-lap-row.ri-sgrid { min-height: 2.375rem; }
@@ -80,11 +80,7 @@
 .ri-sl-bar::before, .ri-sl-zero::before { content: ""; position: absolute; left: 50%; top: -0.25rem; bottom: -0.25rem; width: 1px; background: var(--ri-t3); }
 .ri-sl-bar i { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: var(--lap); }
 .ri-sl-median { min-height: 1.875rem; border-top: 1px dashed var(--ri-line); border-bottom: 1px dashed var(--ri-line); color: var(--ri-t2); font-family: var(--ri-disp); font-size: var(--text-data); font-weight: var(--weight-semibold); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; }
-.ri-sl-unit { display: none; }
-.ri-sl-tires, .ri-sl-green, .ri-sl-entry { text-align: right; color: var(--ri-t2); font-variant-numeric: tabular-nums; }
-/* Entry speed to the median lap at the section start (mph): green faster, red slower, grey inside 0.05. */
-.ri-sl-entry.gain { color: var(--ri-green); }
-.ri-sl-entry.loss { color: var(--ri-loss); }
+.ri-sl-tires, .ri-sl-green { text-align: right; color: var(--ri-t2); font-variant-numeric: tabular-nums; }
 /* Traffic: one line, the share's bar, the share and the side, each part a flex item centred on the row's line (the texts are leaf
    spans, trimmed to their capitals by the control rule in styles.css). A gutter after Tires so the two figures never read as one
    number. The cell does not clip: a trimmed word's ascenders stand above its box. */
@@ -102,14 +98,13 @@
 /* Wide: a longer bar and the side in words (`· behind`, `· both sides`). */
 @container sl-list (min-width: 34rem) {
   .ri-sgrid { --sl-traffic-w: 11.5rem; }
-  .ri-sl-unit { display: inline; }
   .ri-sl-tbar { width: 2rem; }
   .ri-sl-sword { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
   .ri-sl-side::after { content: none; }
 }
-/* Narrow list (a tablet's half-width panel, a phone): tighter tracks so the nine columns, Green and Entry among them, fit. */
+/* Narrow list (a tablet's half-width panel, a phone): tighter tracks so the eight columns, Green among them, fit. */
 @container sl-list (max-width: 33.99rem) {
-  .ri-sgrid { grid-template-columns: 1rem 1.75rem 3.375rem 3.5rem minmax(0.75rem, 1fr) 2.25rem 2.5rem 2.75rem 5.25rem; column-gap: 0.375rem; }
+  .ri-sgrid { grid-template-columns: 1rem 1.75rem 3.375rem 3.5rem minmax(0.75rem, 1fr) 2.25rem 2.5rem 5.25rem; column-gap: 0.375rem; }
   .ri-sl-cols { letter-spacing: 0.04em; }
 }
 .ri-sl-median > span:nth-child(2) { color: var(--ri-t3); font-size: var(--text-compact); letter-spacing: 0.08em; text-transform: uppercase; }
@@ -134,8 +129,6 @@
 .ri-st-line.hot { stroke-width: 3px; opacity: 1; }
 .ri-st-line.approach { stroke-dasharray: 2 3; }
 .ri-st-boundary { stroke: var(--ri-t2); stroke-width: 1px; opacity: 0.75; }
-/* Entry speed difference at the boundary, in the lap's shade, with a card-coloured halo so it reads over the lines. */
-.ri-st-entry { fill: var(--lap); font-weight: 700; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--ri-card); stroke-width: 3px; stroke-linejoin: round; }
 .ri-st-start { fill: var(--ri-t2); }
 .ri-st-name { fill: var(--ri-t2); }
 .ri-st-unit { fill: var(--ri-t3); }
@@ -165,7 +158,8 @@
 @media (max-width: 420px) {
   /* Phone: narrower columns and short headings so the two context columns fit beside the Δ bar; the traffic share is text only,
      with the side's mark beside it. */
-  .ri-sgrid { grid-template-columns: 0.625rem 1.625rem 2.75rem 3rem minmax(0, 1fr) 2.125rem 2.375rem 2.375rem 3.25rem; column-gap: 0.25rem; padding: 0 var(--space-2); }
+  /* A gutter after Green so its figure never runs into the traffic share (`2` and `6 %` reading as `26 %`). */
+  .ri-sgrid { grid-template-columns: 0.75rem 1.625rem 3rem 3rem minmax(0, 1fr) 2rem 2.25rem 3.5rem; column-gap: 0.3125rem; padding: 0 var(--space-2); }
   .ri-sl-long, .ri-sl-tbar { display: none; }
-  .ri-sl-traffic { padding-left: 0.125rem; gap: 0.25rem; }
+  .ri-sl-traffic { padding-left: 0.625rem; gap: 0.25rem; }
 }

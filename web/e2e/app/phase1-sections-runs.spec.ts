@@ -7,7 +7,7 @@ import { DRIVER, appTest, expectNoHorizontalScroll, hash } from "./helpers";
 import { ROUND2_DEVICES } from "./round2-shared";
 
 // Phase 1 acceptance (gap ledger G6, G7-lite, G8) through the normal loader: the Sections tab (six-channel chart with the approach, the pass
-// pair, section headers with the median-minus-best time and tire energy, lap rows with Green and Entry) and the Runs tab (tire pictures).
+// pair, section headers with the median-minus-best time and tire energy, lap rows with Green) and the Runs tab (tire pictures).
 // Invented figures stand in for the producer: the investigation view's top-level `pace_attribution` and two runs' `tire_observation`.
 const ANALYSIS = buildSectionsAnalysis("an-103");
 type Json = Record<string, unknown>;
@@ -63,7 +63,7 @@ for (const device of ROUND2_DEVICES) {
     const width = device.viewport.width;
     test.beforeEach(async ({ page }) => serve(page));
 
-    test("Sections: headers carry the two figures from normal loading; lap rows carry Green and Entry; six channels; nothing scrolls sideways", async ({ page }) => {
+    test("Sections: headers carry the two figures from normal loading; lap rows carry Green; six channels; nothing scrolls sideways", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/s/103/sections?section=B`));
       const panel = page.locator("[data-sl-traces]");
       await expect(panel).toHaveAttribute("data-status", "ready");
@@ -73,8 +73,8 @@ for (const device of ROUND2_DEVICES) {
       const rows = page.locator(".ri-sl-list [data-lap]");
       await expect(rows).toHaveCount(6);
       await expect(page.locator("[data-sl-green]")).toHaveCount(6);
-      await expect(page.locator("[data-sl-entry-cell]")).toHaveCount(6);
-      await expect(page.locator("[data-sl-entry-cell]").first()).toHaveText(/^(—|[+−]?\d+\.\d)$/);
+      // No browser-computed Entry figure (backend authority, Phase 1 review): entry speed reads from the dashed approach.
+      await expect(page.locator("[data-sl-entry-cell]")).toHaveCount(0);
       await expect(page.locator("[data-sl-green]").first()).toHaveText(/^\d+$/);
       await expect(page.locator("[data-sl-boundary]")).toHaveCount(1);
       await expectNoHorizontalScroll(page);

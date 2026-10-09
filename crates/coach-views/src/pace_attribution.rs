@@ -13,6 +13,9 @@ fn invalid(path: String, message: &str) -> ProjectError {
     }
 }
 
+/// Lap-fraction slack for the half-overlap test, far below a trace bin (about 0.0016 lap).
+const OVERLAP_TOLERANCE: f64 = 1e-9;
+
 /// No name or index fallback: exactly one section must cover at least half the priority's span.
 fn section_id(priority: &Obj, sections: &[Value]) -> Option<String> {
     let start = num(priority, "start_pct")?;
@@ -33,7 +36,9 @@ fn section_id(priority: &Obj, sections: &[Value]) -> Option<String> {
             continue;
         }
         let overlap = (end.min(b) - start.max(a)).max(0.0);
-        if overlap >= (end - start) * 0.5 {
+        // Lap fractions are decimals, so an exact half can round either side of it (0.5 - 0.3 is
+        // 0.19999999999999998): a half within OVERLAP_TOLERANCE counts as a half.
+        if overlap >= (end - start) * 0.5 - OVERLAP_TOLERANCE {
             if matched.is_some() {
                 return None;
             }
@@ -171,6 +176,21 @@ mod tests {
         assert_eq!(attach(0.5, 0.25), None);
         assert_eq!(attach(-0.1, 0.1), None);
         assert_eq!(attach(0.75, 1.0), None);
+        // Equal halves that floating point rounds apart (0.19999999999999998 vs 0.2) stay ambiguous.
+        let decimal = json!([
+            {"id":"c","start_pct":0.0,"end_pct":0.3},
+            {"id":"d","start_pct":0.3,"end_pct":0.6}
+        ]);
+        let p = priority(0.1, 0.5, 0.31);
+        assert_eq!(
+            section_id(p.as_object().unwrap(), decimal.as_array().unwrap()),
+            None
+        );
+        let p = priority(0.1, 0.45, 0.31);
+        assert_eq!(
+            section_id(p.as_object().unwrap(), decimal.as_array().unwrap()),
+            Some("c".into())
+        );
     }
 
     #[test]

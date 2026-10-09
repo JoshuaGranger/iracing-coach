@@ -173,9 +173,8 @@ for (const device of ROUND2_DEVICES) {
       await expect(page.locator("[data-sl-boundary]")).toHaveCount(1);
       await expect(page.locator('[data-sl-row="speed"] [data-sl-approach]')).toHaveCount(7);
       expect(await page.locator('[data-sl-row="speed"] [data-sl-trace][data-pass]').evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-sl-trace"))))).toEqual([six[0], six[5]]);
-      // Their entry speed difference to the median lap at the boundary.
-      expect(await page.locator("[data-sl-entry]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-sl-entry"))))).toEqual([six[0], six[5]]);
-      await expect(page.locator("[data-sl-entry]").first()).toContainText(/Δ [+−]?\d+\.\d/);
+      // No entry figure is computed in the browser (backend authority): entry speed reads from the dashed approach.
+      await expect(page.locator("[data-sl-entry], [data-sl-entry-cell]")).toHaveCount(0);
       // The header stays above the traces and Open in Traces below.
       const head = (await page.locator(".ri-sl-open h2").boundingBox())!;
       const chart = (await page.locator("[data-sl-chart]").boundingBox())!;
@@ -287,6 +286,19 @@ for (const device of ROUND2_DEVICES) {
       await expect.poll(cardPixels).toBeGreaterThan(200);
       box = (await chart.boundingBox())!;
       expect(box.width).toBeGreaterThan(0);
+      // In the approach the marker follows the chart's lap distance on the track, before the section segment (Phase 1 review).
+      await chart.scrollIntoViewIfNeeded();
+      box = (await chart.boundingBox())!;
+      await page.mouse.move(box.x + box.width * 0.08, box.y + box.height * 0.3);
+      await page.mouse.move(box.x + box.width * 0.09, box.y + box.height * 0.3);
+      await expect.poll(async () => Number((await pct.textContent())!.replace("%", ""))).toBeLessThan(40);
+      const beforeSegment = await page.evaluate(() => {
+        const marker = document.querySelector<HTMLElement>("[data-sl-marker] i")!.getBoundingClientRect();
+        const strand = document.querySelector<SVGPathElement>(".ri-sl-scrub")!;
+        const start = strand.getPointAtLength(0).matrixTransform(strand.getScreenCTM()!);
+        return Math.hypot(marker.left + marker.width / 2 - start.x, marker.top + marker.height / 2 - start.y);
+      });
+      expect(beforeSegment).toBeGreaterThan(8);
       expect(requests, "requests during pointer movement").toEqual([]);
     });
 

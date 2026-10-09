@@ -5,22 +5,20 @@ import { describe, expect, it } from "vitest";
 import { fixtureFetch } from "../fixtures/api";
 import { buildSectionsAnalysis } from "../fixtures/sections";
 import { routeStatic, type StaticAnalysisFiles } from "../fixtures/static-api";
-import { channelAsFloat } from "../ccol";
 import { createAnalysisLoader } from "../load";
 import type { RaceViewData } from "../types";
-import { contextTitle, entryText, greenText, lapContexts, lapGreenExposure } from "../ui/section-context";
+import { contextTitle, greenText, lapContexts, lapGreenExposure } from "../ui/section-context";
 import {
   APPROACH_MAX_FRACTION,
   SECTION_ROWS,
   SECTION_SIGNALS,
-  entrySpeedDeltas,
+  gapReference,
   gapValues,
   passPair,
   sectionBins,
   sectionLocal,
   sectionRows,
   sectionWindow,
-  seriesAt,
   sessionTimeColumn,
   splitSectionPath,
   windowPctAt,
@@ -29,9 +27,9 @@ import {
 } from "../ui/section-traces-model";
 
 // Gap ledger G6: the Sections chart gains the time gap to the median lap and body slip, starts at the backend's approach (dashed),
-// reads each lap's entry speed difference at the section start, and draws the fastest and slowest laps (the pass pair) thick. Lap
-// rows' green exposure comes from the race view's `run_age_laps`. Every figure is a trace bin or view field as reported; the gap is
-// the Traces delta row's arithmetic.
+// and draws the fastest and slowest laps (the pass pair) thick. Lap rows' green exposure comes from the race view's `run_age_laps`.
+// Every figure is a trace bin or view field as reported; the gap is the Traces delta row's arithmetic. No entry-speed figure is
+// computed in the browser (Phase 1 review: backend authority); the dashed approach shows entry speed.
 
 async function loadSynthetic() {
   const analysis = buildSectionsAnalysis("an-g6");
@@ -93,15 +91,33 @@ describe("the approach window", () => {
     expect(APPROACH_MAX_FRACTION).toBe(0.08);
   });
 
-  it("splits a lap's line at the boundary: the approach reaches the boundary, the section starts at it", () => {
+  it("splits a lap's line exactly at the boundary, on the drawn segment between the two bins around it", () => {
+    // Bins at 0, 0.2, 0.4, 0.6, 0.8, 1 across the window; the boundary at 0.5 falls between 0.4 and 0.6.
     const x = Float64Array.from([0, 0.2, 0.4, 0.6, 0.8, 1]);
-    const values = Float64Array.from([1, 2, 3, 4, 5, 6]);
-    const frame = { plotLeft: 0, plotWidth: 100, top: 0, plotHeight: 50 };
-    const { approach, section } = splitSectionPath(values, x, 0.4, { min: 0, max: 7 }, frame);
-    expect(approach.match(/[ML]/g)).toHaveLength(3);
-    expect(section.match(/[ML]/g)).toHaveLength(4);
-    expect(approach.split(" ").pop()).toBe(section.split(" ")[0]!.replace("M", "L"));
-    expect(splitSectionPath(values, x, 0, { min: 0, max: 7 }, frame).approach).toBe("");
+    const values = Float64Array.from([1, 2, 3, 5, 5, 6]);
+    const frame = { plotLeft: 0, plotWidth: 100, top: 0, plotHeight: 58 };
+    const range = { min: 0, max: 10 };
+    const { approach, section } = splitSectionPath(values, x, 0.5, range, frame);
+    const points = (d: string) => d.split(" ").map((part) => part.slice(1).split(",").map(Number));
+    const a = points(approach);
+    const b = points(section);
+    // The approach ends and the section starts at x = 50 px (the boundary), at the value 4 halfway between 3 and 5.
+    expect(a[a.length - 1]![0]).toBe(50);
+    expect(b[0]![0]).toBe(50);
+    expect(a[a.length - 1]).toEqual(b[0]);
+    expect(b[0]![1]).toBeCloseTo(58 - 4 - (4 / 10) * 50, 1);
+    expect(a).toHaveLength(4);
+    expect(b).toHaveLength(4);
+    // Nothing of the approach lies past the boundary, nothing of the section before it.
+    expect(a.every(([px]) => px! <= 50)).toBe(true);
+    expect(b.every(([px]) => px! >= 50)).toBe(true);
+    // A boundary on a bin cuts there; no approach before a window start; a missing bin leaves each side at its own bins.
+    expect(points(splitSectionPath(values, x, 0.4, range, frame).section)[0]![0]).toBe(40);
+    expect(splitSectionPath(values, x, 0, range, frame).approach).toBe("");
+    const gap = Float64Array.from([1, 2, Number.NaN, 5, 5, 6]);
+    const split = splitSectionPath(gap, x, 0.5, range, frame);
+    expect(points(split.approach).every(([px]) => px! <= 20)).toBe(true);
+    expect(points(split.section)[0]![0]).toBe(60);
   });
 });
 
@@ -151,27 +167,17 @@ describe("six rows", () => {
   });
 });
 
-describe("entry speed at the section start", () => {
-  it("is each lap's recorded speed at the boundary, read between the two bins around it, less the median lap's", async () => {
-    const { data } = await loadSynthetic();
-    const w = sectionWindow({ startPct: 0.42, endPct: 0.58 });
-    const laps = [data.laps[3]!, data.laps[8]!];
-    const median = data.laps[20]!;
-    const deltas = entrySpeedDeltas(data, w, laps, median);
-    const bins = sectionBins(data.x, windowSpan(w));
-    const speed = channelAsFloat(data.table.channels.get("speed")!);
-    const at = (lap: number) => seriesAt(bins.bins.map((bin) => speed[data.lapIndex.get(lap)! * data.bins + bin]!), bins.x, w.boundary);
-    for (const lap of laps) expect(deltas.get(lap)!).toBeCloseTo(at(lap) - at(median), 9);
-    expect(entrySpeedDeltas(data, w, laps, null).get(laps[0]!)).toBeNull();
-    expect(seriesAt([1, 3], [0, 1], 0.25)).toBeCloseTo(1.5, 9);
-    expect(Number.isNaN(seriesAt([1, Number.NaN], [0, 1], 0.5))).toBe(true);
-  });
-
-  it("reads as a signed figure in mph with one decimal", () => {
-    expect(entryText(1.44)).toBe("+1.4");
-    expect(entryText(-0.06)).toBe("−0.1");
-    expect(entryText(0.04)).toBe("0.0");
-    expect(entryText(null)).toBe("—");
+describe("the gap reference", () => {
+  it("is the reported median lap also when it is one of the listed laps; else the drawn median line", () => {
+    const listed = [58, 4, 12, 27, 55, 53].map((lap) => ({ lap, median: false }));
+    const has = (lap: number) => lap !== 99;
+    // Median L12 among the six: no grey line is drawn, but it stays the reference.
+    expect(gapReference(12, listed, has)).toBe(12);
+    expect(gapReference(40, [...listed, { lap: 40, median: true }], has)).toBe(40);
+    // Not in the store: the drawn median line, or nothing.
+    expect(gapReference(99, [...listed, { lap: 40, median: true }], has)).toBe(40);
+    expect(gapReference(99, listed, has)).toBeNull();
+    expect(gapReference(null, listed, has)).toBeNull();
   });
 });
 
@@ -222,15 +228,6 @@ describe("real recorded channels (test-data/g2)", () => {
       const end = gap[gap.length - 1]!;
       // First to last bin centre of each lap: the bins miss half a bin at each end, so the gap agrees within a few hundredths.
       expect(Math.abs(end - (lapTime.get(a)! - lapTime.get(b)!))).toBeLessThan(0.05);
-    }
-  });
-
-  it("entry speed differences are finite at a section start the laps all cover", async () => {
-    const { data } = await loadG2();
-    const deltas = entrySpeedDeltas(data, sectionWindow({ startPct: 0.615, endPct: 0.73 }), [10, 11, 12, 30], 20);
-    for (const value of deltas.values()) {
-      expect(value).not.toBeNull();
-      expect(Math.abs(value!)).toBeLessThan(15);
     }
   });
 });
