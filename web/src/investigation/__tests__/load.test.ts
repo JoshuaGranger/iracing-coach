@@ -45,6 +45,18 @@ describe("analysis loader", () => {
     expect(overview.track).toBeNull();
   });
 
+  it("passes the investigation view's top-level pace_attribution to the parsed investigation", async () => {
+    const withPace = structuredClone(analysis);
+    (withPace.investigation as Record<string, unknown>).pace_attribution = {
+      schema_version: 1,
+      priorities: [{ section_id: "A", start_pct: 0.1, end_pct: 0.2, recoverable_s: 0.31, best_lap: 17, tire_energy_share: 0.18, tire_energy_grade: "slip_weighted" }],
+    };
+    const overview = await createAnalysisLoader({ fetch: fixtureFetch(withPace) }).get(analysis.analysisId).overview();
+    expect(overview.investigation?.paceAttribution?.priorities[0]).toMatchObject({ sectionId: "A", recoverableS: 0.31, bestLap: 17, tireEnergyShare: 0.18 });
+    // Without the field the investigation still loads, with no attribution.
+    expect((await createAnalysisLoader({ fetch: fixtureFetch(analysis) }).get(analysis.analysisId).overview()).investigation?.paceAttribution).toBeNull();
+  });
+
   it("reports an unreadable investigation without failing the overview", async () => {
     const broken = structuredClone(analysis);
     (broken.investigation.race_investigation as Record<string, unknown>).schema_version = 9;

@@ -121,7 +121,7 @@ export function createAnalysisLoader(options: LoaderOptions = {}): AnalysisLoade
       let investigationError: string | null = null;
       if (inv.value) {
         try {
-          investigation = parseInvestigation(inv.value.race_investigation);
+          investigation = parseInvestigation(inv.value.race_investigation, inv.value.pace_attribution);
         } catch (error) {
           investigationError = error instanceof Error ? error.message : String(error);
         }
