@@ -11,4 +11,7 @@ Joshua's order of 8 Oct: know everything he asked Coach to be, versus what was b
 | PHYSICS-UNDERSTANDING.md | Our model law by law, three verified code contradictions, what is unclear and the experiments that settle it; PHYSICS-AUDIT-codex.md is the independent audit |
 | BASELINE-TUNING-codex.md | Baseline-setup generator design (v0) from physics plus the Vegas/Charlotte setup priors |
 
+
 Raw transcript extracts stay outside the repo in C:\Users\joshu\Documents\Codex\coach-requirements-2026-10-08\.
+| BASELINE-TUNING-v1-codex.md | The consolidated baseline-tuning plan: generator v1, the experiment programme, Coach workstreams |
+| PHYSICS-UNDERSTANDING-REVIEW-codex.md | Codex adversarial review of PHYSICS-UNDERSTANDING.md: confirmed, refuted or weakened, missing |
