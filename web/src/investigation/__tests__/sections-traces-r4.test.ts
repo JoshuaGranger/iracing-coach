@@ -6,7 +6,9 @@ import type { MapPoint } from "../geometry/map-model";
 import { createAnalysisLoader } from "../load";
 import { parseSectionLaps } from "../ui/section-laps";
 import {
+  SECTION_ROWS,
   SECTION_SIGNALS,
+  sectionRows,
   acrossSection,
   buildSectionCursorConfig,
   lapPctAt,
@@ -157,20 +159,23 @@ describe("telemetry over the section", () => {
     expect(sectionPath(gap, bins.x, speed, { plotLeft: 6, plotWidth: 400, top: 0, plotHeight: 100 }).match(/M/g)).toHaveLength(2);
   });
 
-  it("builds the shared cursor over the section: four rows, one trace per drawn lap in card order, x across the section", async () => {
+  it("builds the shared cursor over the window: six rows, one trace per drawn lap in card order, x across the window", async () => {
     const { data } = await loadFixture();
     const bins = sectionBins(data.x, SECTION_B);
     const laps = [data.laps[4]!, data.laps[2]!, data.laps[9]!];
     const lapIndices = laps.map((lap) => data.lapIndex.get(lap)!);
-    const metrics = chartMetrics(600, 560, SECTION_SIGNALS.length);
+    const metrics = chartMetrics(600, 560, SECTION_ROWS.length);
+    const rows = sectionRows(data, bins, laps, laps[2]!);
     const config = buildSectionCursorConfig({
-      data, bins, metrics, initialFraction: 0.5, key: "k",
-      ranges: SECTION_SIGNALS.map((id) => sectionRange(data, id, lapIndices, bins.bins)),
-      laps: [...laps.map((lap) => ({ lap, color: "rgb(61, 220, 132)" })), { lap: 99999, color: "grey" }],
+      bins, metrics, initialFraction: 0.5, key: "k", rows,
+      laps: laps.map((lap) => ({ lap, color: "rgb(61, 220, 132)" })),
     });
-    expect(config.rows.map((row) => row.rowId)).toEqual(["speed", "throttle", "brake", "steering"]);
+    expect(config.rows.map((row) => row.rowId)).toEqual(["speed", "gap", "throttle", "brake", "steering", "slip"]);
     expect(config.rows.every((row) => row.signals.length === 1)).toBe(true);
+    // The gap row reads as the Traces delta (signed seconds).
+    expect(config.rows[1]!.signals[0]!.id).toBe("delta");
     expect(config.traces.map((trace) => trace.lap)).toEqual(laps);
+    expect(sectionRange(data, "throttle", lapIndices, bins.bins)).toEqual({ min: 0, max: 1 });
     expect(config.bins).toBe(bins.bins.length);
     expect(config.x).toBe(bins.x);
     expect(config.trackPoints).toEqual([]);

@@ -145,13 +145,14 @@ for (const device of ROUND2_DEVICES) {
 
     // Round 4, S3 (#64): the section's telemetry in the right panel.
 
-    test("the right panel draws the six laps' speed, throttle, brake and steering over the section, the median lap in grey", async ({ page }) => {
+    test("the right panel draws the six laps' speed, gap, throttle, brake, steering and body slip over the approach and the section, the median lap in grey", async ({ page }) => {
       await open(page, "?section=B");
       const panel = page.locator("[data-sl-traces]");
       await expect(panel).toHaveAttribute("data-status", "ready");
       const six = listed("B").map((lap) => lap.lap);
       const median = entry("B").median_lap!;
-      for (const signal of ["speed", "throttle", "brake", "steering"]) {
+      expect(await page.locator("[data-sl-row]").evaluateAll((els) => els.map((el) => el.getAttribute("data-sl-row")))).toEqual(["speed", "gap", "throttle", "brake", "steering", "slip"]);
+      for (const signal of ["speed", "gap", "throttle", "brake", "steering", "slip"]) {
         const lines = page.locator(`[data-sl-row="${signal}"] [data-sl-trace]`);
         await expect(lines).toHaveCount(7);
         expect(await lines.evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-sl-trace"))))).toEqual([...six, median]);
@@ -163,10 +164,18 @@ for (const device of ROUND2_DEVICES) {
       expect(strokes[6]).toBe(REFERENCE_GREY);
       await expect(page.locator(`[data-sl-trace="${median}"][data-median]`).first()).toBeAttached();
       await expect(page.locator("[data-sl-median-key]")).toHaveText(`Median L${median}`);
-      // The x axis is lap distance across the section.
+      // The x axis is lap distance from the approach (gap ledger G6: the backend's lead-in, 8 % lap here) to the section end, the section
+      // start marked by one boundary line; the approach is dashed and the fastest and slowest laps (the pass pair) are thick.
       const ticks = await page.locator("[data-sl-traces] [data-sl-tick]").allTextContents();
-      expect(ticks[0]).toBe("42.0%");
+      expect(ticks[0]).toBe("34.0%");
+      expect(ticks).toContain("42.0%");
       expect(ticks[ticks.length - 1]).toBe("58.0%");
+      await expect(page.locator("[data-sl-boundary]")).toHaveCount(1);
+      await expect(page.locator('[data-sl-row="speed"] [data-sl-approach]')).toHaveCount(7);
+      expect(await page.locator('[data-sl-row="speed"] [data-sl-trace][data-pass]').evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-sl-trace"))))).toEqual([six[0], six[5]]);
+      // Their entry speed difference to the median lap at the boundary.
+      expect(await page.locator("[data-sl-entry]").evaluateAll((els) => els.map((el) => Number(el.getAttribute("data-sl-entry"))))).toEqual([six[0], six[5]]);
+      await expect(page.locator("[data-sl-entry]").first()).toContainText(/Δ [+−]?\d+\.\d/);
       // The header stays above the traces and Open in Traces below.
       const head = (await page.locator(".ri-sl-open h2").boundingBox())!;
       const chart = (await page.locator("[data-sl-chart]").boundingBox())!;
@@ -223,16 +232,16 @@ for (const device of ROUND2_DEVICES) {
         return painted;
       });
       const markerAt = () => marker.evaluate((el: HTMLElement) => el.style.transform);
-      // Traces -> map: a quarter of the way across, then three quarters.
+      // Traces -> map: half way across the window (inside the section, past the approach), then most of the way.
       let box = (await chart.boundingBox())!;
-      await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.3);
-      await page.mouse.move(box.x + box.width * 0.26, box.y + box.height * 0.3);
+      await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.3);
+      await page.mouse.move(box.x + box.width * 0.51, box.y + box.height * 0.3);
       await expect(marker.locator("i")).toBeVisible();
       await expect.poll(cardPixels).toBeGreaterThan(200);
       const early = Number((await pct.textContent())!.replace("%", ""));
       const earlyMarker = await markerAt();
-      await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.6);
-      await page.mouse.move(box.x + box.width * 0.76, box.y + box.height * 0.6);
+      await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.6);
+      await page.mouse.move(box.x + box.width * 0.86, box.y + box.height * 0.6);
       await expect.poll(markerAt).not.toBe(earlyMarker);
       const late = Number((await pct.textContent())!.replace("%", ""));
       expect(early).toBeGreaterThan(42);

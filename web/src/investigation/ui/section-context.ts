@@ -11,12 +11,31 @@ import { lapTraffic, sideText, trafficText, type LapTraffic } from "./traffic";
  * - Traffic: the race view's `clean_context.traffic_proximity_fraction` and, when the backend names it, the side (`./traffic`): in
  *   words as every traffic readout says them (`ahead`, `behind`, `both sides`), drawn as the Race chart's mark where the column is
  *   narrow (sections.css).
+ * - Green exposure (gap ledger G6): the race view's `laps[].run_age_laps`, in the row's hover; `greenText` and `entryText` format
+ *   the green-lap and entry-speed cells for the rows.
  */
 
 export interface LapContext {
   /** Laps on the current tire set at the end of this lap (oldest corner); null when the backend has no lifecycle for the run. */
   tires: number | null;
   traffic: LapTraffic | null;
+  /**
+   * Green exposure (gap ledger G6): the race view's `laps[].run_age_laps`, the backend's green-lap equivalents into the run at this
+   * lap; null when not reported. Optional so contexts built before it read as unknown.
+   */
+  green?: number | null;
+}
+
+/** Green exposure by lap number, from the race view's `laps[].run_age_laps` (a negative figure is not a figure). */
+export function lapGreenExposure(race: RaceViewData | null | undefined): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const item of asArray(asRecord(race).laps)) {
+    const lap = asRecord(item);
+    const number = num(lap.lap);
+    const age = num(lap.run_age_laps);
+    if (number !== null && age !== null && age >= 0 && !out.has(number)) out.set(number, age);
+  }
+  return out;
 }
 
 const CORNERS = ["LF", "RF", "LR", "RR"] as const;
@@ -53,13 +72,26 @@ export function lapTireAges(runs: readonly unknown[] | null | undefined): Map<nu
   return out;
 }
 
-/** Both columns by lap number. */
+/** Both columns and the green exposure by lap number. */
 export function lapContexts(race: RaceViewData | null | undefined, runs: readonly unknown[] | null | undefined): Map<number, LapContext> {
   const tires = lapTireAges(runs);
   const traffic = lapTraffic(race);
+  const green = lapGreenExposure(race);
   const out = new Map<number, LapContext>();
-  for (const lap of new Set([...tires.keys(), ...traffic.keys()])) out.set(lap, { tires: tires.get(lap) ?? null, traffic: traffic.get(lap) ?? null });
+  for (const lap of new Set([...tires.keys(), ...traffic.keys(), ...green.keys()])) out.set(lap, { tires: tires.get(lap) ?? null, traffic: traffic.get(lap) ?? null, green: green.get(lap) ?? null });
   return out;
+}
+
+/** Green exposure as a cell: whole green laps into the run (`12`), `—` without a figure. */
+export function greenText(green: number | null | undefined): string {
+  return green == null ? "—" : `${Math.round(green)}`;
+}
+
+/** Entry speed difference to the median lap at the section start as a cell: `+1.4`, `−0.6` (mph), `—` without a figure. */
+export function entryText(delta: number | null | undefined): string {
+  if (delta == null || !Number.isFinite(delta)) return "—";
+  const rounded = Math.round(delta * 10) / 10;
+  return (rounded > 0 ? "+" : rounded < 0 ? "−" : "") + Math.abs(rounded).toFixed(1);
 }
 
 /** The Tires cell: whole laps, `—` without a figure. */
@@ -84,5 +116,6 @@ export function contextTitle(context: LapContext | null | undefined): string {
   const parts: string[] = [];
   if (context?.tires != null) parts.push(`${Math.round(context.tires)} ${Math.round(context.tires) === 1 ? "lap" : "laps"} on tires`);
   if (context?.traffic?.fraction != null) parts.push(trafficText(context.traffic));
+  if (context?.green != null) parts.push(`green lap ${Math.round(context.green)} of the run`);
   return parts.join(" · ");
 }
