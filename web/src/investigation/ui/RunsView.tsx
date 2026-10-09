@@ -8,6 +8,7 @@ import { useElementSize, useSessionNumbers } from "./hooks";
 import { LapDot } from "./LapDot";
 import { identityColour, observedTrend, runCards, runIdentities, runsChartLaps, sparkGeometry, toggleRun, trendLabel, trendOnExposure, type RunCard, type RunIdentity } from "./runs-model";
 import { lapKind, lapTraffic } from "./traffic";
+import { SURFACE_TEMP_GRADIENT, SURFACE_TEMP_RANGE_F, TireDiagram } from "../../ui/pictograms";
 import { scaleFor, useRemPx } from "./unit";
 
 export interface RunsViewProps {
@@ -26,7 +27,7 @@ function RunCardView({ card, identity, shown, locked, onToggle }: { card: RunCar
   const color = identity?.color ?? "var(--color-text-muted)";
   const spark = sparkGeometry(card, 96, 24);
   return (
-    <button type="button" class={`ri-run-card${shown ? "" : " hidden"}`} aria-pressed={shown} aria-disabled={locked || undefined} data-run-card={card.runNumber} style={`--run:${color}`} onClick={onToggle}
+    <button type="button" class={`ri-run-card${shown ? "" : " hidden"}${card.tires ? " has-tires" : ""}`} aria-pressed={shown} aria-disabled={locked || undefined} data-run-card={card.runNumber} style={`--run:${color}`} onClick={onToggle}
       title={locked ? "One run stays on the chart" : undefined}>
       <span class="ri-run-card-head">
         <RunSwatch identity={identity} width={22} />
@@ -46,6 +47,18 @@ function RunCardView({ card, identity, shown, locked, onToggle }: { card: RunCar
         <span class="ri-fact"><span class="ri-fact-label">Screened</span><b class="ri-fact-value" data-run-screened>{card.screened}</b></span>
         <span class="ri-fact"><span class="ri-fact-label">Tire laps</span><b class="ri-fact-value" data-run-tires>{card.tireLaps ?? "—"}</b></span>
       </span>
+      {card.tires && (
+        <span class="ri-run-tires" data-run-tires-picture={card.runNumber} title={card.tires.hover}>
+          <TireDiagram wear={card.tires.corners} label={`${card.tires.caption || "Tires"} ${card.tires.atText}`} width={60} height={80} />
+          <span class="ri-run-tires-text">
+            <b class="ri-run-tires-caption" data-run-tires-caption>{card.tires.caption || "Tires"}</b>
+            <span class="ri-run-tires-at" data-run-tires-at>{card.tires.atText}</span>
+            <span class="ri-temp-key" data-temp-key title="Surface temperature, °F">
+              <small>{SURFACE_TEMP_RANGE_F[0]}</small><i style={`background:${SURFACE_TEMP_GRADIENT}`} /><small>{SURFACE_TEMP_RANGE_F[1]}</small>
+            </span>
+          </span>
+        </span>
+      )}
     </button>
   );
 }

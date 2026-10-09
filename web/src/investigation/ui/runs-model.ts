@@ -2,6 +2,7 @@ import { runColour, runDash } from "../../core/palette";
 import type { PitStop } from "../geometry/rail-model";
 import type { Investigation, InvestigationLap, RunView } from "../investigation-model";
 import { asRecord, num } from "../types";
+import { TIRE_IDS, type TireId } from "../../ui/pictograms";
 import { lapKind, type LapKind } from "./traffic";
 
 const LITERS_PER_GALLON = 3.785411784;
@@ -210,6 +211,8 @@ export interface RunCard {
   fuelBand: string | null;
   /** Green laps on the tires at the run's end, per corner: one figure, or a range when the corners differ. Null when not reported. */
   tireLaps: string | null;
+  /** The four-tire picture at the run's end; null when the run has no measured tire reading. */
+  tires: RunTires | null;
 }
 
 function fuelBand(run: Record<string, unknown> | null): string | null {
@@ -254,6 +257,7 @@ export function runCards(inv: Investigation, runs: readonly unknown[]): RunCard[
       screened: laps.filter((lap) => !lap.eligible).length,
       fuelBand: fuelBand(raw),
       tireLaps: tireLaps(raw),
+      tires: runTires(raw, run.lastLap),
     };
   });
 }
@@ -285,4 +289,103 @@ export function toggleRun(hidden: ReadonlySet<number>, run: number, all: readonl
   else next.add(run);
   const visible = all.filter((item) => !next.has(item));
   return all.length > 0 && visible.length === 0 ? new Set(hidden) : next;
+}
+
+/**
+ * The run's four-tire picture (G8): the tires as the stop that ended the run read them. iRacing exposes tire readings only during
+ * pit service, so `tire_observation` is the run's END state and says nothing about the laps before it; the picture is labelled with
+ * the run's last lap (`at L47`). Absent (`stale_or_unconfirmed_at_stop`, `unmeasured_final_run`) the run has no picture, never a
+ * guess. Every figure is the server's: remaining percent per band, surface temperature per band, the lowest tire, laps on the set.
+ * Bands keep the sim's L/M/R order, which is also the picture's left to right: a left tire reads outside, middle, inside and a
+ * right tire inside, middle, outside (Q7).
+ */
+export interface TireBand {
+  /** Tread left, 0–100; null when the band was not read. */
+  remaining: number | null;
+  /** Surface temperature, °F; null when not read. */
+  surfaceF: number | null;
+}
+
+export interface TireCorner {
+  id: TireId;
+  /** Left, middle, right of the tire as the sim names the bands. */
+  bands: [TireBand, TireBand, TireBand];
+  /** Pressure after the stop, psi, with the sim's kind (`live` or `cold`); null when not read. */
+  pressure: { psi: number; kind: string | null } | null;
+}
+
+export interface RunTires {
+  /** Always the four corners in diagram order (LF, RF, LR, RR); a corner not read has empty bands. */
+  corners: TireCorner[];
+  /** The lowest tire and its tread left, from the server; null when it sent none. */
+  lowest: { tire: TireId; percent: number } | null;
+  /** Green laps on the lowest tire's set; null when the server sent none. */
+  lapsOnSet: number | null;
+  /** The lap the reading is read at: the run's last lap. */
+  atLap: number;
+  /** Coolest and warmest surface band read, °F; null when none. */
+  surfaceRange: [number, number] | null;
+  /** `RF 61 % · 23 laps`; just what is known. */
+  caption: string;
+  /** `at L47 · 171–204 °F`. */
+  atText: string;
+  /** One line per tire: `RF · I 61 M 63 O 58 % · I 171 M 180 O 204 °F · 32.1 psi live`. */
+  hover: string;
+}
+
+const BAND_KEYS = ["L", "M", "R"] as const;
+
+/** The band names left to right for a tire: a left tire is outside, middle, inside; a right tire inside, middle, outside. */
+export function bandNames(id: TireId): [string, string, string] {
+  return id === "LF" || id === "LR" ? ["O", "M", "I"] : ["I", "M", "O"];
+}
+
+function percentOf(value: unknown): number | null {
+  const v = num(value);
+  return v === null ? null : Math.min(100, Math.max(0, v));
+}
+
+function lapsText(value: number): string {
+  const text = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return `${text} ${value === 1 ? "lap" : "laps"}`;
+}
+
+/** The run's tire picture from the runs view's run; null when the run has no measured tire reading. */
+export function runTires(run: Record<string, unknown> | null, atLap: number): RunTires | null {
+  const observation = asRecord(run?.tire_observation);
+  const tires = asRecord(observation.tires);
+  const corners: TireCorner[] = TIRE_IDS.map((id) => {
+    const tire = asRecord(tires[id]);
+    const wear = asRecord(tire.remaining_percent);
+    const surface = asRecord(tire.surface_temperature_f);
+    const pressure = asRecord(tire.pressure);
+    const psi = num(pressure.psi);
+    return {
+      id,
+      bands: BAND_KEYS.map((key) => ({ remaining: percentOf(wear[key]), surfaceF: num(surface[key]) })) as [TireBand, TireBand, TireBand],
+      pressure: psi === null ? null : { psi, kind: typeof pressure.kind === "string" ? pressure.kind : null },
+    };
+  });
+  if (!corners.some((corner) => corner.bands.some((band) => band.remaining !== null))) return null;
+  const lowestId = TIRE_IDS.find((id) => id === observation.lowest_remaining_tire);
+  const lowestPercent = percentOf(observation.lowest_remaining_percent);
+  const lowest = lowestId && lowestPercent !== null ? { tire: lowestId, percent: lowestPercent } : null;
+  const setLaps = lowest ? num(asRecord(asRecord(asRecord(run?.tire_set_lifecycle).corners)[lowest.tire]).green_laps_on_set) : null;
+  const lapsOnSet = setLaps !== null && setLaps >= 0 ? setLaps : null;
+  const temps = corners.flatMap((corner) => corner.bands.map((band) => band.surfaceF)).filter((value): value is number => value !== null);
+  const surfaceRange: [number, number] | null = temps.length ? [Math.min(...temps), Math.max(...temps)] : null;
+  const caption = [lowest ? `${lowest.tire} ${Math.round(lowest.percent)} %` : null, lapsOnSet !== null ? lapsText(lapsOnSet) : null].filter(Boolean).join(" · ");
+  const temp = surfaceRange ? (Math.round(surfaceRange[0]) === Math.round(surfaceRange[1]) ? `${Math.round(surfaceRange[0])} °F` : `${Math.round(surfaceRange[0])}–${Math.round(surfaceRange[1])} °F`) : null;
+  const atText = [`at L${atLap}`, temp].filter(Boolean).join(" · ");
+  const join = (corner: TireCorner, pick: (band: TireBand) => number | null): string => {
+    const names = bandNames(corner.id);
+    return corner.bands.flatMap((band, index) => { const v = pick(band); return v === null ? [] : [`${names[index]} ${Math.round(v)}`]; }).join(" ");
+  };
+  const hover = corners.map((corner) => {
+    const wear = join(corner, (band) => band.remaining);
+    const heat = join(corner, (band) => band.surfaceF);
+    const psi = corner.pressure ? `${corner.pressure.psi.toFixed(1)} psi${corner.pressure.kind ? ` ${corner.pressure.kind}` : ""}` : "";
+    return [corner.id, wear ? `${wear} %` : "", heat ? `${heat} °F` : "", psi].filter(Boolean).join(" · ");
+  }).join("\n");
+  return { corners, lowest, lapsOnSet, atLap, surfaceRange, caption, atText: `${atText}`, hover: `Read at the stop after L${atLap} (I inside, M middle, O outside)\n${hover}` };
 }

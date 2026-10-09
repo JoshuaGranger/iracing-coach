@@ -204,7 +204,7 @@
 
 /* Runs: the chart, then one card per run (sparkline, fit slope, laps used and screened, fuel band, tire laps). */
 .ri-runs-view { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--ri-gap); height: 100%; min-height: 0; }
-.ri-run-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--ri-gap); max-height: 36vh; overflow: auto; }
+.ri-run-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); align-items: start; gap: var(--ri-gap); max-height: 36vh; overflow: auto; }
 /* A run card (#93): an even grid, the head and the sparkline on one row, then the facts, label above figure, at the Sessions list's
    sizes (sessions.css .sx-l, .sx-v). The card is a button: its button type (uppercase, condensed, line-height 1) and the control
    rule's cap trim (styles.css) are undone here, or the labels sit on the figures. */
@@ -228,6 +228,18 @@
 .ri-fact.wide { grid-column: span 3; }
 .ri-fact-label { overflow: hidden; color: var(--color-text-muted); font-size: var(--text-compact); font-weight: var(--weight-semibold); line-height: 1rem; text-overflow: ellipsis; white-space: nowrap; }
 .ri-fact-value { overflow: hidden; color: var(--ri-t1); font-family: var(--font-display); font-size: var(--text-data); font-weight: var(--weight-medium); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The run's four-tire picture (G8): the tires at the stop that ended the run. Tread left is the bar's fill, surface temperature its hue
+   (the progress ramp, 120 to 220 °F, keyed under the caption). The third row of the card; absent when the run has no measured reading. */
+.ri-run-card.has-tires { grid-template-areas: "head spark" "facts facts" "tires tires"; }
+.ri-run-tires { grid-area: tires; display: flex; align-items: center; gap: 0.75rem; min-width: 0; padding-top: 0.5rem; border-top: 1px solid var(--ri-line); }
+.ri-run-tires .tire-diagram { flex: none; width: 3.75rem; height: 5rem; }
+.ri-run-tires-text { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.ri-run-tires-caption { overflow: hidden; color: var(--ri-t1); font-family: var(--font-display); font-size: var(--text-data); font-weight: var(--weight-medium); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+.ri-run-tires-at { overflow: hidden; color: var(--color-text-muted); font-family: var(--font-display); font-size: var(--text-compact); font-stretch: semi-condensed; font-variant-numeric: tabular-nums; line-height: 1rem; text-overflow: ellipsis; white-space: nowrap; }
+.ri-temp-key { display: flex; align-items: center; gap: 0.375rem; margin-top: 0.25rem; }
+.ri-temp-key i { flex: none; width: 4rem; height: 0.375rem; border-radius: 0.1875rem; }
+.ri-temp-key small { color: var(--color-text-muted); font-family: var(--font-display); font-size: var(--text-compact); font-variant-numeric: tabular-nums; line-height: 1rem; }
 
 /* Pit stop picture */
 .ri-pit-glyph { display: block; flex: none; overflow: visible; }

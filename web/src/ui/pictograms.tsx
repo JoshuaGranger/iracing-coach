@@ -35,8 +35,87 @@ const TIRE_RECT: Record<TireId, { x: number; y: number }> = {
   RR: { x: 30, y: 40 },
 };
 
-/** The car from above with its tires. `changed` null means the tires are not known: all grey. */
-export function TireDiagram({ changed, width = 24, height = 38 }: { changed: readonly TireId[] | null | undefined; width?: number; height?: number }) {
+/** Surface temperatures the band hue spans, °F. Fixed, so two run cards compare; outside it the hue holds its end. */
+export const SURFACE_TEMP_RANGE_F: readonly [number, number] = [120, 220];
+
+/**
+ * The hue of a surface temperature: the app's progress ramp (cool `--progress-2`, mid `--progress-4`, warm `--progress-6`) mixed
+ * linearly over `SURFACE_TEMP_RANGE_F`. A hue only, no good or bad. Null (not read) is the muted text colour.
+ */
+export function surfaceTempColour(fahrenheit: number | null | undefined): string {
+  if (fahrenheit === null || fahrenheit === undefined || !Number.isFinite(fahrenheit)) return "var(--color-text-muted)";
+  const [lo, hi] = SURFACE_TEMP_RANGE_F;
+  const t = Math.min(1, Math.max(0, (fahrenheit - lo) / (hi - lo)));
+  const pct = (value: number): number => Math.round(value * 100);
+  return t <= 0.5 ? `color-mix(in srgb, var(--progress-4) ${pct(t * 2)}%, var(--progress-2))` : `color-mix(in srgb, var(--progress-6) ${pct((t - 0.5) * 2)}%, var(--progress-4))`;
+}
+
+/** The CSS gradient of the hue over its range, for the key under a wear picture. */
+export const SURFACE_TEMP_GRADIENT = "linear-gradient(90deg, var(--progress-2), var(--progress-4), var(--progress-6))";
+
+/** One tire's tread and surface temperature in three bands, left to right as the picture draws them. */
+export interface TireWear {
+  id: TireId;
+  bands: readonly { remaining: number | null; surfaceF: number | null }[];
+}
+
+// The wear picture: wider tires (three bars each) on a taller car, in its own 60 × 80 box.
+const WEAR_RECT: Record<TireId, { x: number; y: number }> = { LF: { x: 0, y: 10 }, RF: { x: 46, y: 10 }, LR: { x: 0, y: 46 }, RR: { x: 46, y: 46 } };
+const WEAR_W = 14;
+const WEAR_H = 26;
+const BAR_W = 3;
+const BAR_GAP = 1;
+const BAR_H = 22;
+
+/** Fill height in the wear picture's bar for a tread-left percent. */
+export function wearBarHeight(remaining: number | null): number {
+  return remaining === null ? 0 : (BAR_H * Math.min(100, Math.max(0, remaining))) / 100;
+}
+
+function WearTires({ wear }: { wear: readonly TireWear[] }) {
+  return (
+    <>
+      <g transform="translate(10 2) scale(1 1.25)">
+        <path d="M13 4h14c3 0 5 2 5.5 6L34 22l1 6v18l-1 10c-.5 3-2.5 4-5 4H11c-2.5 0-4.5-1-5-4l-1-10V28l1-6-.5-12C6 6 8 4 13 4z" fill="#2a3a46" stroke="#425663" stroke-width="1" />
+        <path d="M12 20h16l2 8H10z" fill="#15202a" />
+      </g>
+      {TIRE_IDS.map((id) => {
+        const { x, y } = WEAR_RECT[id];
+        const tire = wear.find((item) => item.id === id);
+        return (
+          <g key={id} data-tire={id}>
+            <rect x={x} y={y} width={WEAR_W} height={WEAR_H} rx="3" fill="#2f3d47" stroke="#52626d" stroke-width="1" />
+            {[0, 1, 2].map((index) => {
+              const band = tire?.bands[index];
+              const bx = x + 1.5 + index * (BAR_W + BAR_GAP);
+              const top = y + 2;
+              const h = wearBarHeight(band?.remaining ?? null);
+              return (
+                <g key={index} data-band={index}>
+                  <rect x={bx} y={top} width={BAR_W} height={BAR_H} rx="0.8" fill="#15202a" />
+                  {h > 0 ? <rect x={bx} y={top + BAR_H - h} width={BAR_W} height={h} rx="0.8" style={`fill:${surfaceTempColour(band?.surfaceF)}`} data-remaining={band?.remaining ?? undefined} /> : null}
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * The car from above with its tires. `changed` null means the tires are not known: all grey. With `wear` the tires draw three bars
+ * each (tread left as the fill, surface temperature as its hue) and `changed` is not drawn: a run card's end-of-run picture.
+ */
+export function TireDiagram({ changed, wear, label, width = 24, height = 38 }: { changed?: readonly TireId[] | null | undefined; wear?: readonly TireWear[] | null; label?: string; width?: number; height?: number }) {
+  if (wear) {
+    return (
+      <svg class="tire-diagram tire-wear" width={width} height={height} viewBox="0 0 60 80" role="img" aria-label={label ?? "Tire tread and temperature"} data-tire-wear>
+        <WearTires wear={wear} />
+      </svg>
+    );
+  }
   return (
     <svg class="tire-diagram" width={width} height={height} viewBox="0 0 40 64" role="img" aria-label={changed ? tireSummary(changed) || "No tires changed" : "Tires unknown"}>
       <path d="M13 4h14c3 0 5 2 5.5 6L34 22l1 6v18l-1 10c-.5 3-2.5 4-5 4H11c-2.5 0-4.5-1-5-4l-1-10V28l1-6-.5-12C6 6 8 4 13 4z" fill="#2a3a46" stroke="#425663" stroke-width="1.2" />
