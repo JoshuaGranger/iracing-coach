@@ -82,6 +82,8 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 
 ## Integrated insight contracts
 
+> **Parked by D8 (2026-10-02).** Technical data and the race grades (RA-060 to RA-060D). The rewrite does not build this; the MUSTs below are the product intent if it returns, not a requirement on the current web app. Status: `../08-rewrite/mastery-2026-10-08/built-ledger.md` section D.2 and `../01-product/capability-status.md`.
+
 ### Technical data
 
 - `RA-060`: The Race workspace MUST label its study/results section `Technical data`; `Race review` is superseded. Its default state MUST summarize result, totals, grades, and at most the changing useful priorities without repeating a detached Race Card or static methodology prose.
@@ -105,6 +107,8 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 - `RA-082`: Measured tire remaining at a confirmed service belongs to the preceding run.
 - `RA-083`: Final-run wear MUST remain unmeasured when no service observation exists.
 - `RA-084`: Blank headings/columns are forbidden; omit unsupported fields.
+> **Parked by D8 (2026-10-02): tire learning (RA-085 to RA-088).** Measured service snapshots and the within-session proxy exist as trace signals; the learned prediction and the Garage61 comparison source are not built. See `../08-rewrite/mastery-2026-10-08/built-ledger.md` section D.2 item 17.
+
 - `RA-085`: Tire management MUST distinguish measured service snapshots, the existing within-session calculated tire-wear proxy, and learned predictions. A measured endpoint MUST never be replaced or relabeled by a prediction, and the proxy MUST remain a proxy-calibrated session visualization rather than learned O/M/I wear.
 - `RA-086`: When a compatible local tire model has sufficient evidence, Technical data MAY show predicted remaining O/M/I wear, laps remaining, pace cost, and sustainable capability pace with confidence and low/high bounds. Every prediction MUST identify the matched context and sample support; below the minimum evidence threshold it MUST be unavailable rather than extrapolated.
 - `RA-087`: Initial learned tire coverage MUST be explicitly NASCAR-first. Unsupported car families, compounds, setup scopes, or conditions MUST not receive a NASCAR-derived value merely because the UI has room for one.
@@ -131,6 +135,8 @@ Race Analysis is the deepest workflow. It must let the user choose an event, ope
 - `RA-112`: Repeated limitations that are invariant across races belong in a tooltip or documentation, not a primary card.
 
 ## Race replay
+
+> **Parked by D8 (2026-10-02).** Race replay (RA-120 to RA-129; backlog #8: it needs full-field capture on the rig, and the collector writes no `.ircr2`). The rewrite does not build this; the MUSTs below are the product intent if it returns, not a requirement on the current web app. Status: `../08-rewrite/mastery-2026-10-08/built-ledger.md` section D.2 and `../01-product/capability-status.md`.
 
 | ID | Requirement |
 | --- | --- |
@@ -172,6 +178,8 @@ Development source (September 25, 2026; backend and application tests only, proj
 - Details states tire condition as tread remaining throughout (`Lowest remaining`, `Front minus rear remaining`, `2 vs 4 outgoing remaining`, band tiles). The Racecraft & pace badge states the start-to-finish position change it rests on (`+4 positions`) instead of a bare Gain/Loss, and without a measured position change falls back to the clean-run pace state.
 
 ## Test day
+
+> **Parked by D8 (2026-10-02).** Test day review and saved Tests (backlog #10, the desktop app only; the web app lists a test day as ordinary sessions). The rewrite does not build this; the MUSTs below are the product intent if it returns, not a requirement on the current web app. Status: `../08-rewrite/mastery-2026-10-08/built-ledger.md` section D.2 and `../01-product/capability-status.md`.
 
 Development source (September 25, 2026). Native acceptance on the sim (1280x800) against 13 real Offline Testing recordings of the Supra at IRP found the tyre temperatures and inside/outside orientation correct and laps 2–5 medians within 2 ms; the verdict, window and chart defects it found are fixed on the Test day real-data branch (see the round-2 snapshot). The racing question is "did my last setup change make the car faster at the same laps into a run, and what do I change next?".
 

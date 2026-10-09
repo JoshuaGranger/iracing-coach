@@ -1,6 +1,6 @@
 # iRacing Coach specification and reality documentation
 
-> **The rewrite is delivered (decided 2026-10-02, built 2026-10-02 and 2026-10-03).** iRacing Coach is a Rust collector on the sim PC, a Rust service with the Python analysis worker (decode and kernels native, see the snapshot) in a container on the mini PC, raw recordings on the NAS, and a TypeScript web UI. The decisions in [`08-rewrite/owner-decisions-2026-10-02.md`](08-rewrite/owner-decisions-2026-10-02.md), as refined by [`08-rewrite/prove/verdicts.md`](08-rewrite/prove/verdicts.md), **supersede the desktop baseline** wherever they conflict (one-PC install, WPF/Blazor desktop, no local service, UNC rejection, win-x64 package rule). The desktop app is retired and its source (`companion-app/`) was deleted in rewrite wave 4; it lives in Git history (last present at `3ff5e87`). Current reality is the [rewrite snapshot](06-reality/implementation-snapshot-0.19.0-rewrite.md). The product-intent sections below remain the contract for behaviour the rewrite keeps (evidence and truthfulness, investigation design, setups and tuning); the desktop snapshots are the historical record for the rest.
+> **The rewrite is delivered (decided 2026-10-02, built 2026-10-02 and 2026-10-03).** iRacing Coach is a Rust collector on the sim PC, a Rust service with the Python analysis worker (decode and kernels native, see the snapshot) in a container on the mini PC, raw recordings on the NAS, and a TypeScript web UI. The decisions in [`08-rewrite/owner-decisions-2026-10-02.md`](08-rewrite/owner-decisions-2026-10-02.md), as refined by [`08-rewrite/prove/verdicts.md`](08-rewrite/prove/verdicts.md), **supersede the desktop baseline** wherever they conflict (one-PC install, WPF/Blazor desktop, no local service, UNC rejection, win-x64 package rule). The desktop app is retired and its source (`companion-app/`) was deleted in rewrite wave 4; it lives in Git history (last present at `3ff5e87`). Current reality is the [rewrite snapshot](06-reality/implementation-snapshot-0.19.0-rewrite.md) (written at `ef98f0a`, 2026-10-03) plus the web rounds 1 to 6 recorded in [`08-rewrite/acceptance/round6-release.md`](08-rewrite/acceptance/round6-release.md) (the latest release record: live image `iracing-coach:0bf443a`, profile v26) and its predecessors `round1-release.md` and `round2-release.md` (which also holds rounds 3 to 5); no snapshot yet covers rounds 1 to 6. The product-intent sections below remain the contract for behaviour the rewrite keeps (evidence and truthfulness, investigation design, setups and tuning); the desktop snapshots are the historical record for the rest.
 
 This tree is the reviewable product contract for iRacing Coach. Its primary purpose is to let a human or an agent compare three different things without conflating them:
 
@@ -18,7 +18,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 4. [Capability status](01-product/capability-status.md)
 5. The applicable workflow under [`02-workflows`](02-workflows/home-and-navigation.md)
 6. The applicable data or architecture contract
-7. [Current implementation snapshot: the rewrite](06-reality/implementation-snapshot-0.19.0-rewrite.md) (the last desktop snapshot is [0.18.0 round 2](06-reality/implementation-snapshot-0.18.0-development-round-2.md))
+7. [Current implementation snapshot: the rewrite](06-reality/implementation-snapshot-0.19.0-rewrite.md), brought forward by the [round 6 release record](08-rewrite/acceptance/round6-release.md) (live: `0bf443a`, 2026-10-09) (the last desktop snapshot is [0.18.0 round 2](06-reality/implementation-snapshot-0.18.0-development-round-2.md))
 8. [Traceability matrix](06-reality/traceability-matrix.md)
 9. [Known gaps and contradictions](06-reality/gaps-contradictions-and-open-questions.md)
 10. [Agent review protocol](07-agent-review/review-protocol.md)
@@ -63,6 +63,7 @@ Passing tests does not make a requirement correct. Written requirements can be a
 - [Progressive Tuning overhaul acceptance matrix](05-quality/progressive-tuning-overhaul-acceptance-matrix.md)
 - `06-reality`
   - [Current snapshot: 0.19.0 rewrite (collector, server, web app, native analysis stages)](06-reality/implementation-snapshot-0.19.0-rewrite.md)
+  - [Latest release record: web round 6 on the live service (0bf443a, profile v26)](08-rewrite/acceptance/round6-release.md)
   - [Last desktop development snapshot: 0.18.0 round 2](06-reality/implementation-snapshot-0.18.0-development-round-2.md)
   - [Previous development snapshot: 0.18.0 round 1](06-reality/implementation-snapshot-0.18.0-development-round-1.md)
   - [Prior development snapshot: 0.18.0](06-reality/implementation-snapshot-0.18.0-development.md)

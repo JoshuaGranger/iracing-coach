@@ -2,6 +2,8 @@
 
 ## Connections
 
+> **Parked by D8 (2026-10-02).** Garage61 and AI coaching (CON-001 to CON-008; backlog #11, the Ask panel, with D10: no credentials in the repository, an API key like the g-house apps). Nothing here is implemented in the web app. The rewrite does not build this; the MUSTs below are the product intent if it returns, not a requirement on the current web app. Status: `../08-rewrite/mastery-2026-10-08/built-ledger.md` section D.2 and `../01-product/capability-status.md`.
+
 Connections manages optional services, not application users.
 
 | ID | Requirement |

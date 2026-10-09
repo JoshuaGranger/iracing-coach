@@ -2,6 +2,8 @@
 
 Race Planning converts a selected future context plus comparable recorded evidence into one internally consistent briefing. It is not a blank coaching prompt.
 
+> **Parked by D8 (2026-10-02).** The whole of Race Planning (RP-001 to RP-049; backlog #9). The rewrite does not build this; the MUSTs below are the product intent if it returns, not a requirement on the current web app. Status: `../08-rewrite/mastery-2026-10-08/built-ledger.md` section D.2 and `../01-product/capability-status.md`.
+
 ## Entry paths
 
 | ID | Requirement |
