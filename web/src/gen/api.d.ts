@@ -2607,6 +2607,34 @@ export interface components {
                 [key: string]: unknown;
             };
             section_laps?: components["schemas"]["SectionLaps"];
+            /** @description Optional bounded projection of the backend's section priorities; absent or null on older analyses. */
+            pace_attribution?: components["schemas"]["PaceAttribution"] | null;
+        };
+        PaceAttribution: {
+            /** @enum {integer} */
+            schema_version: 1;
+            priorities: components["schemas"]["PacePriority"][];
+        } & {
+            [key: string]: unknown;
+        };
+        PacePriority: {
+            /** @description Unique detected section with at least 50 percent overlap of the priority span; null when unattached. */
+            section_id: string | null;
+            start_pct: number;
+            end_pct: number;
+            /** @description Driver's median section pass minus best section pass, seconds; display as -0.31 s · best L17. */
+            recoverable_s: number;
+            /** @description Lap of the driver's best pass through this section. */
+            best_lap: number;
+            /** @description Share of lap tire energy; display as 18 % tire energy. */
+            tire_energy_share: number | null;
+            /**
+             * @description slip_weighted: derived; load_only: proxy (weaker energy label); null: no energy figure.
+             * @enum {string|null}
+             */
+            tire_energy_grade: "slip_weighted" | "load_only" | null;
+        } & {
+            [key: string]: unknown;
         };
         /**
          * @description Projector-derived (projection 3; absent from views projected before it): per detected section, the clean laps' times

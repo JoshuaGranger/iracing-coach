@@ -35,6 +35,15 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 Each contract change adds one entry here in the same commit; review per the rule at the top.
 
+### 2026-10-09, Phase 1 item 3: section pace attribution (additive optional field, no review needed)
+
+Reason: Sections needs the driver's median-minus-best section time and the section's share of lap tire energy to identify where a typical pass costs most time.
+
+- `InvestigationView.pace_attribution`: optional nullable `PaceAttribution`, producer schema 1, at most 32 priorities, ordered by `recoverable_s` descending. Copy producer quantities unchanged; `best_lap` is the best pass through that section, not a best whole lap. Preserve unknown optional fields. No Python producer or parity fixture change.
+- Evidence follows the computed-provenance precedent of `ObservedTrend`: declared in `x-source`, without invented per-priority evidence keys. Pace attribution is derived; tire energy is derived for `slip_weighted`, proxy for `load_only`.
+- `section_id`: only a unique detected investigation section overlapping at least half the priority span attaches; otherwise null and hidden by the UI. No name or positional fallback. The contract records this mapping and the consumed fields.
+- `crate-api.md` and `coach-views::PROJECTION_VERSION`: 5 becomes 6 so stored analyses are re-projected. Regenerated with `pnpm gen:wire` before dependent implementation.
+
 ### 2026-10-07, B96/B97: a race's finish, and the start on lap 0 (web round 6, backlog #96 #97; additive optional fields, no review needed)
 
 Reason: backlog #97, a race he wrecked out of and left read as a finish (the 2026-10-06 21:09 Charlotte race: "P6", the place he was running when the recording stopped), and #96, the Race chart's position line began at lap 1's place instead of the start.

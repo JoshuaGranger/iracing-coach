@@ -837,7 +837,7 @@ Epoch marker (W3): `first_of_epoch` marks an engine state, but the collector sen
 Reads one `analysis.json` (streaming, only the needed subtrees) and writes the bounded view files the server serves. Accepted input: the worker's persisted document, flat (`analysis_id`, `schema_version` 2 and the analysis_view keys at the top level), or the analyze-result form `{analysis_id, analysis_view}` whose `analysis_view.schema_version` is 1; `race_investigation.schema_version` must be 2. Anything else is `IncompatibleVersion`. Copies backend values; the only rules it applies are the C# mapping rules named in `api.openapi.yaml` descriptions (tuning identity and map, lap exclusion reasons, representative runs, each run's `observed_trend`). Non-finite numbers and legacy `Infinity`/`NaN` tokens become null.
 
 ```rust
-pub const PROJECTION_VERSION: u32 = 5;
+pub const PROJECTION_VERSION: u32 = 6;
 
 /// Writes every view file into `out_dir` (`/data/views/<analysis_id>/p<PROJECTION_VERSION>/`),
 /// which must not exist: files go to a sibling `<out_dir>.tmp-<random>` that is fsynced and

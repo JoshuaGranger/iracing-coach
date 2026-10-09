@@ -1465,10 +1465,114 @@
             },
             "section_laps": {
               "$ref": "#/$defs/SectionLaps"
+            },
+            "pace_attribution": {
+              "description": "Optional bounded projection of the backend's section priorities; absent or null on older analyses.",
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/PaceAttribution"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         }
       ]
+    },
+    "PaceAttribution": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schema_version",
+        "priorities"
+      ],
+      "x-source": "analysis_view.pace_attribution (analysis_engine._pace_attribution, schema 1). Derived as a whole from measured section times, following ObservedTrend's contract-declared computed provenance; no invented per-priority evidence labels. recoverable_s is the driver's median_s minus best_s for this section; best_lap names that best pass, not the session's best whole lap. Values are copied unchanged. Tire energy is derived for slip_weighted and proxy for load_only; only load_only weakens the displayed energy label. section_id is projector-assigned by LapDistPct: a detected investigation section qualifies when the overlap of its [start_pct, end_pct] with the priority's bounds is at least 50 percent of the priority span. Attach only if exactly one section qualifies; otherwise null (including invalid or zero spans). Never match names or positions. Unattached priorities are not shown by the UI. Priorities are stably ordered by recoverable_s descending and bounded to 32. Unknown optional fields are preserved.",
+      "x-consumed-fields": [
+        "schema_version",
+        "priorities[].section_id",
+        "priorities[].start_pct",
+        "priorities[].end_pct",
+        "priorities[].recoverable_s",
+        "priorities[].best_lap",
+        "priorities[].tire_energy_share",
+        "priorities[].tire_energy_grade"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "priorities": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/PacePriority"
+          }
+        }
+      }
+    },
+    "PacePriority": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "section_id",
+        "start_pct",
+        "end_pct",
+        "recoverable_s",
+        "best_lap",
+        "tire_energy_share",
+        "tire_energy_grade"
+      ],
+      "properties": {
+        "section_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Unique detected section with at least 50 percent overlap of the priority span; null when unattached."
+        },
+        "start_pct": {
+          "type": "number"
+        },
+        "end_pct": {
+          "type": "number"
+        },
+        "recoverable_s": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Driver's median section pass minus best section pass, seconds; display as -0.31 s · best L17."
+        },
+        "best_lap": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lap of the driver's best pass through this section."
+        },
+        "tire_energy_share": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Share of lap tire energy; display as 18 % tire energy."
+        },
+        "tire_energy_grade": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "slip_weighted",
+            "load_only",
+            null
+          ],
+          "description": "slip_weighted: derived; load_only: proxy (weaker energy label); null: no energy figure."
+        }
+      }
     },
     "SectionLaps": {
       "type": "object",
