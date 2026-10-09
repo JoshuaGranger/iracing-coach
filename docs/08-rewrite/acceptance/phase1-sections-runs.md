@@ -56,3 +56,26 @@ Backlog #98 (G6), #99 (G8), #100 (G7-lite); context in `../mastery-2026-10-08/GA
 |---|---|---|---|
 | Sections: six channels, approach, pass pair, headers with the two figures, lap rows with Green | `sections-1440.png` | `sections-1024.png` | `sections-390.png` |
 | Runs: tire pictures on two run cards, none on the third | `runs-1440.png` | `runs-1024.png` | `runs-390.png` |
+
+## Released (2026-10-09)
+
+| | |
+|---|---|
+| Build id live | `iracing-coach:cd3f758cc67f6d35a5ffcc84301b5f9a946e6e58`, container `iracing-coach-app-1` healthy. `/health` is `{"schema_version":3,"server_version":"0.19.0","status":"ok"}`; the workspace version did not change, so the build is told apart by the image tag (`docker ps`) and the stack's `deploys.log` |
+| Time (UTC) | `release.sh iracing-coach .` (Git bash, from `main` at `cd3f758`) started 16:05:08Z, exit 0 at 16:08:14Z (build 144 s on the mini PC); `deploys.log`: `start` 16:07:33Z, recovery point `iracing-coach-20261009T160734Z.tar`, `healthy` 16:08:12Z. Sim state at release: in garage, not on track |
+| Start-up log | `setup identity unchanged` (72 setups), `offline sessions unchanged` (662 recordings, 310 with the lap counter stopped) |
+| `GET /api/v1/status` | `projection_version 6` (was 5), `worker_profile_version post-race-foundations-v26` (unchanged), `queue {analysis 0, deferred 318, light 0}`, `nas.state ok` |
+
+**Regeneration.** The contracts README rule for a `PROJECTION_VERSION` bump applies: a stored view at an older version is re-projected on the first request for it (the request answers 409 `ProjectionPending`, a `project` job runs, the next request is 200). No `reanalyze` was called: the Python profile did not change, so there is nothing to re-analyse. Counted from `GET /api/v1/jobs`: **6 `project` jobs at projection 6, all `succeeded`** (finished by 16:11:14Z), one for each current analysis of the Charlotte sessions 668, 670, 671, 672, 673 and 674, triggered by the smoke below. Every other session's stored views stay at projection 5 until someone first opens them (the Sessions list and overviews are unaffected); the 318 deferred recordings are as before.
+
+### Live smoke (read-only; Playwright Chromium against `http://192.168.1.81:8210`, 1440x900; no console error, no failed response, no horizontal scroll)
+
+- **Races.** Both Charlotte races of 2026-10-06 (session 670, 9:09 PM, `DNF L14`; session 674, 10:09 PM, `DNF L35`) carry `pace_attribution` `{status unavailable, reason no_clean_green_racing_laps, priorities []}`: the producer found no clean green racing lap in either. Their Sections tab therefore shows the tabs A and B without header figures and `0 clean laps timed`, with no channels to draw. That is the rule (Known limits: a header needs a graded priority) and the same empty state the tab had before Phase 1; it is not a fault, but it means **the six-channel picture and the two header figures cannot be seen on either race**.
+- **Sections, practice 671 (10-06 9:34 PM, 46 laps, 3 stops; `#/d/1507810/s/671/sections?section=B`).** `pace_attribution` is `usable` with two priorities. Tab headers read `B -0.18 s · best L15 / 50 % tire energy` and `A -0.13 s · best L15 / 50 % tire energy`, worst first. Six channels (Speed mph, Gap to median s, Throttle %, Brake %, Road-wheel steering deg, Body slip deg) over the approach (54.0 to 62.0 %) and the section (62.0 to 84.0 %); the approach is dashed and the boundary line sits at 62.0 %; the legend names Median L37 and Approach; the lap list carries Green (1, 2, 3, 4, 9, 12) beside Tires and Traffic; fastest and slowest three are thick on chart, map and list. `Approach` label and the cursor readout (`73.0%`) match the fixture.
+- **Runs, practice 671.** Four run cards, each with a tire picture (`RF 88 % · 12 laps / at L12 · 94-120 °F`, `RR 97 % · 16 laps`, `RF 82 % · 30 laps`, `RF 84 % · 43 laps / at L46 · 89 °F`): all four runs have a stop or post-run-service reading. Session 672 (two-lap practice, run with no reading, `tire_observation` null) shows its run card with no picture (no tire element in the DOM). Session 674 shows pictures on its two listed runs, both with readings.
+- **Differences from the fixture screenshots.** Real data: the fixture's Round-2 race has invented figures and a third run without a picture; no live run in 671 lacks one, so the "none" case was checked on 672 instead. The Tires cell of the live lap rows is the lap count into the tire set (31, 32, 33, 16, 9, 42), not the fixture's invented values. The two header figures show `-0.18 s` and `-0.13 s` where the fixture shows invented ones. Tire bars are cool (94 to 120 °F) in 671, so they sit at the cold end of the 120 to 220 °F key. Layout, header order, dashed approach and card grid match the fixture at 1440.
+- **Not seen.** 1024 and 390 live pages were not captured (the request was for 1440); no collector, sim or setup data was touched.
+
+Screenshots (live, 1440): `../../releases/phase1/live-sections-1440.png` (practice 671, section B), `../../releases/phase1/live-runs-1440.png` (practice 671).
+
+Nothing was pushed to GitHub.
