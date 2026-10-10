@@ -1,11 +1,14 @@
 //! Windows-only parts: the shared-memory map, the overlay and tray, the directory watcher, thread
 //! priority, the single-instance mutex and the install commands.
 
+pub mod direct_input;
 pub mod install;
 pub mod map;
 pub mod render;
 pub mod ui;
 pub mod watcher;
+pub mod wheel_panel;
+pub mod wheel_usb;
 
 use std::path::PathBuf;
 

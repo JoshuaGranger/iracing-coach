@@ -104,6 +104,8 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
     };
 
     let mut config = Config::load(&paths.state_dir);
+    #[cfg(windows)]
+    let wheel = crate::wheel::WheelDiagnostics::native(&paths.state_dir);
     if !paths.state_dir.join(crate::config::CONFIG_FILE).exists() {
         config
             .save(&paths.state_dir)
@@ -175,9 +177,15 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
         let hub = hub.clone();
         let dry = dry.clone();
         let exit_at_end = opts.exit_at_end;
+        #[cfg(windows)]
+        let wheel = wheel.clone();
         spawn("reader", move || {
             let mut reader = SdkReader::new(source);
             let mut pipeline = Pipeline::new(hub.clone(), Some(garage_tx), dry);
+            #[cfg(windows)]
+            {
+                pipeline = pipeline.with_wheel(wheel);
+            }
             run_reader_loop(&mut reader, &mut pipeline, &hub, exit_at_end);
             pipeline.stats()
         })
@@ -227,6 +235,7 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
                 config: config.clone(),
                 state_dir: paths.state_dir.clone(),
                 quit: crate::win::QuitEvent::create(),
+                wheel: wheel.clone(),
             });
             restart = exit == crate::win::ui::UiExit::Restart;
         }
@@ -262,6 +271,10 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
 
     if let Some(t) = garage_thread.take() {
         let _ = t.join();
+    }
+    #[cfg(windows)]
+    {
+        let _ = wheel.shutdown_wait(Duration::from_secs(4));
     }
     for h in helpers {
         let _ = h.join();

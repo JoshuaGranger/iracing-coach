@@ -62,6 +62,12 @@ try {
     $first | Add-Member -NotePropertyName future_setting -NotePropertyValue ([pscustomobject]@{ keep = 'upgrade-marker' })
     [IO.File]::WriteAllText((Join-Path $testState 'collector.json'), ($first | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding($false)))
     'preserved upload history' | Set-Content -LiteralPath (Join-Path $testState 'upload-history-marker.txt') -Encoding UTF8
+    # Optional diagnostic captures are retained user data during upgrade/removal.
+    $diagnosticSession = Join-Path $testState ('wheel-diagnostics/' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $diagnosticSession -Force | Out-Null
+    $diagnosticMarker = Join-Path $diagnosticSession 'samples-000000.ndjson'
+    [IO.File]::WriteAllText($diagnosticMarker, '{"kind":"sample","availability":"Available","raw_axis":1234}' + "`n", (New-Object Text.UTF8Encoding($false)))
+    $diagnosticHash = (Get-FileHash -LiteralPath $diagnosticMarker -Algorithm SHA256).Hash
     # Start before upgrading: exercises named-event shutdown and replacement of a running exe.
     Start-Process -FilePath $collector -ArgumentList 'run','--state-dir',"`"$testState`"",'--iracing-root',"`"$testIracing`"" -WindowStyle Hidden
     Start-Sleep -Seconds 2
@@ -71,11 +77,13 @@ try {
     Assert-Condition ($upgraded.monitor_visible -eq $false) 'Upgrade reset monitor settings.'
     Assert-Condition ($upgraded.future_setting.keep -eq 'upgrade-marker') 'Upgrade dropped an unknown setting.'
     Assert-Condition ($upgraded.server -eq 'http://127.0.0.1:9') 'Upgrade reset the saved server.'
+    Assert-Condition ((Get-FileHash -LiteralPath $diagnosticMarker -Algorithm SHA256).Hash -eq $diagnosticHash) 'Upgrade changed retained wheel diagnostics.'
     & $collector stop
     Assert-Condition ($LASTEXITCODE -eq 0) 'Could not stop upgraded collector.'
     $beforeUninstall = @{}
-    foreach ($file in Get-ChildItem -LiteralPath $testState -File) {
-        $beforeUninstall[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    foreach ($file in Get-ChildItem -LiteralPath $testState -File -Recurse) {
+        $relativeName = $file.FullName.Substring($testState.Length + 1)
+        $beforeUninstall[$relativeName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
     }
     Invoke-Installer (Join-Path $testInstall 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=`"$(Join-Path $testRoot 'uninstall.log')`"")
     Assert-Condition (-not (Test-Path -LiteralPath $collector)) 'Uninstall left the installed executable.'
@@ -87,7 +95,7 @@ try {
         Assert-Condition (Test-Path -LiteralPath $path) "Uninstall removed retained state: $name"
         Assert-Condition ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -eq $beforeUninstall[$name]) "Uninstall changed retained state: $name"
     }
-    Write-Host "Companion installer smoke passed: install, running upgrade, identity/settings retention, startup and data-preserving uninstall. Evidence: $testRoot"
+    Write-Host "Companion installer smoke passed: install, running upgrade, identity/settings/diagnostic retention, startup and data-preserving uninstall. Evidence: $testRoot"
 } finally {
     $installedCollector = Join-Path $testInstall 'coach-collector.exe'
     if (Test-Path -LiteralPath $installedCollector) { & $installedCollector stop | Out-Null }

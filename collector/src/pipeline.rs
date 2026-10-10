@@ -33,6 +33,7 @@ pub struct Pipeline {
     garage: GarageCapture,
     garage_tx: Option<Sender<GarageAction>>,
     dry: Option<Arc<DryLog>>,
+    wheel: Option<crate::wheel::WheelHandle>,
     /// Encode frames even without viewer demand (dry run); they are counted, not queued.
     force_stream: bool,
     seq: u32,
@@ -81,6 +82,7 @@ impl Pipeline {
             garage_tx,
             force_stream: dry.is_some(),
             dry,
+            wheel: None,
             seq: 0,
             pending_marker: false,
             first_frame_of_stream: false,
@@ -97,6 +99,12 @@ impl Pipeline {
         }
     }
 
+    /// Reuse the collector's existing SDK feed; optional diagnostics add no second SDK reader.
+    pub fn with_wheel(mut self, wheel: crate::wheel::WheelHandle) -> Self {
+        self.wheel = Some(wheel);
+        self
+    }
+
     pub fn stats(&self) -> PipelineStats {
         self.stats
     }
@@ -104,6 +112,9 @@ impl Pipeline {
     /// The replay is over: close the garage channel and publish the sim as not running.
     pub fn finish(&mut self) {
         self.garage_tx = None;
+        if let Some(wheel) = &self.wheel {
+            wheel.set_sdk_connected(false);
+        }
         let mut next = self.model.clone();
         next.sim = SimKind::NotRunning;
         next.connected = false;
@@ -126,6 +137,17 @@ impl Pipeline {
         }
         self.sync_settings();
         let sample = reader.sample();
+        if let Some(wheel) = &self.wheel {
+            if poll == Poll::Tick {
+                wheel.observe_sdk(
+                    sample.captured_unix_ms,
+                    sample.steering_wheel_angle,
+                    sample.connected,
+                );
+            } else {
+                wheel.set_sdk_connected(false);
+            }
+        }
         let state = self.engine.on_tick(sample);
         self.stats.ticks += 1;
         self.hub.publish_live(&state);

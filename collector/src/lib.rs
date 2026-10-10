@@ -29,6 +29,7 @@ pub mod sdk;
 pub mod stream;
 pub mod uploader;
 pub mod util;
+pub mod wheel;
 pub mod ws;
 
 #[cfg(windows)]

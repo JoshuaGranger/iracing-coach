@@ -44,11 +44,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PCWSTR;
 
 use super::render::{Dirty, Frame, Renderer, window_size};
+use super::wheel_panel::WheelPanel;
 use super::{QuitEvent, wide};
 use crate::config::{Config, normalize_server};
 use crate::hotkey::parse_hotkey;
 use crate::hub::Hub;
 use crate::layout::Layout;
+use crate::wheel::{WheelCommand, WheelHandle};
 
 const TRAY_MSG: u32 = WM_APP + 1;
 const MOVE_ENDED_MSG: u32 = WM_APP + 2;
@@ -70,6 +72,8 @@ const ID_SCALE_BASE: usize = 120;
 const ID_PAUSE: usize = 130;
 const ID_OPEN: usize = 140;
 const ID_SERVER: usize = 150;
+const ID_WHEEL_RECORDER: usize = 160;
+const ID_WHEEL_MARK: usize = 161;
 const ID_EXIT: usize = 199;
 
 const SCALES: [(&str, f64); 3] = [("Compact", 0.8), ("Standard", 1.0), ("Expanded", 1.25)];
@@ -79,6 +83,7 @@ pub struct UiParams {
     pub config: Config,
     pub state_dir: PathBuf,
     pub quit: Option<QuitEvent>,
+    pub wheel: WheelHandle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +98,8 @@ struct App {
     config: Config,
     state_dir: PathBuf,
     quit: Option<QuitEvent>,
+    wheel: WheelHandle,
+    wheel_panel: WheelPanel,
     overlay: HWND,
     controller: HWND,
     renderer: Renderer,
@@ -224,6 +231,8 @@ pub fn run(params: UiParams) -> UiExit {
             config: params.config,
             state_dir: params.state_dir,
             quit: params.quit,
+            wheel: params.wheel,
+            wheel_panel: WheelPanel::default(),
             overlay,
             controller,
             renderer: Renderer::new(),
@@ -259,6 +268,9 @@ pub fn run(params: UiParams) -> UiExit {
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            if (&*app_ptr).wheel_panel.translate(&msg) {
+                continue;
+            }
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -585,6 +597,34 @@ impl App {
                 ID_SERVER,
                 PCWSTR(wide("Set server address...").as_ptr()),
             );
+            let troubleshooting = CreatePopupMenu().expect("troubleshooting menu");
+            let _ = AppendMenuW(
+                troubleshooting,
+                MF_STRING,
+                ID_WHEEL_RECORDER,
+                PCWSTR(wide("Wheel interruption recorder...").as_ptr()),
+            );
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING | MF_POPUP,
+                troubleshooting.0 as usize,
+                PCWSTR(wide("Troubleshooting").as_ptr()),
+            );
+            let can_mark = self
+                .wheel
+                .try_snapshot()
+                .is_some_and(|s| s.running && !s.busy);
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING
+                    | if can_mark {
+                        MENU_ITEM_FLAGS(0)
+                    } else {
+                        MF_DISABLED | MF_GRAYED
+                    },
+                ID_WHEEL_MARK,
+                PCWSTR(wide("Mark wheel incident").as_ptr()),
+            );
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             let _ = AppendMenuW(menu, MF_STRING, ID_EXIT, PCWSTR(wide("Exit").as_ptr()));
 
@@ -646,6 +686,20 @@ impl App {
                 }
             }
             ID_SERVER => self.change_server(),
+            ID_WHEEL_RECORDER => {
+                if let Err(error) = self.wheel_panel.show(self.controller, &self.wheel) {
+                    crate::warn!("wheel recorder window unavailable: {error}");
+                }
+            }
+            ID_WHEEL_MARK => {
+                if self
+                    .wheel
+                    .try_snapshot()
+                    .is_some_and(|s| s.running && !s.busy)
+                {
+                    let _ = self.wheel.send(WheelCommand::MarkIncident);
+                }
+            }
             ID_EXIT => {
                 // SAFETY: asks our own window to close.
                 unsafe {

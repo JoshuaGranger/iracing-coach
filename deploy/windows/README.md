@@ -17,6 +17,15 @@ intact.
 The installer is self-contained: no runtime download, .NET, WebView, administrator
 rights, or reboot. It is currently unsigned; Windows may show a publisher warning.
 
+The optional recorder opens from the tray's **Troubleshooting → Wheel interruption
+recorder** menu. Windows sign-in starts the companion; wheel recording remains disabled
+on every launch. It records only after the user selects a wheel/axis and enables
+it. Ordinary recording needs no administrator rights. Optional USB tracing has
+its own explicit administrator prompt. Diagnostic captures and durable local ZIP
+exports survive upgrade and removal. See the
+[acceptance record](../../docs/08-rewrite/acceptance/wheel-diagnostics.md) for
+source reuse, bounds and pending hardware checks.
+
 ## Build and verify
 
 Use the [official Inno Setup 6 compiler](https://jrsoftware.org/isdl.php), currently
@@ -33,7 +42,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File deploy\windows\Test-Comp
 Build output and the SHA-256/revision manifest are under ignored `target/companion`.
 The smoke installer has a separate app identity, fake iRacing folders, Run key,
 state folder and named objects. It verifies real installation, a running upgrade,
-identity/settings retention, startup registration and data-preserving removal.
+identity/settings/diagnostic retention, startup registration and data-preserving removal.
 It leaves evidence under `target/companion/smoke-*`.
 
 ## Publish and release

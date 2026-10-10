@@ -7,6 +7,13 @@ use coach_collector::cli::{self, Command, USAGE};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(windows)]
+    if args
+        .first()
+        .is_some_and(|a| matches!(a.as_str(), "--wheel-usb-helper" | "--wheel-usb-recover"))
+    {
+        return ExitCode::from(coach_collector::win::wheel_usb::run_helper(&args) as u8);
+    }
     let command = match cli::parse(&args) {
         Ok(c) => c,
         Err(message) => {
