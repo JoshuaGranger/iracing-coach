@@ -38,6 +38,16 @@ so a missing executable is a real 404, never the SPA document.
 
 ## Distribution and limits
 
+Released code revision `0f1984ef57aa44d26b120616a30b7613b0dc7b1c` through the
+managed mini-PC release on October 9. The service reported healthy. The production
+installer is 2,674,733 bytes, SHA-256
+`bfef0aa43d703e5628f2d9dc629f6de736cd525faf4b1fe1e084cdba3ca8616b`.
+Both the release wrapper's HTTP verification and a real headless-browser click on
+the live **Download companion** link saved those exact bytes as
+`iRacingCoachCompanionSetup.exe`. After the normal single-driver landing redirect,
+the download preserved the Sessions page. A missing installer returned 404 with
+no SPA HTML. Browser evidence is under ignored `target/companion/`.
+
 `deploy/mini-pc/Release-WithCompanion.ps1` builds Windows artifacts on the dev PC,
 rejects dirty or mismatched source at publication, preserves prior installer
 releases, and releases only through the managed mini-pc tool. A read-only bind
