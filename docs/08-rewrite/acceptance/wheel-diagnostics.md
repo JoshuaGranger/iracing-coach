@@ -125,6 +125,17 @@ uninstall. Nested synthetic wheel-diagnostic files stayed byte-identical through
 upgrade and removal. Evidence:
 `target/companion/smoke-d4d0a7c51a364a98a8e35a43463a807e`.
 
+Released code revision `538afdcc581596da5c136a9994e4b7ff06fd1b5f` through
+`deploy/mini-pc/Release-WithCompanion.ps1` under D14's standing permission.
+The managed service reported healthy. The unsigned production installer is
+2,802,306 bytes, SHA-256
+`d8a5737cd67e3f5a92724d89feb7dc9d8b6a1935acb8858869d0a0a87566964d`.
+Both the wrapper's HTTP check and a real browser click on the live **Download
+companion** link verified those exact bytes. The click preserved the Sessions
+page, and a missing download returned a proper 404. Previous installer releases
+remain available in the managed download directory. Release/browser evidence is
+under ignored `target/companion/`.
+
 Real Simagic input/FFB behavior, physical reconnect, native tray operation during
 a race, actual UAC/ETW cleanup and racing-PC impact remain hardware acceptance
 work. Source/fake-based tests do not establish those results. No real wheel

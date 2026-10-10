@@ -59,3 +59,7 @@ this chat, so no companion replacement or startup change was made there. Windows
 sign-in launch is registered and tested in isolation; no reboot or sign-out was
 performed. Existing iRacing files are never written, and installer removal keeps
 the collector's settings, journals and logs.
+
+The later optional wheel-recorder release replaces the current download; see
+[wheel diagnostics](wheel-diagnostics.md) for its source reuse, verification,
+installer checksum and remaining hardware checks.
