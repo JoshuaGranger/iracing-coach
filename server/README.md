@@ -17,7 +17,7 @@ The environment is the one `docs/08-rewrite/contracts/server-config.md` defines;
 | `COACH_BIND` | `0.0.0.0:8080` | listener |
 | `COACH_DATA_DIR` | `/data` | `db/`, `spool/`, `py/`, `views/`, `snapshots/`, `run/` (created at start) |
 | `COACH_NAS_DIR` | `/nas/apps/iracing-coach` | `$NAS`, written only by the archiver thread |
-| `COACH_WEB_DIR` | `/app/web` | SPA files (`index.html` is the fallback for client routes); a missing directory disables static hosting |
+| `COACH_WEB_DIR` | `/app/web` | SPA files (`index.html` is the fallback for client routes); `downloads/` serves companion installers with `no-cache` and a plain 404 for missing files; a missing web directory disables static hosting |
 | `COACH_PYTHON` | `/usr/local/bin/python3.12` | worker interpreter |
 | `COACH_WORKER_SCRIPT` | `/app/iracing-coach/skills/analyze-iracing-race/scripts/mcp_server.py` | worker entry point; its directory is where the analyzer digest and profile version are read |
 | `COACH_CONTRACTS_DIR` | `/app/contracts` | the Python MCP contracts that worker results are validated against (`analyze-result-v1`, `setup-package-v1`, `tuning-recommendation-v1`); a mismatch fails the job as `tool_error` |

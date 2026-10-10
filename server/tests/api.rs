@@ -1153,6 +1153,66 @@ async fn static_files_and_spa_fallback() {
     let missing = env.get("/api/v1/nonsense").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert_eq!(missing.json()["error"], "not_found");
+    // A deployment without an installer must not download the SPA as an executable.
+    let missing_download = env.get("/downloads/iRacingCoachCompanionSetup.exe").await;
+    assert_eq!(missing_download.status, StatusCode::NOT_FOUND);
+    assert!(missing_download.body.is_empty());
+}
+
+#[tokio::test]
+async fn companion_downloads_serve_bytes_and_never_the_spa() {
+    let web = tempfile::tempdir().unwrap();
+    std::fs::create_dir(web.path().join("downloads")).unwrap();
+    std::fs::write(web.path().join("index.html"), "<!doctype html>coach SPA").unwrap();
+    let installer = b"MZ\0\xffcompanion installer bytes";
+    std::fs::write(
+        web.path().join("downloads/iRacingCoachCompanionSetup.exe"),
+        installer,
+    )
+    .unwrap();
+    let path = web.path().to_path_buf();
+    let env = Env::with(Opts {
+        tweak: Box::new(move |c| c.web_dir = Some(path.clone())),
+        ..Default::default()
+    })
+    .await;
+    let url = "/downloads/iRacingCoachCompanionSetup.exe";
+    let download = env.get(url).await;
+    assert_eq!(download.status, StatusCode::OK);
+    assert_eq!(download.body.as_ref(), installer);
+    assert_eq!(
+        download.header("cache-control").as_deref(),
+        Some("no-cache")
+    );
+    let head = env.call(Method::HEAD, url, None, &[]).await;
+    assert_eq!(head.status, StatusCode::OK);
+    assert!(head.body.is_empty());
+    assert_eq!(
+        head.header("content-length"),
+        Some(installer.len().to_string())
+    );
+    let range = env
+        .call(Method::GET, url, None, &[("range", "bytes=0-3")])
+        .await;
+    assert_eq!(range.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(range.body, &installer[..4]);
+    assert_eq!(
+        range.header("content-range"),
+        Some(format!("bytes 0-3/{}", installer.len()))
+    );
+    for missing in ["/downloads", "/downloads/", "/downloads/missing.exe"] {
+        let response = env.get(missing).await;
+        assert_eq!(response.status, StatusCode::NOT_FOUND, "{missing}");
+        assert!(
+            response.body.is_empty(),
+            "{missing}: {:?}",
+            String::from_utf8_lossy(&response.body)
+        );
+        assert_eq!(
+            response.header("cache-control").as_deref(),
+            Some("no-cache")
+        );
+    }
 }
 
 #[tokio::test]

@@ -9,7 +9,10 @@ USAGE
   coach-collector [run] [options]      read the sim, draw the monitor, upload recordings
   coach-collector install [--server URL] [--state-dir DIR] [--iracing-root DIR]
                                        write the config, set the sign-in Run value, start it
-  coach-collector uninstall            stop it and remove the Run value and its own files
+  coach-collector stop                 stop it; keep sign-in startup and all files
+  coach-collector uninstall [--installer] [--state-dir DIR]
+                                       stop it and remove the Run value; --installer keeps
+                                       state and executable for the Windows installer
   coach-collector record-sdk <seconds> <out.sdkfix>
                                        record the shared-memory map into a replay fixture
   coach-collector backfill [options] [FOLDER...]
@@ -100,7 +103,9 @@ pub enum Command {
     },
     Uninstall {
         state_dir: Option<PathBuf>,
+        installer: bool,
     },
+    Stop,
     RecordSdk {
         seconds: f64,
         out: PathBuf,
@@ -112,7 +117,9 @@ pub enum Command {
 pub fn parse(args: &[String]) -> Result<Command, String> {
     let mut it = args.iter().peekable();
     let sub = match it.peek().map(|s| s.as_str()) {
-        Some("run" | "install" | "uninstall" | "record-sdk" | "backfill") => it.next().cloned(),
+        Some("run" | "install" | "uninstall" | "stop" | "record-sdk" | "backfill") => {
+            it.next().cloned()
+        }
         _ => None,
     };
     match sub.as_deref() {
@@ -134,13 +141,24 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
         }
         Some("uninstall") => {
             let mut state_dir = None;
+            let mut installer = false;
             while let Some(a) = it.next() {
                 match a.as_str() {
                     "--state-dir" => state_dir = Some(PathBuf::from(value(&mut it, a)?)),
+                    "--installer" => installer = true,
                     other => return Err(format!("unknown option {other}")),
                 }
             }
-            Ok(Command::Uninstall { state_dir })
+            Ok(Command::Uninstall {
+                state_dir,
+                installer,
+            })
+        }
+        Some("stop") => {
+            if let Some(extra) = it.next() {
+                return Err(format!("unexpected {extra}"));
+            }
+            Ok(Command::Stop)
         }
         Some("backfill") => {
             let mut o = BackfillOptions::default();
@@ -268,8 +286,12 @@ mod tests {
         );
         assert_eq!(
             p(&["uninstall"]),
-            Ok(Command::Uninstall { state_dir: None })
+            Ok(Command::Uninstall {
+                state_dir: None,
+                installer: false,
+            })
         );
+        assert_eq!(p(&["stop"]), Ok(Command::Stop));
         assert_eq!(
             p(&["record-sdk", "30", "out.sdkfix"]),
             Ok(Command::RecordSdk {
@@ -278,6 +300,19 @@ mod tests {
             })
         );
         assert_eq!(p(&["--version"]), Ok(Command::Version));
+    }
+
+    #[test]
+    fn installer_uninstall_keeps_state_and_leaves_file_removal_to_the_installer() {
+        assert_eq!(
+            p(&["uninstall", "--installer", "--state-dir", "D:/Coach state"]),
+            Ok(Command::Uninstall {
+                state_dir: Some(PathBuf::from("D:/Coach state")),
+                installer: true,
+            })
+        );
+        assert!(p(&["uninstall", "--keep-everything"]).is_err());
+        assert!(p(&["stop", "--server", "x"]).is_err());
     }
 
     #[test]

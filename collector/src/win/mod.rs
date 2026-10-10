@@ -23,6 +23,33 @@ use windows::core::PCWSTR;
 pub const INSTANCE_MUTEX: &str = "Local\\iRacingCoach.Collector";
 pub const QUIT_EVENT: &str = "Local\\iRacingCoach.Collector.Quit";
 
+/// Integration tests isolate their processes from the real collector in the same Windows
+/// session. Detached children inherit the same environment and therefore the same namespace.
+fn instance_name(base: &str) -> String {
+    std::env::var("COACH_TEST_INSTANCE_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
+        .map_or_else(|| base.to_string(), |id| format!("{base}.{id}"))
+}
+
+/// A Start menu launch gets a private console because the binary also exposes a CLI. Hide only
+/// that private window; a PowerShell/cmd console shared with its caller must remain visible.
+pub fn hide_own_console() {
+    use windows::Win32::System::Console::{GetConsoleProcessList, GetConsoleWindow};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+    let mut processes = [0];
+    // SAFETY: the one-element buffer is writable and these calls retain no pointers.
+    unsafe {
+        if GetConsoleProcessList(&mut processes) == 1 && processes[0] == GetCurrentProcessId() {
+            let window = GetConsoleWindow();
+            if !window.is_invalid() {
+                let _ = ShowWindow(window, SW_HIDE);
+            }
+        }
+    }
+}
+
 /// NUL-terminated UTF-16.
 pub fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -120,7 +147,7 @@ pub struct InstanceGuard {
 impl InstanceGuard {
     /// None when another collector already runs in this session.
     pub fn acquire() -> Option<InstanceGuard> {
-        let name = wide(INSTANCE_MUTEX);
+        let name = wide(&instance_name(INSTANCE_MUTEX));
         // SAFETY: the name buffer outlives the call; the handle is closed in Drop.
         unsafe {
             let handle = CreateMutexW(None, true, PCWSTR(name.as_ptr())).ok()?;
@@ -134,7 +161,7 @@ impl InstanceGuard {
 
     /// True when a collector holds the mutex (used by install and uninstall).
     pub fn is_running() -> bool {
-        let name = wide(INSTANCE_MUTEX);
+        let name = wide(&instance_name(INSTANCE_MUTEX));
         // SAFETY: as above.
         unsafe {
             match CreateMutexW(None, false, PCWSTR(name.as_ptr())) {
@@ -165,7 +192,7 @@ pub struct QuitEvent {
 
 impl QuitEvent {
     pub fn create() -> Option<QuitEvent> {
-        let name = wide(QUIT_EVENT);
+        let name = wide(&instance_name(QUIT_EVENT));
         // SAFETY: as above; a manual-reset event so every waiter sees it.
         let handle = unsafe { CreateEventW(None, true, false, PCWSTR(name.as_ptr())).ok()? };
         Some(QuitEvent { handle })
@@ -178,7 +205,7 @@ impl QuitEvent {
 
     /// Asks a running collector to exit; false when none is listening.
     pub fn signal_running() -> bool {
-        let name = wide(QUIT_EVENT);
+        let name = wide(&instance_name(QUIT_EVENT));
         // SAFETY: opens the named event, sets it, closes the handle.
         unsafe {
             let Ok(handle) = OpenEventW(

@@ -1,13 +1,14 @@
-//! `install` and `uninstall`: no installer framework, no admin rights, no firewall rule.
+//! Per-user startup and the Windows installer's collector lifecycle, without admin rights.
 //! `install --server <url>` writes the config, sets the per-user Run value and starts the
 //! collector in the current interactive session; `uninstall` removes the Run value and the
-//! collector's own files only (never anything under `Documents\iRacing`).
+//! collector's own files only (never anything under `Documents\iRacing`). `uninstall --installer`
+//! preserves the state and leaves installed file removal to the installer. `stop` changes neither.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::ERROR_SUCCESS;
+use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS};
 use windows::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey,
     RegCreateKeyExW, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW,
@@ -44,17 +45,21 @@ const RUN_VALUE: &str = "iRacing Coach Collector";
 
 pub fn install(server: Option<&str>, paths: &Paths) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the executable: {e}"))?;
+    // Finish the earlier process's state writes before loading and updating its configuration.
+    let normalized = server
+        .map(normalize_server)
+        .transpose()
+        .map_err(|e| e.to_string())?;
+    stop_running(Duration::from_secs(8))?;
     let mut config = Config::load(&paths.state_dir);
-    if let Some(server) = server {
-        config.server = normalize_server(server).map_err(|e| e.to_string())?;
+    if let Some(server) = normalized {
+        config.server = server;
     }
     config
         .save(&paths.state_dir)
         .map_err(|e| format!("cannot write {}: {e}", paths.state_dir.display()))?;
     let forwarded = forwarded_args(paths);
     set_run_value(&exe, &forwarded)?;
-    // A collector from an earlier install is asked to exit so the new settings apply.
-    stop_running(Duration::from_secs(8))?;
     let mut line = super::quote_arg(&exe.to_string_lossy());
     line.push_str(" run");
     for arg in &forwarded {
@@ -70,9 +75,21 @@ pub fn install(server: Option<&str>, paths: &Paths) -> Result<(), String> {
     Ok(())
 }
 
-pub fn uninstall(paths: &Paths) -> Result<(), String> {
+pub fn stop() -> Result<(), String> {
+    stop_running(Duration::from_secs(8))?;
+    println!("collector stopped; sign-in startup and files preserved");
+    Ok(())
+}
+
+pub fn uninstall(paths: &Paths, installer: bool) -> Result<(), String> {
     stop_running(Duration::from_secs(8))?;
     remove_run_value()?;
+    println!("removed the Run value \"{RUN_VALUE}\"");
+    if installer {
+        println!("preserved state in {}", paths.state_dir.display());
+        println!("installed file removal belongs to the Windows installer");
+        return Ok(());
+    }
     let mut removed = Vec::new();
     for name in [
         CONFIG_FILE,
@@ -100,7 +117,6 @@ pub fn uninstall(paths: &Paths) -> Result<(), String> {
     for path in &removed {
         println!("removed {}", path.display());
     }
-    println!("removed the Run value \"{RUN_VALUE}\"");
     schedule_exe_removal()?;
     Ok(())
 }
@@ -110,12 +126,14 @@ fn stop_running(wait: Duration) -> Result<(), String> {
     if !InstanceGuard::is_running() {
         return Ok(());
     }
-    QuitEvent::signal_running();
     let deadline = Instant::now() + wait;
     while Instant::now() < deadline {
         if !InstanceGuard::is_running() {
             return Ok(());
         }
+        // The mutex is acquired before the quit listener starts; retry through that startup
+        // interval instead of losing an early stop request.
+        QuitEvent::signal_running();
         std::thread::sleep(Duration::from_millis(100));
     }
     Err("the running collector did not exit; close it from its tray menu and try again".into())
@@ -173,8 +191,11 @@ fn remove_run_value() -> Result<(), String> {
             KEY_SET_VALUE,
             &mut key,
         );
-        if status != ERROR_SUCCESS {
+        if status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND {
             return Ok(()); // no Run key, nothing to remove
+        }
+        if status != ERROR_SUCCESS {
+            return Err(format!("cannot open the Run key ({})", status.0));
         }
         let status = RegDeleteValueW(key, PCWSTR(wide(RUN_VALUE).as_ptr()));
         let _ = RegCloseKey(key);

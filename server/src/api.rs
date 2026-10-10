@@ -161,11 +161,18 @@ pub fn router(app: AppState) -> Router {
         Some(dir) => {
             use tower_http::services::{ServeDir, ServeFile};
             let index = dir.join("index.html");
-            router.fallback_service(
-                ServeDir::new(dir)
-                    .append_index_html_on_directories(true)
-                    .not_found_service(ServeFile::new(index)),
-            )
+            let downloads = Router::new()
+                .fallback_service(
+                    ServeDir::new(dir.join("downloads")).append_index_html_on_directories(false),
+                )
+                .layer(middleware::map_response(download_cache));
+            router
+                .nest_service("/downloads", downloads)
+                .fallback_service(
+                    ServeDir::new(dir)
+                        .append_index_html_on_directories(true)
+                        .not_found_service(ServeFile::new(index)),
+                )
         }
         None => router.fallback(api_not_found),
     };
@@ -195,6 +202,14 @@ async fn static_cache(mut response: Response) -> Response {
                 .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
         }
     }
+    response
+}
+
+async fn download_cache(mut response: Response) -> Response {
+    // Installer names stay stable across releases; always revalidate before reuse.
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     response
 }
 

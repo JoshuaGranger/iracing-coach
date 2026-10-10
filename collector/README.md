@@ -7,6 +7,8 @@ coach-collector [run] [--server URL] [--replay FILE [--speed N]] [--dry-run] [--
                       [--exit-at-end [--drain-secs N]] [--cpu-report] [--iracing-root DIR]
                       [--state-dir DIR]
 coach-collector install [--server URL]     config + HKCU Run value + start; no admin, no firewall rule
+coach-collector stop                       graceful stop; keep startup, state and executable
+coach-collector uninstall --installer      graceful stop + remove Run; installer removes app files
 coach-collector uninstall                  stop, remove the Run value and its own files only
 coach-collector record-sdk <seconds> <out.sdkfix>
 coach-collector backfill [--dry-run] [--archive DIR | --no-archive] [--server URL] [FOLDER...]
@@ -41,6 +43,12 @@ Gate G4-3: at most 1.5 % of one core while the car moves, streaming at 60 Hz wit
 
 `collector.json` (collector id, server, placement, cached layout), `journal.jsonl`, `logs\collector.log` (+ `.1`, 5 MB each), `dry-run.jsonl` in `--dry-run`, and while a backfill runs `backfill-journal.jsonl` and `backfill.lock`. The folder name is shared with the retired desktop app: `uninstall` removes only these files. The collector never writes under `Documents\iRacing`.
 
+The Windows installer installs the executable separately under `%LOCALAPPDATA%\Programs\iRacingCoach`. It runs `install --server URL` to retain the collector id and settings, enable startup at Windows sign-in, and start the companion immediately. A Start menu launch of `run` hides its own private console; an existing PowerShell/cmd console and headless diagnostics remain visible. Upgrades stop the earlier process before loading its settings; unknown optional top-level configuration fields survive a save.
+
+Installer removal uses `uninstall --installer`: stop and wait up to eight seconds, then remove only the sign-in Run value. The state folder, pending-upload journal, logs and executable remain; the installer owns removal of the installed files. `stop` keeps the Run value too. Both return success when already stopped; installer uninstall also succeeds when the Run value is absent. A stop timeout or registry error returns exit code 1 before file removal; invalid CLI arguments return 2. Bare `uninstall` retains its earlier file-cleanup behavior for manual installs.
+
+Lifecycle integration tests inherit `COACH_TEST_RUN_KEY` to redirect startup to a throwaway HKCU key and `COACH_TEST_INSTANCE_ID` to isolate the named mutex/event. With an id, the names are `Local\iRacingCoach.Collector.<id>` and `Local\iRacingCoach.Collector.Quit.<id>`; absent/empty uses the names without a suffix. Detached children inherit both variables. The normal installer checks that `iRacingSim64DX11` is closed before changing the installation.
+
 ## Refused recordings
 
 A recording the collector cannot read as one (the header says 0 records, the size does not match the header, the header does not parse) or that the server refuses for good (`400`, `413`, `422` on create) does not stay pending. Once it has not been written for 10 minutes (before that it may be a recording in progress, and an I/O error such as a sharing violation is never final) the journal gets a terminal `rejected` entry with the reason. From then on it is not pending, its bytes are not in `bytes_pending`, and neither a rescan nor a restart queues it; it is looked at again only when its size or mtime changes. The count and bytes are in `UploadStats.rejected` and `rejected_bytes`, the tray's second status line says "N recordings not uploaded", the log has one `giving up on <path>: <reason>` line, and `journal.jsonl` keeps the entries (newest 1,024) with their reasons. The status message to the server is unchanged (`queue` has only `uploads_pending` and `bytes_pending`).
@@ -61,6 +69,7 @@ Fixture format (little-endian): magic `IRCSDKF1`, then records `u8 kind, u32 len
 
 ```
 cargo test -p coach-collector                    # unit, replay pipeline, uploader, backfill, link, garage, end to end
+cargo test -p coach-collector --test win_lifecycle # isolated fake listener, safe installer removal
 cargo test -p coach-collector --test win_ui_smoke -- --ignored   # shows the overlay for a few seconds
 cargo test -p coach-collector --test win_install  -- --ignored   # install/uninstall against a throwaway key
 cargo build --release -p coach-collector && cargo test -p coach-collector --test perf_cpu -- --ignored --nocapture   # G4-3 budget on a moving car (COACH_PERF_LAYOUT=busy: every tile changes)

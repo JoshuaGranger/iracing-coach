@@ -161,6 +161,22 @@ function Banner() {
   );
 }
 
+function CompanionDownload() {
+  const description = "Install iRacing Coach Companion on your Windows sim PC to collect telemetry and garage setups, show the live monitor, and start at Windows sign-in.";
+  return (
+    <footer class="companion-footer">
+      <a class="companion-download" href="/downloads/iRacingCoachCompanionSetup.exe" download="iRacingCoachCompanionSetup.exe" title={description} aria-describedby="companion-description">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 2v8m-3-3 3 3 3-3M3 11v3h10v-3" />
+        </svg>
+        Download companion
+      </a>
+      <span class="companion-platform">Windows sim PC</span>
+      <span id="companion-description" class="visually-hidden">{description}</span>
+    </footer>
+  );
+}
+
 function ThemeBinding({ route }: { route: ParsedRoute }) {
   const id = driverIdFor(route);
   const { prefs } = usePrefs(id);
@@ -225,6 +241,7 @@ export function App() {
             {page}
           </div>
         </main>
+        {route.page !== "investigation" ? <CompanionDownload /> : null}
       </Chrome>
     </div>
   );

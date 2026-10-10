@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::util::uuid_v4;
 
@@ -53,6 +53,9 @@ pub struct Config {
     /// `ctrl+shift+L` style text; empty = no hotkey.
     pub hotkey: String,
     pub layout: Option<CachedLayout>,
+    /// Keep optional fields written by a newer collector when installing an older build.
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 impl Default for Config {
@@ -65,6 +68,7 @@ impl Default for Config {
             safe_glance: true,
             hotkey: String::new(),
             layout: None,
+            extra: Map::new(),
         }
     }
 }
@@ -313,5 +317,26 @@ mod tests {
         assert_eq!(repaired.server, "http://10.0.0.2:9");
         assert_eq!(repaired.collector_id.len(), 36);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn config_updates_keep_identity_and_unknown_optional_fields() {
+        let dir = std::env::temp_dir().join(format!("coach-cfg-{}", uuid_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let original = serde_json::json!({
+            "collector_id": "11111111-2222-3333-4444-555555555555",
+            "server": "http://previous:8210",
+            "future_option": {"enabled": true, "levels": [1, null, 3]}
+        });
+        fs::write(dir.join(CONFIG_FILE), original.to_string()).unwrap();
+        let mut cfg = Config::load(&dir);
+        cfg.server = "http://current:8210".into();
+        cfg.save(&dir).unwrap();
+        let updated: Value =
+            serde_json::from_str(&fs::read_to_string(dir.join(CONFIG_FILE)).unwrap()).unwrap();
+        assert_eq!(updated["collector_id"], original["collector_id"]);
+        assert_eq!(updated["future_option"], original["future_option"]);
+        assert_eq!(updated["server"], "http://current:8210");
+        fs::remove_dir_all(dir).unwrap();
     }
 }

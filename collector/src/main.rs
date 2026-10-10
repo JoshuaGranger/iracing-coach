@@ -42,6 +42,10 @@ fn dispatch(command: Command) -> ExitCode {
     use coach_collector::config::Paths;
     match command {
         Command::Run(options) => {
+            #[cfg(windows)]
+            if !options.no_ui {
+                coach_collector::win::hide_own_console();
+            }
             let result = app::run(options);
             match result {
                 Ok(run) if run.restart => report(restart_self()),
@@ -65,12 +69,16 @@ fn dispatch(command: Command) -> ExitCode {
             }
             report(install(server.as_deref(), &paths))
         }
-        Command::Uninstall { state_dir } => {
+        Command::Stop => report(stop()),
+        Command::Uninstall {
+            state_dir,
+            installer,
+        } => {
             let mut paths = Paths::default_paths();
             if let Some(dir) = state_dir {
                 paths.state_dir = dir;
             }
-            report(uninstall(&paths))
+            report(uninstall(&paths, installer))
         }
         Command::Help | Command::Version => ExitCode::SUCCESS,
     }
@@ -87,8 +95,13 @@ fn install(server: Option<&str>, paths: &coach_collector::config::Paths) -> Resu
 }
 
 #[cfg(windows)]
-fn uninstall(paths: &coach_collector::config::Paths) -> Result<(), String> {
-    coach_collector::win::install::uninstall(paths)
+fn uninstall(paths: &coach_collector::config::Paths, installer: bool) -> Result<(), String> {
+    coach_collector::win::install::uninstall(paths, installer)
+}
+
+#[cfg(windows)]
+fn stop() -> Result<(), String> {
+    coach_collector::win::install::stop()
 }
 
 #[cfg(windows)]
@@ -120,8 +133,13 @@ fn install(_: Option<&str>, _: &coach_collector::config::Paths) -> Result<(), St
 }
 
 #[cfg(not(windows))]
-fn uninstall(_: &coach_collector::config::Paths) -> Result<(), String> {
+fn uninstall(_: &coach_collector::config::Paths, _: bool) -> Result<(), String> {
     Err("uninstall runs on Windows only".into())
+}
+
+#[cfg(not(windows))]
+fn stop() -> Result<(), String> {
+    Err("stop runs on Windows only".into())
 }
 
 #[cfg(not(windows))]

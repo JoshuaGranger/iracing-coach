@@ -20,6 +20,14 @@ services:
       - /tmp:size=256m
     volumes:
       - ${APP_DATA}:/data
+      # Windows-built installers are published separately from the Linux image.
+      # Keep prior releases under this folder; the static server supplies the download.
+      - type: bind
+        source: ${APP_DATA}/downloads
+        target: /app/web/downloads
+        read_only: true
+        bind:
+          create_host_path: false
       # The NAS folder is a host automount (g-house ops/host/systemd/mnt-nas-iracing-coach-iracing-coach.*:
       # apps/iracing-coach only, NFSv4.1, soft, idle after 120 s), not a Compose NFS volume. Docker mounts a
       # volume when the container starts, so the stack could not start while the NAS was unreachable.
