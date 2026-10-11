@@ -35,6 +35,7 @@ from analysis_engine import (  # noqa: E402
     analyzer_bundle_sha256,
 )
 from reporting import render_report  # noqa: E402
+from iracing_sectors import attach_sector_boundaries
 from storage import ArchiveStore  # noqa: E402
 from workflow import ANALYSIS_CHANNELS  # noqa: E402
 
@@ -1079,9 +1080,12 @@ class AnalysisEngineTests(unittest.TestCase):
             pcts = dense["columns"]["lap_pct"]
             self.assertEqual(pcts, sorted(set(pcts)))
             self.assertTrue(all(abs(pct * TRACE_COLUMN_BINS - 0.5 - round(pct * TRACE_COLUMN_BINS - 0.5)) < 0.001 for pct in pcts))
-        # The 160-bin traces the investigation reads are unchanged.
+        # The 160-bin point payload is unchanged; recorded crossings supplement timing.
         self.assertEqual(analysis["lap_traces"]["distance_bins_per_lap"], 160)
-        self.assertEqual(analysis["lap_traces"], _lap_trace_payload(table, laps))
+        expected = _lap_trace_payload(table, laps)
+        attach_sector_boundaries(expected, laps, table.normalized("SessionTime", "SessionTimeOfDay")[0],
+                                 table.normalized("LapDistPct")[0])
+        self.assertEqual(analysis["lap_traces"], expected)
         json.dumps(columns, allow_nan=False)
 
     def test_trace_columns_bins_nest_inside_the_160_bins(self) -> None:
@@ -1184,7 +1188,7 @@ class AnalysisEngineTests(unittest.TestCase):
 
         self.assertEqual(
             analysis["analysis_profile_version"],
-            "post-race-foundations-v26",
+            "post-race-foundations-v27",
         )
         observed = analysis["runs"][0]["tire_observation"]["tires"]["LF"]
         self.assertEqual(observed["carcass_temperature_f"]["CL"], 212.0)

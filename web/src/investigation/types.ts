@@ -15,8 +15,8 @@ export type LapData = Schemas["Lap"];
 export type TraceBlobHeader = Schemas["TraceBlobHeader"];
 export type LastInvestigation = Schemas["LastInvestigation"];
 
-export type InvestigationView = "race" | "runs" | "sections" | "traces";
-export const INVESTIGATION_VIEWS: readonly InvestigationView[] = ["race", "runs", "sections", "traces"];
+export type InvestigationView = "race" | "runs" | "sections" | "traces" | "results";
+export const INVESTIGATION_VIEWS: readonly InvestigationView[] = ["race", "runs", "sections", "traces", "results"];
 
 /** Budgets the catalog states (AnalysisRenderBudget); the constants below are the contract's `const` values. */
 export interface RenderBudgets {

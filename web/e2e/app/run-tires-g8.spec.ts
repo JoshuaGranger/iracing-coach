@@ -6,7 +6,7 @@ import { buildTrafficAnalysis } from "../../src/investigation/fixtures/traffic";
 import { DRIVER, appTest, expectNoHorizontalScroll, hash } from "./helpers";
 import { ROUND2_DEVICES } from "./round2-shared";
 
-// G8: the four-tire picture on the Runs tab's run cards. Runs 1 and 2 carry a measured tire reading; run 3 does not (no picture, no placeholder).
+// G8: the four-tire picture on the Runs tab's run cards. Runs 1 and 2 carry a measured tire reading; run 3 does not (no measured picture).
 const ANALYSIS = buildTrafficAnalysis("an-103");
 type Json = Record<string, unknown>;
 const tire = (wear: [number, number, number], heat: [number, number, number], psi: number): Json => ({
@@ -51,7 +51,25 @@ for (const device of ROUND2_DEVICES) {
       await expect(first.locator("[data-tire-wear] [data-band]")).toHaveCount(12);
       // Three bars per tire, nine fills for the readings sent (no tire is drawn from nothing).
       await expect(first.locator("[data-tire-wear] rect[data-remaining]")).toHaveCount(12);
-      await expect(first.locator("[data-run-tires-picture]")).toHaveAttribute("title", /RF · I 60 M 64 O 59 % · I 184 M 196 O 206 °F · 33\.4 psi live/);
+      const heights = await page.locator(".ri-run-card").evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
+      expect(new Set(heights).size).toBe(1);
+      await first.focus();
+      await expect(page.locator("[data-run-tire-details]")).toBeVisible();
+      await expect(page.locator("[data-detail-tire]")).toHaveCount(4);
+      await expect(page.locator(".ri-tire-detail-band")).toHaveCount(12);
+      await expect(page.locator("[data-detail-tire='RF']")).toContainText("33.4 psi");
+      const requests: string[] = [];
+      page.on("request", (request) => requests.push(request.url()));
+      await first.locator("[data-run-tires-picture]").hover();
+      expect(requests).toEqual([]);
+      const sequence = await page.locator(".ri-run-cards > *").evaluateAll((cards) => cards.map((card) => card.hasAttribute("data-run-card") ? `run-${card.getAttribute("data-run-card")}` : "pit"));
+      expect(sequence[0]).toBe("run-1");
+      expect(sequence).toContain("pit");
+      for (let i = 0; i < sequence.length; i++) if (sequence[i] === "pit") {
+        expect(sequence[i - 1]).toMatch(/^run-/);
+        expect(sequence[i + 1]).toMatch(/^run-/);
+      }
+
       // Nothing overflows the card and the page does not scroll sideways.
       const fits = await page.locator(".ri-run-card.has-tires").evaluateAll((cards) => cards.map((card) => {
         const box = card.getBoundingClientRect();
@@ -59,6 +77,13 @@ for (const device of ROUND2_DEVICES) {
       }));
       expect(fits).toEqual([true, true]);
       await expectNoHorizontalScroll(page);
+      await page.evaluate(() => { document.documentElement.style.fontSize = "20px"; });
+      const clipped = await page.locator(".ri-run-card").evaluateAll((cards) => cards.some((card) => {
+        const box = card.getBoundingClientRect();
+        return [...card.querySelectorAll(".ri-facts, .ri-run-tires")].some((el) => el.getBoundingClientRect().bottom > box.bottom);
+      }));
+      expect(clipped).toBe(false);
+      await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
       if (shots) {
         mkdirSync(shots, { recursive: true });
         await page.screenshot({ path: path.join(shots, `runs-${device.viewport.width}.png`), fullPage: device.viewport.width < 700 });

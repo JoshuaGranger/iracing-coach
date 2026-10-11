@@ -32,7 +32,7 @@ use parse::{Doc, Kind};
 use prune::Spec;
 use val::{Obj, int_of};
 
-pub const PROJECTION_VERSION: u32 = 6;
+pub const PROJECTION_VERSION: u32 = 7;
 
 /// `analysis_view.schema_version` this crate reads, and the analysis document's own.
 const VIEW_SCHEMA_VERSION: i64 = 1;
@@ -459,7 +459,14 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
             race,
             RACE_BOUND,
             &[
-                &|v| set_null(v, &["field_pace", "conditions"]),
+                &|v| {
+                    set_null(v, &["conditions"]);
+                    let results = v.get("field_pace").and_then(|p| p.get("results")).cloned();
+                    v.insert(
+                        "field_pace".into(),
+                        results.map_or(Value::Null, |r| json!({"results": r})),
+                    );
+                },
                 &|v| prune_items(v, "laps", &specs().lap),
                 &|v| {
                     prune_fields(
@@ -473,6 +480,23 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
                             ("data_quality", &specs().race_data_quality),
                         ],
                     )
+                },
+                &|v| {
+                    if let Some(cars) = v
+                        .get_mut("field_pace")
+                        .and_then(|field| field.pointer_mut("/results/cars"))
+                        .and_then(Value::as_array_mut)
+                    {
+                        for car in cars {
+                            if let Some(car) = car.as_object_mut() {
+                                car.remove("laps");
+                                car.insert(
+                                    "progression_unavailable_reason".into(),
+                                    json!("payload_budget"),
+                                );
+                            }
+                        }
+                    }
                 },
             ],
         )?,

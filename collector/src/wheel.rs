@@ -23,7 +23,10 @@ pub const HISTORY_SAMPLES: usize = 600;
 pub const MAX_INCIDENTS: usize = 8;
 pub const ROOT_BUDGET: u64 = 192 * 1024 * 1024;
 pub const SEGMENT_BUDGET: u64 = 1024 * 1024;
-const SESSION_RESERVE: u64 = 40 * 1024 * 1024;
+const SESSION_RESERVE: u64 = 96 * 1024 * 1024;
+/// One minute per segment, plus the partial boundary minute. Memory stays at 60 seconds.
+pub const RETAINED_MINUTES: usize = 60;
+const MAX_SAMPLE_SEGMENTS: usize = RETAINED_MINUTES + 1;
 const SAMPLE_PERIOD: Duration = Duration::from_millis(100);
 const LIMITATIONS: &str = "A flat steering value is not a disconnect. Raw axis units depend on the driver. SDK angles reflect the simulator, not confirmed physical motion. USB traces can miss events and cannot prove the FFB path or root cause. Incomplete post-event windows are labelled in incident JSON. Nothing is uploaded.";
 
@@ -729,7 +732,7 @@ impl Manager {
                 self.status.export_path = None;
                 self.status.can_export = false;
                 self.status.message =
-                    "Recording locally. Mark an incident as soon as practical.".into();
+                    "Recording the last 60 minutes. Input interruptions are saved automatically. Keep racing; export when parked.".into();
             }
             Err(error) => {
                 self.status.message =
@@ -946,6 +949,7 @@ struct Recorder {
     segment: Option<File>,
     segment_index: usize,
     segment_bytes: u64,
+    segment_minute: Option<u64>,
     segment_budget: u64,
     previous: String,
     last_auto_mark: Option<f64>,
@@ -983,7 +987,7 @@ impl Recorder {
                 "SchemaVersion": 1, "AppVersion": env!("CARGO_PKG_VERSION"), "OS": std::env::consts::OS,
                 "Device": clean(&device.name, 120), "DirectInputProductGuid": device.product_guid,
                 "DeviceKey": &key[..16], "Axis": axis, "SampleHz": SAMPLE_HZ, "StopwatchFrequency": 1_000_000_000_u64,
-                "StartUtc": iso_utc(unix_ms_now()), "StartTicks": 0, "HistorySeconds": 60,
+                "StartUtc": iso_utc(unix_ms_now()), "StartTicks": 0, "HistorySeconds": 60, "DiskHistorySeconds": RETAINED_MINUTES * 60,
                 "IncidentBeforeSeconds": 10, "IncidentAfterSeconds": 20, "MaxIncidents": MAX_INCIDENTS,
                 "Privacy": "Selected wheel axis and availability; existing public SDK steering only. Optional USB trace contains system-wide USB state/device metadata without transfer payload keywords. No uploads."
             }),
@@ -997,6 +1001,7 @@ impl Recorder {
             segment: None,
             segment_index: 0,
             segment_bytes: 0,
+            segment_minute: None,
             segment_budget,
             previous: "Starting".into(),
             last_auto_mark: None,
@@ -1117,7 +1122,11 @@ impl Recorder {
         if bytes.len() as u64 > self.segment_budget {
             return Err(io::Error::other("sample exceeds its segment budget"));
         }
-        if self.segment.is_none() || self.segment_bytes + bytes.len() as u64 > self.segment_budget {
+        let minute = (record.elapsed_ms.max(0.0) / 60_000.0) as u64;
+        if self.segment.is_none()
+            || self.segment_minute != Some(minute)
+            || self.segment_bytes + bytes.len() as u64 > self.segment_budget
+        {
             self.close_segment();
             let path = self
                 .directory
@@ -1125,6 +1134,7 @@ impl Recorder {
             self.segment_index += 1;
             self.segment = Some(OpenOptions::new().create_new(true).write(true).open(path)?);
             self.segment_bytes = 0;
+            self.segment_minute = Some(minute);
             let mut segments = Vec::new();
             for entry in fs::read_dir(&self.directory)? {
                 let path = entry?.path();
@@ -1137,7 +1147,10 @@ impl Recorder {
                 }
             }
             segments.sort();
-            for old in segments.iter().take(segments.len().saturating_sub(4)) {
+            for old in segments
+                .iter()
+                .take(segments.len().saturating_sub(MAX_SAMPLE_SEGMENTS))
+            {
                 remove_owned_file(old)?;
             }
         }
@@ -1197,9 +1210,9 @@ impl Recorder {
             }
         }
         if size > SESSION_RESERVE {
-            return Err(io::Error::other("diagnostic bundle exceeds 40 MiB"));
+            return Err(io::Error::other("diagnostic bundle exceeds 96 MiB"));
         }
-        if files.len() > 32 {
+        if files.len() > MAX_SAMPLE_SEGMENTS + MAX_INCIDENTS + 16 {
             return Err(io::Error::other("too many diagnostic bundle entries"));
         }
         files.sort();
@@ -1809,6 +1822,69 @@ mod tests {
     }
 
     #[test]
+    fn full_hour_survives_late_export_with_bounded_memory_and_disk() {
+        let folder = TestFolder::new();
+        let mut recorder = Recorder::start(&folder.root(), &device(), 0, SEGMENT_BUDGET).unwrap();
+        // Race for more than an hour, then export after an interruption at minute 2.
+        // Its automatic incident survives without any manual click during the race.
+        for ms in (0..3_720_000).step_by(100) {
+            at(
+                &mut recorder,
+                ms,
+                if ms == 120_000 {
+                    "Not attached"
+                } else {
+                    "Available"
+                },
+            );
+        }
+        recorder.flush().unwrap();
+        assert_eq!(recorder.history.len(), HISTORY_SAMPLES);
+        assert_eq!(recorder.incidents.len(), 1);
+        assert!(recorder.incidents[0].post_window_complete);
+        let mut samples: Vec<_> = fs::read_dir(&recorder.directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|x| x.to_str())
+                    .is_some_and(is_sample_name)
+            })
+            .collect();
+        samples.sort();
+        assert_eq!(samples.len(), MAX_SAMPLE_SEGMENTS);
+        let oldest = fs::read_to_string(&samples[0]).unwrap();
+        let first: WheelDiagnosticRecord =
+            serde_json::from_str(oldest.lines().next().unwrap()).unwrap();
+        assert!(first.elapsed_ms <= 3_720_000.0 - 3_600_000.0);
+        assert!(size_of_root(&folder.root()).unwrap() < SESSION_RESERVE);
+        let metadata: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(recorder.directory.join("metadata.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(metadata["DiskHistorySeconds"], 3600);
+        let path = recorder
+            .export(&folder.exports(), &WheelStatus::default())
+            .unwrap();
+        let entries = zip_entries(&path);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| is_sample_name(&entry.0))
+                .count(),
+            MAX_SAMPLE_SEGMENTS
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| is_incident_name(&entry.0))
+                .count(),
+            1
+        );
+        assert!(entries.iter().all(|entry| is_export_name(&entry.0)));
+    }
+
+    #[test]
     fn incident_pre_and_post_windows_and_ring_are_bounded() {
         let folder = TestFolder::new();
         let mut recorder = Recorder::start(&folder.root(), &device(), 0, SEGMENT_BUDGET).unwrap();
@@ -1854,10 +1930,10 @@ mod tests {
     }
 
     #[test]
-    fn rolling_segments_stay_within_four_files_and_exact_byte_bound() {
+    fn rolling_segments_stay_within_segment_count_and_exact_byte_bound() {
         let folder = TestFolder::new();
         let mut recorder = Recorder::start(&folder.root(), &device(), 0, 1024).unwrap();
-        for ms in (0..10_000).step_by(100) {
+        for ms in (0..40_000).step_by(100) {
             at(&mut recorder, ms, "Available");
         }
         recorder.close_segment();
@@ -1866,7 +1942,7 @@ mod tests {
             .map(|x| x.unwrap().path())
             .filter(|x| is_sample_name(x.file_name().unwrap().to_str().unwrap()))
             .collect();
-        assert_eq!(files.len(), 4);
+        assert_eq!(files.len(), MAX_SAMPLE_SEGMENTS);
         assert!(files.iter().all(|x| fs::metadata(x).unwrap().len() <= 1024));
         assert!(!recorder.directory.join("samples-000000.ndjson").exists());
     }

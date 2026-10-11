@@ -2262,8 +2262,12 @@ def _analysis_pipeline_sha256() -> str:
 # give no wrong answer (no finish reads as unknown), but the profile is bumped
 # so that re-analysis replaces those caches and stored races gain the finish.
 # Not a ported stage: no kernel changes.
+# Review 2026-10-10: v27 uses recorded iRacing sectors and raw line-crossing
+# endpoints, and adds phase-scoped field results with observed timing/pit visits.
+# Competitor fuel/tire service remains unavailable; sampled timing is explicit.
+# Existing caches require reanalysis. Native stage algorithms remain unchanged.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "988a5784b9de01b68e737a9dbfd8e6b707ed22213ca0d2c399b594aeab140e27"
+    "f1a488333dab2590b084e08ef94c2e596524e81783bd1e6206e1ab570e9cabc7"
 )
 
 

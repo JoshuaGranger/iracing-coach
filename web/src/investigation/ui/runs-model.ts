@@ -262,6 +262,13 @@ export function runCards(inv: Investigation, runs: readonly unknown[]): RunCard[
   });
 }
 
+/** Recorded service linking consecutive runs; post-race service never splits runs. */
+export function stopsBetweenRuns(current: RunView, next: RunView | undefined, stops: readonly PitStop[]): PitStop[] {
+  if (!next) return [];
+  return stops.filter((stop) => !stop.postRun && (stop.runNumber === current.runNumber ||
+    (stop.runNumber === null && stop.lap >= current.lastLap && stop.lap < next.firstLap)));
+}
+
 /** The card sparkline in a `width` × `height` box (y down, slower up): dot centres and the fit's two ends, on the run's own scale. */
 export function sparkGeometry(card: Pick<RunCard, "points" | "fit">, width: number, height: number): { dots: { cx: number; cy: number; kind: LapKind }[]; fit: [number, number, number, number] | null } {
   const xs = [...card.points.map((p) => p.x), ...(card.fit ? [card.fit.x1, card.fit.x2] : [])];

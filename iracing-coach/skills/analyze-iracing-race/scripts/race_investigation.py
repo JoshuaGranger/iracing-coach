@@ -20,7 +20,7 @@ SCHEMA_VERSION = 2
 # Bump when any projection below changes; cached analyses rebuild it without decoding.
 # v7: steering is road-wheel angle when the recording states its steering ratio
 # (labelled steering-wheel angle otherwise), with steering thresholds to match.
-PROJECTION_VERSION = "sections-trials-v7"
+PROJECTION_VERSION = "sections-trials-v8"
 # A steering change worth naming, stated on steering-wheel angle (degrees) and
 # converted to the recording's basis (road wheel: 2/12 deg).
 STEERING_CHANGE_DEG = 2.0
@@ -257,7 +257,11 @@ def _crossing(points: Sequence[Mapping[str, Any]], position: float) -> float | N
 
 
 def _corner_lap(trace: Mapping[str, Any], start: float, end: float) -> dict[str, Any] | None:
-    points = sorted((point for point in (trace.get("points") or ()) if isinstance(point, Mapping) and _number(point.get("lap_pct")) is not None), key=lambda point: point["lap_pct"])
+    try:
+        from .race_inspection import _points
+    except ImportError:  # pragma: no cover
+        from race_inspection import _points
+    points = _points(trace)
     core = [point for point in points if start <= point["lap_pct"] <= end]
     if len(core) < 2:
         return None

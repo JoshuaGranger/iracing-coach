@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analysis_engine import investigation_lap_exclusions  # noqa: E402
 from race_foundations import track_configuration_key  # noqa: E402
 from race_inspection import (  # noqa: E402
-    MAX_SECTIONS, SECTION_CATALOG, comparison_inspection, comparison_sections, configuration_key, review_sections,
+    MAX_SECTIONS, SECTION_CATALOG, comparison_inspection, comparison_sections, configuration_key, legacy_review_sections as review_sections,
     run_views, section_elapsed,
 )
 from race_investigation import PROJECTION_VERSION, SCHEMA_VERSION, build_race_investigation  # noqa: E402
@@ -355,9 +355,9 @@ class InvestigationProjectionTests(unittest.TestCase):
         self.assertEqual((result["schema_version"], result["projection_version"]), (SCHEMA_VERSION, PROJECTION_VERSION))
         self.assertEqual(result["laps"][0]["green_exposure"], 1.0)
         self.assertEqual([run["run_number"] for run in result["runs"]], [1, 2])
-        self.assertEqual([s["id"] for s in result["sections"]["sections"]], ["A", "B"])
+        self.assertEqual([s["id"] for s in result["sections"]["sections"]], ["S1", "S2"])
         comparison = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")
-        self.assertEqual(comparison["corners"][0]["short_label"] in ("A", "B"), True)
+        self.assertEqual(comparison["corners"][0]["short_label"] in ("S1", "S2"), True)
         self.assertEqual(comparison["inspection"]["mode"], "cohort_median_passes")
         action = comparison["actions"][0]
         self.assertEqual(action["section_id"], comparison["corners"][0]["id"])
@@ -375,7 +375,7 @@ class InvestigationProjectionTests(unittest.TestCase):
         self.assertGreater(trial["baseline"]["median_s"], trial["reference"]["median_s"])
         self.assertGreaterEqual(trial["success"]["threshold_s"], 0.02)
         self.assertEqual(trial["success"]["minimum_laps"], 3)
-        self.assertEqual(trial["annotation"]["source"], "detected_in_recording")
+        self.assertEqual(trial["annotation"]["source"], "iracing_split_time_info")
         json.dumps(result, allow_nan=False)
 
     def test_no_measurable_loss_offers_a_discriminating_repeat_not_a_review(self) -> None:
@@ -397,28 +397,22 @@ class InvestigationProjectionTests(unittest.TestCase):
         analysis["race_investigation"]["projection_version"] = "older"
         self.assertTrue(refresh_race_investigation(analysis))
 
-    def test_cached_investigation_adopts_a_catalog_record_added_after_caching(self) -> None:
-        # An IRP analysis cached before the IRP record existed holds this
-        # recording's detected regions under a current projection version.
+    def test_cached_investigation_adopts_recorded_sectors_added_after_caching(self) -> None:
+        from iracing_sectors import iracing_sectors
         analysis = investigation_fixture()
+        del analysis["iracing_sectors"]
         analysis["race_investigation"] = self.build(analysis)
-        self.assertEqual(analysis["race_investigation"]["sections"]["source"], "detected_in_recording")
-        analysis["track_geometry"] = {"track_configuration_key": "232-irp"}
+        self.assertEqual(analysis["race_investigation"]["sections"]["sections"], [])
+        analysis["iracing_sectors"] = iracing_sectors({"SplitTimeInfo": {"Sectors": [
+            {"SectorStartPct": 0.0}, {"SectorStartPct": 0.5}]}})
         self.assertTrue(refresh_race_investigation(analysis))
         sections = analysis["race_investigation"]["sections"]
-        self.assertEqual((sections["source"], sections["version"]), ("configuration_catalog", "232-irp/2026-09-24.1"))
+        self.assertEqual(sections["source"], "iracing_split_time_info")
+        self.assertEqual([s["id"] for s in sections["sections"]], ["S1", "S2"])
         self.assertFalse(refresh_race_investigation(analysis))
-        # Named sections reach the comparison text the driver reads.
         comparison = next(item for item in analysis["race_investigation"]["comparisons"] if item["id"] == "run-2-finish")
         self.assertTrue(comparison["corners"])
-        self.assertTrue(all(" · " in corner["label"] and corner["name"] for corner in comparison["corners"]))
-        named = [action for action in comparison["actions"] if action.get("section_id")]
-        self.assertTrue(named)
-        for action in named:
-            corner = next(item for item in comparison["corners"] if item["id"] == action["section_id"])
-            self.assertIn(f"({corner['name']})", action["title"] + action["instruction"])
-        # A re-versioned record is stale too.
-        analysis["race_investigation"]["sections"]["version"] = "232-irp/2026-09-01.1"
+        analysis["race_investigation"]["sections"]["version"] = "older-sectors"
         self.assertTrue(refresh_race_investigation(analysis))
         json.dumps(analysis["race_investigation"], allow_nan=False)
 

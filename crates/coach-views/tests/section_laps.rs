@@ -52,6 +52,41 @@ fn section(id: &str, start: f64, end: f64) -> Value {
 }
 
 #[test]
+fn recorded_iracing_sectors_time_the_complete_lap_for_each_session_type() {
+    for session_type in ["Practice", "Qualify", "Race"] {
+        let mut doc = race(
+            json!([section("S1", 0.0, 0.4), section("S2", 0.4, 1.0)]),
+            &[true; 12],
+        );
+        doc["identity"]["session_type"] = json!(session_type);
+        for trace in doc["lap_traces"]["traces"].as_array_mut().unwrap() {
+            let lap = trace["lap"].as_u64().unwrap() as usize;
+            let start = lap as f64 * 40.0;
+            trace["sector_boundaries"] = json!([
+                {"lap_pct": 0.0, "session_time_s": start},
+                {"lap_pct": 1.0, "session_time_s": start + 30.0 + PACE[lap]},
+            ]);
+        }
+        let inv = projected(&doc);
+        for entry in inv["section_laps"]["sections"].as_array().unwrap() {
+            assert_eq!(entry["clean_lap_count"], 12, "{session_type}");
+            for lap_entry in entry["fastest"].as_array().unwrap() {
+                let lap = lap_entry["lap"].as_u64().unwrap() as usize;
+                let fraction = if entry["section_id"] == "S1" {
+                    0.4
+                } else {
+                    0.6
+                };
+                assert_eq!(
+                    lap_entry["section_s"].as_f64(),
+                    Some(expected(lap, fraction))
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn section_laps_rank_the_clean_laps_around_their_median() {
     // Laps 10 to 12 are screened out by the backend; 1 to 9 are clean.
     let mut eligible = [true; 12];

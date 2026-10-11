@@ -33,9 +33,9 @@ describe("optional derived section priorities", () => {
     expect(() => parsePaceAttribution({ schema_version: 1, priorities: [{ ...priority("A"), tire_energy_grade: "future" }] })).toThrow(/grade/);
   });
 
-  it("orders worst first, leaves ties stable and hides unattached or unknown sections", () => {
+  it("keeps tabs in track order regardless of recoverable time and hides unattached priorities", () => {
     const reordered = parseInvestigation(raw(), payload([priority("A", 0.1), priority("B", 0.8), priority("C", 0.31)]));
-    expect(orderedSections(reordered).map((s) => s.id)).toEqual(["B", "C", "A"]);
+    expect(orderedSections(reordered).map((s) => s.id)).toEqual(["A", "B", "C"]);
     const inv = parseInvestigation(raw(), payload([priority("C", 0.1), priority(null, 2), priority("unknown", 3), priority("B", 0.5), priority("A", 0.31), priority("A", 0.8)]));
     expect(orderedSections(inv).map((s) => s.id)).toEqual(["A", "B", "C"]);
     expect(sectionPriorities(inv).size).toBe(3);

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { clampRatio, DEFAULT_RATIO, MAXIMUM_RATIO, MINIMUM_RATIO, ratioAtPointer, ratioForKey } from "../cursor/context-splitter";
 import { fractionAtMapPosition, formatReading, nearestMapPoint, nearestRow, type InspectionRow } from "../cursor/race-inspection";
-import { constrainView, parseViewBox, zoomView } from "../cursor/track-map";
+import { constrainView, createTrackMap, parseViewBox, zoomView } from "../cursor/track-map";
 
 describe("context splitter rules", () => {
   it("clamps the track share to 1/3..2/3 with a 0.43 default", () => {
@@ -47,6 +47,36 @@ describe("track map zoom", () => {
   it("keeps a panned view inside the base box", () => {
     const view = { x: 0, y: 0, width: 100, height: 50 };
     expect(constrainView(base, { ...view, x: 500, y: -10 })).toEqual({ x: 300, y: 0, width: 100, height: 50 });
+  });
+  it("wheel zoom synchronizes layered maps, Fit restores them, and disposal removes wheel handling", () => {
+    const target = new EventTarget();
+    const classes = new Set<string>();
+    let box = { ...base };
+    const updates: typeof base[] = [];
+    const element = Object.assign(target, {
+      dataset: {} as Record<string, string>,
+      classList: { add: (key: string) => classes.add(key), remove: (key: string) => classes.delete(key) },
+      viewBox: { get baseVal() { return box; } },
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 200 }),
+      querySelectorAll: () => [],
+      setAttribute: (_name: string, value: string) => { box = parseViewBox(value)!; },
+    }) as unknown as SVGSVGElement;
+    const controller = createTrackMap(element, "0 0 400 200", "race", (view) => updates.push(view));
+    const wheel = () => {
+      const event = new Event("wheel", { cancelable: true });
+      Object.assign(event, { deltaY: -120, clientX: 200, clientY: 100 });
+      target.dispatchEvent(event);
+      return event;
+    };
+    expect(wheel().defaultPrevented).toBe(true);
+    expect(controller.zoom).toBeGreaterThan(1);
+    expect(updates.at(-1)?.width).toBeLessThan(400);
+    controller.fit();
+    expect(updates.at(-1)).toEqual(base);
+    controller.dispose();
+    const count = updates.length;
+    expect(wheel().defaultPrevented).toBe(false);
+    expect(updates).toHaveLength(count);
   });
 });
 

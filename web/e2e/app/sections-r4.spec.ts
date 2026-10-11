@@ -44,6 +44,25 @@ for (const device of ROUND2_DEVICES) {
     const width = device.viewport.width;
     test.beforeEach(async ({ page }) => serve(page));
 
+    test("scroll zoom keeps the track and racing lines aligned, and Fit restores the map", async ({ page }) => {
+      await open(page, "?section=A");
+      const overlay = page.locator(".ri-sl-over");
+      await expect(overlay).toBeVisible();
+      const box = (await overlay.boundingBox())!;
+      const initial = (await overlay.getAttribute("viewBox"))!.split(/\s+/).map(Number);
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, -400);
+      await expect.poll(async () => Number(await overlay.getAttribute("data-map-zoom"))).toBeGreaterThan(1);
+      const zoomed = (await overlay.getAttribute("viewBox"))!.split(/\s+/).map(Number);
+      expect(zoomed[2]!).toBeLessThan(initial[2]!);
+      const track = (await page.locator(".ri-sl-svg").getAttribute("viewBox"))!.split(/\s+/).map(Number);
+      zoomed.forEach((value, i) => expect(track[i]!).toBeCloseTo(value, 3));
+      await page.getByRole("button", { name: "Fit track", exact: true }).click();
+      await expect(overlay).toHaveAttribute("data-map-zoom", "1.000");
+      await page.locator('[data-map-section="B"]').click();
+      await expect(sectionTab(page, "B")).toHaveAttribute("aria-selected", "true");
+    });
+
     test("a tab per detected section; under it six laps in time order, green shades faster and red shades slower than the median", async ({ page }) => {
       await open(page, "?section=B");
       const tabs = page.getByRole("tablist", { name: "Sections" }).getByRole("tab");

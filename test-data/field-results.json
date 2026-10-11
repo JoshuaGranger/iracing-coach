@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "player_car_index": 0,
+  "order_status": "recorded",
+  "cars": [
+    {
+      "car_index": 1,
+      "driver_name": "Rival",
+      "car_number": "12",
+      "is_player": false,
+      "position": 1,
+      "position_source": "last_recorded_position",
+      "laps_completed": 7,
+      "fastest_lap_s": 2.0,
+      "fastest_source": "recorded_lap_counter_intervals",
+      "pace_median_s": 2.0,
+      "pace_lap_count": 6,
+      "pit_visits": 0,
+      "tires_taken": null,
+      "fuel_used_l": null,
+      "laps": [
+        {
+          "lap": 2,
+          "lap_time_s": 2.0,
+          "position": 1,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 3,
+          "lap_time_s": 2.0,
+          "position": 1,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 4,
+          "lap_time_s": 2.0,
+          "position": 1,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 5,
+          "lap_time_s": 2.0,
+          "position": 1,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 6,
+          "lap_time_s": 2.0,
+          "position": 1,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 7,
+          "lap_time_s": 2.0,
+          "position": 1,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        }
+      ],
+      "pit_events": []
+    },
+    {
+      "car_index": 0,
+      "driver_name": "Player",
+      "car_number": "7",
+      "is_player": true,
+      "position": 2,
+      "position_source": "last_recorded_position",
+      "laps_completed": 7,
+      "fastest_lap_s": 2.0,
+      "fastest_source": "recorded_lap_counter_intervals",
+      "pace_median_s": 2.0,
+      "pace_lap_count": 6,
+      "pit_visits": 0,
+      "tires_taken": null,
+      "fuel_used_l": null,
+      "laps": [
+        {
+          "lap": 2,
+          "lap_time_s": 2.0,
+          "position": 2,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 3,
+          "lap_time_s": 2.0,
+          "position": 2,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 4,
+          "lap_time_s": 2.0,
+          "position": 2,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 5,
+          "lap_time_s": 2.0,
+          "position": 2,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 6,
+          "lap_time_s": 2.0,
+          "position": 2,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        },
+        {
+          "lap": 7,
+          "lap_time_s": 2.0,
+          "position": 2,
+          "lap_time_source": "recorded_lap_counter_intervals",
+          "flag_state": "green",
+          "on_pit_road": false,
+          "pace_eligible": true
+        }
+      ],
+      "pit_events": []
+    }
+  ],
+  "status": "available",
+  "pace_definition": "Median of at least three recorded whole green laps with no pit-road samples; traffic is included.",
+  "limitations": [
+    "Order is the recorded results snapshot or last observed position; final classification may be unavailable.",
+    "Pit visits are observed pit-road entries, including drive-throughs; entries before recording are unknown.",
+    "Competitor tire changes and fuel consumption are not recorded.",
+    "Competitor lap times use observed counter transitions, interpolating distance wraps when available; sampled intervals are approximate, not scored lap times."
+  ]
+}

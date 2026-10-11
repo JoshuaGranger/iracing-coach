@@ -100,7 +100,7 @@ def _catalog_record(key: str | None, catalog_path: Path = SECTION_CATALOG) -> Ma
                  if isinstance(record, Mapping) and record.get("track_configuration_key") == key), None)
 
 
-def review_sections(analysis: Mapping[str, Any], *, catalog_path: Path = SECTION_CATALOG) -> dict[str, Any]:
+def legacy_review_sections(analysis: Mapping[str, Any], *, catalog_path: Path = SECTION_CATALOG) -> dict[str, Any]:
     """Sections with concrete bounds, provenance and a version for archiving.
 
     A catalog record for the exact configuration wins so separate recordings
@@ -152,6 +152,22 @@ def review_sections(analysis: Mapping[str, Any], *, catalog_path: Path = SECTION
     return {"configuration_key": key, "source": source, "version": version, "provenance": provenance,
             "sections": sections[:MAX_SECTIONS],
             "unavailable_reason": None if sections else "No usable track sections were detected in this recording."}
+
+
+def review_sections(analysis: Mapping[str, Any], *, catalog_path: Path = SECTION_CATALOG) -> dict[str, Any]:
+    """Current review sections are iRacing's recorded sectors in lap order.
+
+    The archive's catalog remains available through ``legacy_review_sections``;
+    it does not substitute for missing session sector definitions.
+    """
+    supplied = analysis.get("iracing_sectors")
+    if not isinstance(supplied, Mapping):
+        try:
+            from .iracing_sectors import iracing_sectors
+        except ImportError:  # pragma: no cover
+            from iracing_sectors import iracing_sectors
+        supplied = iracing_sectors({})
+    return {**supplied, "configuration_key": configuration_key(analysis)}
 
 
 def run_exposure(laps: Sequence[Mapping[str, Any]], runs: Sequence[Mapping[str, Any]]) -> dict[int, float | None]:
@@ -250,6 +266,20 @@ def _points(trace: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
     # Never sort corrupt or reversed telemetry into a plausible drive.
     if any(a["lap_pct"] >= b["lap_pct"] for a, b in zip(points, points[1:])):
         return []
+    boundaries = (trace or {}).get("sector_boundaries") or []
+    for boundary in boundaries:
+        if not isinstance(boundary, Mapping) or _number(boundary.get("session_time_s")) is None:
+            continue
+        if points and boundary.get("lap_pct") == 0 and points[0]["lap_pct"] > 0:
+            # A bin centre can carry the line sample's median time; it is not a
+            # second timed observation. Keep the raw crossing and next bin.
+            if points[0].get("session_time_s") == boundary["session_time_s"]:
+                points.pop(0)
+            points.insert(0, boundary)
+        elif points and boundary.get("lap_pct") == 1 and points[-1]["lap_pct"] < 1:
+            if points[-1].get("session_time_s") == boundary["session_time_s"]:
+                points.pop()
+            points.append(boundary)
     return points
 
 
@@ -468,7 +498,7 @@ def comparison_inspection(comparison: Mapping[str, Any], laps: Mapping[int, Mapp
             candidate_count = len(one) + len(two)
         first_points, second_points = _points(traces.get(first_lap)), _points(traces.get(second_lap))
         context_start, context_label = approach_start(ordered, index, max(first_points[0]["lap_pct"], second_points[0]["lap_pct"]))
-        if context_start >= start:
+        if context_start > start:
             continue
         timing_valid = _covered(first_points, context_start, end) and _covered(second_points, context_start, end)
         rows = _pair_rows(first_points, second_points, context_start, start, end, timing_valid)

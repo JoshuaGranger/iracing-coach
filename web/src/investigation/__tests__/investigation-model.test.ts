@@ -5,7 +5,7 @@ import { hypothesisStatus, lapsText, lapTime, passRole, reasonsText, signedText,
 
 const fixture = JSON.parse(readFileSync(new URL("../../../../test-data/race-investigation.json", import.meta.url), "utf8")) as Record<string, unknown>;
 
-describe("race_investigation fixture (schema 2, sections-trials-v7)", () => {
+describe("race_investigation fixture (schema 2, sections-trials-v8)", () => {
   const inv = parseInvestigation(fixture);
 
   it("reads comparisons, cohorts, metrics, corners and actions", () => {
@@ -15,13 +15,13 @@ describe("race_investigation fixture (schema 2, sections-trials-v7)", () => {
     expect(first.baseline.lapNumbers).toEqual([1, 2, 3]);
     expect(first.compared.greenAgeStart).toBe(7);
     expect(first.metrics.find((metric) => metric.key === "pace")?.delta).toBeCloseTo(0.12, 3);
-    expect(first.corners[0]!.id).toBe("A");
-    expect(first.actions[0]!.sectionId).toBe("A");
+    expect(first.corners[0]!.id).toBe("S1");
+    expect(first.actions[0]!.sectionId).toBe("S1");
     expect(first.actions[0]!.priority).toBe(1);
   });
 
   it("reads pass pairs with rows and the steering declaration", () => {
-    const pair = inv.comparisons[0]!.inspection!.pairs.get("A")!;
+    const pair = inv.comparisons[0]!.inspection!.pairs.get("S1")!;
     expect(pair.rows.length).toBeGreaterThan(5);
     expect(pair.rows[0]!.a.speed).toBe(100);
     expect(pair.steering.comparable).toBe(true);
@@ -41,7 +41,7 @@ describe("race_investigation fixture (schema 2, sections-trials-v7)", () => {
 
   it("reads laps, sections and track evolution", () => {
     expect(inv.laps[0]).toMatchObject({ lap: 1, plotPace: true, eligible: true, runNumber: 1 });
-    expect(inv.sections.sections[0]).toMatchObject({ id: "A", startPct: 0.1, endPct: 0.4, boundaryStatus: "detected_section" });
+    expect(inv.sections.sections[0]).toMatchObject({ id: "S1", startPct: 0.0, endPct: 0.5, boundaryStatus: "iracing_sector" });
     expect(inv.trackEvolution).not.toBeNull();
     expect(inv.steeringBasis?.basis).toBe("road_wheel");
   });
@@ -50,8 +50,8 @@ describe("race_investigation fixture (schema 2, sections-trials-v7)", () => {
     const c = selectedComparison(inv, null)!;
     expect(c.id).toBe("run-1-clean");
     expect(selectedComparison(inv, "missing")!.id).toBe("run-1-clean");
-    expect(selectedSection(inv, c, null)!.id).toBe("A");
-    expect(selectedSection(inv, c, "nope")!.id).toBe("A");
+    expect(selectedSection(inv, c, null)!.id).toBe("S1");
+    expect(selectedSection(inv, c, "nope")!.id).toBe("S1");
   });
 
   it("withholds an unusable pace result instead of showing a gain", () => {

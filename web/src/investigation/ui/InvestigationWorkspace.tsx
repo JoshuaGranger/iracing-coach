@@ -6,11 +6,14 @@ import { selectedComparison, selectedSection, type Comparison } from "../investi
 import { criticalLayoutBody } from "../layout-model";
 import { activeLayout, createLayout, defaultLayout, deleteActiveLayout, duplicateLayout, editActiveLayout, selectLayout, type LayoutSet, type NamedLayout } from "../layout-sets";
 import { HttpError, ProjectionPendingError, type AnalysisLoader } from "../load";
-import { INVESTIGATION_VIEWS, type InvestigationView, type TraceLayoutBody } from "../types";
+import { asRecord, INVESTIGATION_VIEWS, type InvestigationView, type TraceLayoutBody } from "../types";
 import "./investigation.css";
 import { useViewportFit } from "./fit";
 import { useAsync } from "./hooks";
 import { RaceView, type RaceResult } from "./RaceView";
+import { ResultsSummaryView } from "./ResultsSummaryView";
+import { FieldRaceView } from "./FieldRaceView";
+import { fieldResults } from "./field-results";
 import { RunsView } from "./RunsView";
 import { SectionsView, type SectionsOpenRequest } from "./SectionsView";
 import { PhaseSelector, type PhaseOption } from "./PhaseSelector";
@@ -72,7 +75,7 @@ function sessionTypeOf(race: { identity?: unknown }): string | null {
   return typeof identity?.event_type === "string" ? identity.event_type : null;
 }
 
-const VIEW_LABELS: Record<InvestigationView, string> = { race: "Race", runs: "Runs", sections: "Sections", traces: "Traces" };
+const VIEW_LABELS: Record<InvestigationView, string> = { race: "Race", runs: "Runs", sections: "Sections", traces: "Traces", results: "Results Summary" };
 
 function describe(error: Error): { title: string; detail: string; pending: boolean } {
   if (error instanceof ProjectionPendingError) return { title: "Preparing", detail: "", pending: true };
@@ -96,6 +99,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
   const [comparisonId, setComparisonId] = useState<string | null>(props.comparisonId ?? null);
   const [sectionId, setSectionId] = useState<string | null>(props.sectionId ?? null);
   const [focus, setFocus] = useState<TraceFocus | null>(null);
+  const [selectedCar, setSelectedCar] = useState<number | null>(null);
   // Saved layouts: the shell's list when it gives one; otherwise Default plus the shell's active layout, kept for the visit.
   const [localSet, setLocalSet] = useState<LayoutSet>(() => initialSet(props.traceLayout, props.traceLayoutName));
   useEffect(() => {
@@ -117,6 +121,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
   useEffect(() => { if (props.comparisonId !== undefined) setComparisonId(props.comparisonId); }, [props.comparisonId]);
   useEffect(() => { if (props.sectionId !== undefined) setSectionId(props.sectionId); }, [props.sectionId]);
   useEffect(() => { setFocus(null); }, [props.analysisId]);
+  useEffect(() => { setSelectedCar(null); }, [props.analysisId]);
 
   const select = (next: Partial<InvestigationSelection>): void => {
     const merged: InvestigationSelection = { view, comparisonId, sectionId, ...next };
@@ -130,6 +135,14 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
   const traces = useAsync(() => (view === "traces" ? handle.traces() : Promise.resolve(null)), `${props.analysisId}|${view === "traces"}`);
   const overviewValue = overview.state.status === "ready" ? overview.state.value : null;
   const inv = overviewValue?.investigation ?? null;
+  const field = useMemo(() => fieldResults(asRecord(overviewValue?.race.field_pace).results), [overviewValue]);
+  const fieldCar = field.cars.find((car) => car.index === selectedCar) ?? field.cars.find((car) => car.player);
+  const carPicker = <label class="ri-field-picker">Car
+    <select aria-label="Race car" value={fieldCar?.index ?? "player"} onChange={(event) => setSelectedCar(event.currentTarget.value === "player" ? null : Number(event.currentTarget.value))}>
+      {!field.cars.some((car) => car.player) && <option value="player">You</option>}
+      {field.cars.map((car) => <option key={car.index} value={car.index}>{car.position === null ? "—" : `P${car.position}`} · #{car.number || "—"} {car.name}{car.player ? " · You" : ""}</option>)}
+    </select>
+  </label>;
   const comparison: Comparison | null = inv ? selectedComparison(inv, comparisonId) : null;
   const section = inv ? selectedSection(inv, comparison, sectionId) : null;
   const map = useMemo(() => buildMapGeometry(overviewValue?.track ?? null), [overviewValue?.track]);
@@ -202,6 +215,10 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
         />
       );
     }
+  } else if (view === "results") {
+    body = <ResultsSummaryView results={field} onSelectCar={(index) => { setSelectedCar(index); select({ view: "race" }); }} />;
+  } else if (view === "race" && fieldCar && !fieldCar.player) {
+    body = <div class="ri-field-host"><div class="ri-field-toolbar">{carPicker}</div><FieldRaceView car={fieldCar} /></div>;
   } else if (!inv) {
     body = (
       <Notice
@@ -211,7 +228,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
     );
   } else if (view === "race") {
     body = (
-      <RaceView inv={inv} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)} result={props.raceResult} />
+      <div class="ri-field-host"><div class="ri-field-toolbar">{carPicker}</div><RaceView inv={inv} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)} result={props.raceResult} /></div>
     );
   } else if (view === "runs") {
     body = (

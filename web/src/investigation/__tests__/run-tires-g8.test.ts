@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { VNode } from "preact";
 import { buildRound2Analysis } from "../fixtures/round2";
 import { parseInvestigation } from "../investigation-model";
-import { runCards, runTires } from "../ui/runs-model";
+import { runCards, runTires, stopsBetweenRuns } from "../ui/runs-model";
+import { RunTireDetails } from "../ui/RunTireDetails";
+import type { PitStop } from "../geometry/rail-model";
 import { surfaceTempColour, TireDiagram, wearBarHeight } from "../../ui/pictograms";
 
 const analysis = buildRound2Analysis();
@@ -43,6 +45,28 @@ function walk(node: unknown, visit: (v: V) => void): void {
 }
 
 describe("run tire picture (G8)", () => {
+  it("shows twelve physical tread bands with four corner labels and unknown readings", () => {
+    const readings = runTires({ tire_observation: { tires: { LF: { remaining_percent: { L: 50 } } } } }, 9)!;
+    const corners: unknown[] = [];
+    const bands: V[] = [];
+    walk(RunTireDetails({ tires: readings }), (v) => {
+      if (v.props["data-detail-tire"]) corners.push(v.props["data-detail-tire"]);
+      if (v.props.class === "ri-tire-detail-band") bands.push(v);
+    });
+    expect(corners).toEqual(["LF", "RF", "LR", "RR"]);
+    expect(bands).toHaveLength(12);
+    expect(JSON.stringify(bands[1]!.props)).toContain("—");
+  });
+
+  it("places only recorded service between runs, excluding post-race and unmatched stops", () => {
+    const current = inv.runs[0]!;
+    const next = inv.runs[1]!;
+    const stop = (runNumber: number | null, lap = current.lastLap, postRun = false): PitStop => ({ lap, runNumber, postRun, tires: null, fuelAddedGal: null, durationS: null, capacityGal: null });
+    const recorded = stop(current.runNumber);
+    const noRunId = stop(null);
+    expect(stopsBetweenRuns(current, next, [recorded, noRunId, stop(current.runNumber, current.lastLap, true), stop(next.runNumber), stop(null, next.firstLap)])).toEqual([recorded, noRunId]);
+    expect(stopsBetweenRuns(current, undefined, [recorded])).toEqual([]);
+  });
   it("reads the run's end state: caption, lap, temperature range, one line per tire", () => {
     const t = runTires(measured(), 47)!;
     expect(t.caption).toBe("RF 61 % · 23 laps");

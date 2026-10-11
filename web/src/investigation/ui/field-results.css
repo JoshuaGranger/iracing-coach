@@ -1,0 +1,24 @@
+.ri-results-summary, .ri-field-race { height: 100%; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--ri-line); border-radius: .75rem; background: var(--ri-card); overflow: hidden; }
+.ri-results-scroll { overflow: auto; min-height: 0; flex: 1; }
+.ri-results-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: var(--text-compact); }
+.ri-results-table th, .ri-results-table td { padding: .75rem; border-bottom: 1px solid var(--ri-line); text-align: right; white-space: nowrap; }
+.ri-results-table thead th { position: sticky; top: 0; background: var(--ri-card); color: var(--color-text-muted); z-index: 1; }
+.ri-results-table th:nth-child(2) { text-align: left; }
+.ri-results-table tbody th small { display: block; color: var(--color-text-muted); }
+.ri-results-table tbody th button { color: inherit; background: transparent; padding: 0; text-transform: none; font: inherit; letter-spacing: normal; text-align: left; border: 0; cursor: pointer; }
+.ri-results-table .player { background: color-mix(in srgb, var(--ri-ice) 8%, transparent); }
+.ri-field-note { margin: 0; padding: .75rem; color: var(--color-text-muted); font-size: var(--text-compact); border-top: 1px solid var(--ri-line); }
+.ri-field-chart-scroll { flex: 1; min-height: 0; overflow: auto; display: flex; }
+.ri-field-chart { flex: 1; width: 100%; min-height: 15rem; }
+.ri-field-lap { fill: var(--ri-ice); stroke: var(--ri-ice); stroke-width: 1.5; }
+.ri-field-lap.screened { fill: var(--ri-card); }
+.ri-field-position { fill: var(--ri-ice); }
+.ri-field-pit-line { stroke: var(--ri-pit); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .6; }
+@media (max-width: 900px) { .ri-results-summary, .ri-field-race { height: auto; min-height: 24rem; } .ri-results-scroll { max-height: 70vh; } .ri-field-chart { min-height: 20rem; } }
+@media (max-width: 600px) { .ri-field-chart { min-width: 50rem; height: 25rem; flex: none; } .ri-field-chart-scroll { min-height: 25rem; } }
+@media (pointer: coarse) { .ri-results-table tbody th button { min-height: 2.75rem; } }
+.ri-field-host { min-height: 0; height: 100%; display: flex; flex-direction: column; gap: .5rem; }
+.ri-field-host > .ri-race-view, .ri-field-host > .ri-field-race { flex: 1; min-height: 0; }
+.ri-field-toolbar { display: flex; justify-content: flex-end; }
+.ri-field-picker { display: flex; align-items: center; gap: .5rem; min-width: 0; color: var(--color-text-muted); font-size: var(--text-compact); }
+.ri-field-picker select { max-width: min(25rem, 75vw); min-height: 2.75rem; background: var(--ri-card); color: var(--color-text); border: 1px solid var(--ri-line); border-radius: .4rem; padding: .4rem .7rem; font: inherit; }

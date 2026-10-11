@@ -817,6 +817,7 @@ def _build_tiny_ibt(
     race_records: int = 120,
     disk_session_times: tuple[float, float] = (0.0, 1.983333),
     driver_setup_lines: str = "",
+    sector_starts: tuple[float, ...] = (),
 ) -> None:
     """Write a tiny valid Race IBT.
 
@@ -856,6 +857,9 @@ CarSetup:
     LeftFront:
       ColdPressure: 25.0 psi
 """
+    if sector_starts:
+        yaml_text += "SplitTimeInfo:\n  Sectors:\n" + "".join(
+            f"    - SectorNum: {i}\n      SectorStartPct: {start:.6f}\n" for i, start in enumerate(sector_starts))
     yaml_blob = yaml_text.encode("utf-8") + b"\x00"
     variables = [
         (2, 0, 1, "SessionNum", "Simulator session number", ""),
@@ -1934,6 +1938,7 @@ def _race_investigation_fixture() -> dict[str, Any]:
     from analysis_engine import investigation_lap_exclusions
     from race_investigation import build_race_investigation
     from steering_basis import resolve_steering_basis
+    from iracing_sectors import iracing_sectors
 
     # Steering is road-wheel angle: the synthetic setup states a 12:1 ratio, so
     # these values are the old steering-wheel fixture values divided by 12.
@@ -1959,6 +1964,8 @@ def _race_investigation_fixture() -> dict[str, Any]:
             for index in range(41)
         ]})
     analysis = {
+        "iracing_sectors": iracing_sectors({"SplitTimeInfo": {"Sectors": [
+            {"SectorNum": 0, "SectorStartPct": 0.0}, {"SectorNum": 1, "SectorStartPct": 0.5}]}}),
         "steering": steering.describe(),
         "laps": laps, "lap_traces": {"traces": traces, "steering": steering.describe()},
         "runs": [{"run_number": 1, "start_lap": 1, "end_lap": 12}],
@@ -1971,6 +1978,31 @@ def _race_investigation_fixture() -> dict[str, Any]:
     result = build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
     result["fixture_metadata"] = {"synthetic": True, "real_driver_or_setup_data": False, "production_use_allowed": False}
     return result
+
+
+def _coach_views_backend_fixture() -> dict[str, Any]:
+    """A current engine document from a temporary sanitized IBT with SDK sectors.
+
+    The checked-in raw synthetic IBT stays unchanged. Temporary source paths
+    and the wall-clock stamp never enter this portable golden document.
+    """
+    from ibt_reader import load_telemetry
+    from analysis_engine import analyze_telemetry
+    from workflow import build_analysis_view
+
+    with tempfile.TemporaryDirectory(prefix="coach-views-fixture-") as raw:
+        path = Path(raw) / "synthetic-race.ibt"
+        _build_tiny_ibt(path, sector_starts=(0.0, 0.5))
+        result = analyze_telemetry(load_telemetry(path, target_hz=20))
+        for key, value in build_analysis_view(result).items():
+            if key != "schema_version":
+                result.setdefault(key, value)
+        serialized = json.dumps(result, ensure_ascii=False, allow_nan=False)
+        for root in (raw, raw.replace("\\", "/")):
+            serialized = serialized.replace(json.dumps(root)[1:-1], "<fixture>")
+        result = json.loads(serialized)
+        result["analyzed_at"] = "2026-10-10T00:00:00+00:00"
+        return result
 
 
 def _test_day_setup(brake_bias: str, update_count: int, lf_temps: str) -> dict[str, Any]:

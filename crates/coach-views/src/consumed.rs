@@ -200,7 +200,7 @@ pub const RACE_DAMAGE_REPAIR: &[&str] = &[
     "episodes[].timing.repair_work_completed_s",
 ];
 
-pub const RACE_FIELD_PACE: &[&str] = &[];
+pub const RACE_FIELD_PACE: &[&str] = &["results"];
 
 pub const RACE_CONDITIONS: &[&str] = &[];
 

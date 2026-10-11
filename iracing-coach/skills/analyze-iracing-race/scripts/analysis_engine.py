@@ -29,6 +29,8 @@ try:  # Package import and direct script loading are both supported.
         build_track_geometry,
     )
     from . import competitor_pace
+    from .field_results import build_field_results
+    from .iracing_sectors import iracing_sectors, attach_sector_boundaries
     from . import lap_reference
     from . import pit_loss
     from . import race_plan_decision
@@ -42,6 +44,8 @@ except ImportError:  # pragma: no cover - normal CLI/MCP script-loading path.
     from groove_analysis import analyze_groove_evolution
     from race_foundations import build_race_replay, build_tire_learning, build_track_geometry
     import competitor_pace
+    from field_results import build_field_results
+    from iracing_sectors import iracing_sectors, attach_sector_boundaries
     import lap_reference
     import pit_loss
     import race_plan_decision
@@ -75,10 +79,12 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v26"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v27"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
+    "field_results.py",
+    "iracing_sectors.py",
     "groove_analysis.py",
     "ibt_reader.py",
     "lap_reference.py",
@@ -8982,6 +8988,9 @@ def analyze_telemetry(
     setup_telemetry = _setup_telemetry(table, setup_series)
     track_profile = _track_profile(table, setup_series=setup_series)
     lap_traces = _lap_trace_payload(table, laps, steering_basis=steering_basis)
+    attach_sector_boundaries(lap_traces, laps,
+                             table.normalized("SessionTime", "SessionTimeOfDay")[0],
+                             table.normalized("LapDistPct")[0])
     lap_trace_columns = _lap_trace_columns(table, laps, steering_basis=steering_basis)
     groove_channel_names = (
         "Lat",
@@ -9192,6 +9201,7 @@ def analyze_telemetry(
     pace_attribution = _pace_attribution(table, laps, track_profile)
     strategy = _strategy(runs, race_summary)
     field_pace = _field_pace(table)
+    field_pace["results"] = build_field_results(table.channels, table.session_info, table.metadata, laps, runs)
     strategy_planning = _strategy_planning(
         table, laps, race_summary, strategy, field_pace
     )
@@ -9307,6 +9317,7 @@ def analyze_telemetry(
             },
         },
     }
+    analysis["iracing_sectors"] = iracing_sectors(table.session_info)
     analysis["race_investigation"] = build_race_investigation(
         analysis, lap_exclusions=investigation_lap_exclusions(analysis)
     )

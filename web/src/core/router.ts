@@ -4,8 +4,8 @@ import { useEffect, useState } from "preact/hooks";
  * Hash router (`#/d/1507810/sessions`). The server serves static files only, so no path fallback is needed.
  * Query parameters live inside the hash (`#/d/1/s/42/traces?comparison=c1&section=s3`).
  */
-export type InvestigationView = "race" | "runs" | "sections" | "traces";
-export const INVESTIGATION_VIEWS: readonly InvestigationView[] = ["race", "runs", "sections", "traces"];
+export type InvestigationView = "race" | "runs" | "sections" | "traces" | "results";
+export const INVESTIGATION_VIEWS: readonly InvestigationView[] = ["race", "runs", "sections", "traces", "results"];
 
 export type Route =
   | { page: "drivers" }

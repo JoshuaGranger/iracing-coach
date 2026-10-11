@@ -258,7 +258,7 @@ fn the_investigation_fixture_passes_through_whole_and_validates() {
     // everything the browser reads is there, including unknown fields
     let inv = &served["race_investigation"];
     assert_eq!(inv["schema_version"], 2);
-    assert_eq!(inv["projection_version"], "sections-trials-v7");
+    assert_eq!(inv["projection_version"], "sections-trials-v8");
     assert_eq!(
         inv["default_comparison_id"],
         investigation["default_comparison_id"]

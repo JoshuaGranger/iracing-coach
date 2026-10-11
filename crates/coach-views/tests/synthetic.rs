@@ -70,6 +70,33 @@ fn sha2_hex(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn field_results_preserve_evidence_and_bound_progression_without_losing_summary() {
+    let mut doc = analysis_doc("field-results", &Options::default());
+    let results: Value =
+        serde_json::from_str(include_str!("../../../test-data/field-results.json")).unwrap();
+    doc["field_pace"]["results"] = results.clone();
+    let (out, _) = project_doc(&doc);
+    assert_eq!(view(&out, "race.json")["field_pace"]["results"], results);
+    doc["field_pace"]["results"]["cars"][0]["laps"] = json!(vec![
+        json!({"lap":1,"unknown_future_field":"x".repeat(1000)});
+        2400
+    ]);
+    let (out, _) = project_doc(&doc);
+    let race = view(&out, "race.json");
+    assert!(size(&out, "race.json") <= 2 * 1024 * 1024);
+    let rows = race["field_pace"]["results"]["cars"].as_array().unwrap();
+    assert_eq!(rows.len(), results["cars"].as_array().unwrap().len());
+    assert_eq!(
+        rows[0]["pace_median_s"],
+        results["cars"][0]["pace_median_s"]
+    );
+    assert_eq!(rows[0]["pit_events"], results["cars"][0]["pit_events"]);
+    assert_eq!(rows[0]["progression_unavailable_reason"], "payload_budget");
+    assert!(rows[0].get("laps").is_none());
+    assert_valid("RaceView", &race);
+}
+
+#[test]
 fn every_view_validates_against_the_wire_schema() {
     let doc = analysis_doc("abc123", &Options::default());
     let (out, summary) = project_doc(&doc);
@@ -667,9 +694,9 @@ fn a_real_backend_document_projects() {
     let dir = scratch("real");
     let out = dir.join("out");
     let summary = project(&input, &out).unwrap();
-    assert_eq!(summary.profile_version, "post-race-foundations-v23");
+    assert_eq!(summary.profile_version, "post-race-foundations-v27");
     assert_eq!(summary.lap_count, 1);
-    assert_eq!(summary.bins_per_lap, 160);
+    assert_eq!(summary.bins_per_lap, 640);
     // no geometry and no GPS: no track view, no latitude or longitude channel
     assert!(!kinds(&summary).contains(&ViewKind::Track));
     assert!(!summary.trace_channels.iter().any(|c| c == "latitude"));
@@ -683,10 +710,39 @@ fn a_real_backend_document_projects() {
     ] {
         assert_valid(schema, &view(&out, file));
     }
-    let doc = read_json(&input);
+    let mut doc = read_json(&input);
     let catalog = view(&out, "traces-catalog.json");
     assert_eq!(catalog["steering_basis"]["basis"], "steering_wheel");
     assert_eq!(catalog["steering_basis"]["digits"], 1);
+    // Current engine output uses column arrays for the denser chart traces.
+    // Expand only the test reference back to point records for the existing
+    // exact CCOL checker; values and missingness are copied without math.
+    let dense = doc["lap_trace_columns"].clone();
+    let traces: Vec<Value> = dense["traces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|trace| {
+            let columns = trace["columns"].as_object().unwrap();
+            let points: Vec<Value> = (0..trace["points"].as_u64().unwrap() as usize)
+                .map(|i| {
+                    let mut point = serde_json::Map::new();
+                    for (key, values) in columns {
+                        point.insert(key.clone(), values[i].clone());
+                    }
+                    let mut extra = serde_json::Map::new();
+                    for (key, values) in trace["additional_signals"].as_object().unwrap() {
+                        extra.insert(key.clone(), values[i].clone());
+                    }
+                    point.insert("additional_signals".into(), Value::Object(extra));
+                    Value::Object(point)
+                })
+                .collect();
+            json!({"lap": trace["lap"], "points": points})
+        })
+        .collect();
+    doc["lap_traces"] =
+        json!({"distance_bins_per_lap": dense["distance_bins_per_lap"], "traces": traces});
     assert_ccol_matches(
         &decode_ccol(&fs::read(out.join("traces.ccol")).unwrap()),
         &catalog,
@@ -757,7 +813,7 @@ fn payload_bounds_hold_for_a_synthetic_500_lap_analysis() {
 
 #[test]
 fn an_oversized_race_view_shrinks_unread_subtrees_first_then_unread_lap_fields() {
-    // field_pace and conditions are read by no screen: they go first and everything else stays whole.
+    // Legacy field_pace and conditions go first; the consumed results subtree survives.
     let mut doc = analysis_doc(
         "shrink1",
         &Options {

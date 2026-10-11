@@ -158,6 +158,8 @@ def oval_run(wheel_scale: int, stated_ratio: str | None, *, laps: int = 18, hz: 
         "variables": [{"name": "SteeringWheelAngle", "unit": "rad"}, {"name": "SteeringWheelAngleMax", "unit": "rad"}],
         "metadata": {"sample_rate": hz},
         "session_info": {
+            "SplitTimeInfo": {"Sectors": [{"SectorNum": 0, "SectorStartPct": 0.0},
+                                           {"SectorNum": 1, "SectorStartPct": 0.5}]},
             "WeekendInfo": {"SessionID": 91, "SubSessionID": 92, "EventType": "Race", "TrackID": 232,
                             "TrackDisplayName": "Synthetic Oval", "TrackConfigName": "Oval", "TrackType": "short oval",
                             "WeekendOptions": {"IsFixedSetup": 0}},
@@ -418,7 +420,8 @@ class RatioIndependenceRegressionTests(unittest.TestCase):
     def test_the_steering_action_states_road_wheel_degrees(self) -> None:
         action = next(action for comparison in self.twelve["race_investigation"]["comparisons"]
                       for action in comparison["actions"] if action["title"] == "Test a smoother steering arc")
-        self.assertIn("Median road-wheel steering increased 0.66° in the same section.", action["evidence"])
+        # The complete recorded sector includes the second corner and its straights.
+        self.assertIn("Median road-wheel steering increased 0.70° in the same section.", action["evidence"])
         self.assertIn("steering", action["signal_keys"])
 
     def test_the_road_wheel_peak_matches_the_input(self) -> None:

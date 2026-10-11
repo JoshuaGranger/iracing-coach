@@ -1,6 +1,6 @@
 //! Starts the real collector binary with its overlay, tray and hotkey code on a replayed fixture
 //! (`--replay --dry-run`, no server) and checks the overlay window it creates. It briefly shows a
-//! click-through window on the desktop, so it is ignored by default:
+//! draggable window on the desktop, so it is ignored by default:
 //! `cargo test -p coach-collector --test win_ui_smoke -- --ignored`.
 #![cfg(windows)]
 
@@ -12,16 +12,17 @@ use std::time::{Duration, Instant};
 use coach_collector::fixture::{MapBuilder, SessionSpec, Step};
 use coach_collector::win::{QuitEvent, wide};
 use support::*;
-use windows::Win32::Foundation::RECT;
+use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GWL_EXSTYLE, GetWindowLongPtrW, GetWindowRect, IsWindowVisible, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+    FindWindowW, GWL_EXSTYLE, GetWindowLongPtrW, GetWindowRect, HTCAPTION, IsWindowVisible,
+    SendMessageW, WM_MOUSEACTIVATE, WM_NCHITTEST, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
 };
 use windows::core::PCWSTR;
 
 #[test]
-#[ignore = "shows a click-through window on the desktop for a few seconds"]
-fn the_overlay_is_a_visible_layered_topmost_click_through_window_and_exits_cleanly() {
+#[ignore = "shows a draggable window on the desktop for a few seconds"]
+fn the_overlay_is_always_draggable_without_activation_and_exits_cleanly() {
     let b = MapBuilder::new(60).engine_vars();
     let mut steps = vec![Step::Static {
         status: 1,
@@ -69,12 +70,25 @@ fn the_overlay_is_a_visible_layered_topmost_click_through_window_and_exits_clean
         for (flag, name) in [
             (WS_EX_LAYERED, "layered"),
             (WS_EX_TOPMOST, "topmost"),
-            (WS_EX_TRANSPARENT, "click-through"),
             (WS_EX_NOACTIVATE, "no-activate"),
             (WS_EX_TOOLWINDOW, "tool window"),
         ] {
             assert!(ex & flag.0 != 0, "{name} style missing: {ex:#x}");
         }
+        assert_eq!(
+            ex & WS_EX_TRANSPARENT.0,
+            0,
+            "dragging must accept pointer input"
+        );
+        assert_eq!(
+            SendMessageW(hwnd, WM_NCHITTEST, None, Some(LPARAM(0))).0,
+            HTCAPTION as isize
+        );
+        assert_eq!(
+            SendMessageW(hwnd, WM_MOUSEACTIVATE, None, None).0,
+            3,
+            "drag must not activate the overlay"
+        );
         let mut rect = RECT::default();
         GetWindowRect(hwnd, &mut rect).unwrap();
         assert_eq!((rect.right - rect.left, rect.bottom - rect.top), (540, 360));

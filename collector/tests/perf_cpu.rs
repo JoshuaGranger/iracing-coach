@@ -3,7 +3,7 @@
 //! time at 60 Hz, with the overlay drawn and the stream wanted by two viewers (the mock server
 //! sends `viewers: 2` and `stream_wanted: true` in its welcome and counts the frames it receives).
 //!
-//! It runs the real release binary for about a minute and shows the click-through overlay on the
+//! It runs the real release binary for about a minute and shows the draggable overlay on the
 //! desktop, so it is ignored by default:
 //!
 //! ```text

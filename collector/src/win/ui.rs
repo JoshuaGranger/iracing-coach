@@ -1,5 +1,5 @@
 //! The overlay window, the tray icon and menu, the global hotkey and the server-address prompt,
-//! all on the main thread's message loop. The overlay is a layered, topmost, click-through,
+//! all on the main thread's message loop. The overlay is a layered, topmost, draggable,
 //! no-activate tool window (proved in P3). It checks for new figures 10 times a second and redraws
 //! only the tiles whose text, accent or bar position changed, into a back buffer it keeps, then
 //! copies just the changed area to the window (a moving car therefore costs a few small redraws
@@ -25,21 +25,20 @@ use windows::Win32::UI::Shell::{
     Shell_NotifyIconW, ShellExecuteW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CallNextHookEx, CreateIconIndirect, CreatePopupMenu, CreateWindowExW,
-    DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA,
-    GetCursorPos, GetMessageW, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, HICON, HMENU,
-    HOOKPROC, HTCAPTION, HWND_TOPMOST, ICONINFO, IDC_ARROW, IsDialogMessageW, KillTimer, LWA_ALPHA,
-    LoadCursorW, MENU_ITEM_FLAGS, MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR,
-    MF_STRING, MSG, MSLLHOOKSTRUCT, PostMessageW, PostQuitMessage, RegisterClassExW, SM_CXSCREEN,
-    SPI_GETWORKAREA, SW_HIDE, SW_SHOWNOACTIVATE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SetForegroundWindow, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TPM_BOTTOMALIGN,
-    TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, UnhookWindowsHookEx,
-    WH_MOUSE_LL, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND,
-    WM_EXITSIZEMOVE, WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_NCHITTEST,
-    WM_NULL, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CAPTION,
-    WS_CHILD, WS_EX_DLGMODALFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
+    DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetCursorPos, GetMessageW,
+    GetWindowLongPtrW, GetWindowRect, GetWindowTextW, HICON, HMENU, HTCAPTION, HWND_TOPMOST,
+    ICONINFO, IDC_ARROW, IsDialogMessageW, KillTimer, LWA_ALPHA, LoadCursorW, MENU_ITEM_FLAGS,
+    MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, PostMessageW,
+    PostQuitMessage, RegisterClassExW, SM_CXSCREEN, SPI_GETWORKAREA, SW_HIDE, SW_SHOWNOACTIVATE,
+    SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+    SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    SystemParametersInfoW, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND,
+    WM_EXITSIZEMOVE, WM_HOTKEY, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NULL, WM_PAINT,
+    WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_DLGMODALFRAME,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_SYSMENU,
+    WS_TABSTOP, WS_VISIBLE,
 };
 use windows::core::PCWSTR;
 
@@ -53,7 +52,6 @@ use crate::layout::Layout;
 use crate::wheel::{WheelCommand, WheelHandle};
 
 const TRAY_MSG: u32 = WM_APP + 1;
-const MOVE_ENDED_MSG: u32 = WM_APP + 2;
 const TIMER_ID: usize = 1;
 /// The controller's timer: the overlay checks the live state this often, so it repaints at most
 /// 10 times a second.
@@ -67,7 +65,6 @@ const HOTKEY_ID: i32 = 0x4937;
 const ID_STATUS: usize = 100;
 const ID_SERVER_STATUS: usize = 101;
 const ID_SHOW: usize = 110;
-const ID_MOVE: usize = 111;
 const ID_SCALE_BASE: usize = 120;
 const ID_PAUSE: usize = 130;
 const ID_OPEN: usize = 140;
@@ -114,8 +111,6 @@ struct App {
     /// The surface the tiles are drawn on between paints.
     back: Option<BackBuffer>,
     visible: bool,
-    move_mode: bool,
-    hook: Option<windows::Win32::UI::WindowsAndMessaging::HHOOK>,
     icon_live: HICON,
     icon_idle: HICON,
     tray_live: Option<bool>,
@@ -171,10 +166,6 @@ impl BackBuffer {
     }
 }
 
-/// Window handles the low-level mouse hook needs (it has no user data).
-static HOOK_OVERLAY: AtomicIsize = AtomicIsize::new(0);
-static HOOK_CONTROLLER: AtomicIsize = AtomicIsize::new(0);
-
 pub fn run(params: UiParams) -> UiExit {
     // SAFETY: standard window class registration and message loop on the calling thread; the
     // `App` box is owned by this function and freed after the loop ends.
@@ -195,7 +186,7 @@ pub fn run(params: UiParams) -> UiExit {
         let (w, h) = window_size(scale);
         let (x, y) = initial_position(&params.config, w, h);
         let overlay = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             PCWSTR(wide("CoachOverlayWindow").as_ptr()),
             PCWSTR(wide("iRacing Coach monitor").as_ptr()),
             WS_POPUP,
@@ -245,8 +236,6 @@ pub fn run(params: UiParams) -> UiExit {
             repaint: Repaint::All,
             back: None,
             visible: false,
-            move_mode: false,
-            hook: None,
             icon_live: make_icon(0x57EEA0),
             icon_idle: make_icon(0x8E98A5),
             tray_live: None,
@@ -256,8 +245,6 @@ pub fn run(params: UiParams) -> UiExit {
         let app_ptr = Box::into_raw(app);
         SetWindowLongPtrW(overlay, GWLP_USERDATA, app_ptr as isize);
         SetWindowLongPtrW(controller, GWLP_USERDATA, app_ptr as isize);
-        HOOK_OVERLAY.store(overlay.0 as isize, Ordering::SeqCst);
-        HOOK_CONTROLLER.store(controller.0 as isize, Ordering::SeqCst);
 
         {
             let app = &mut *app_ptr;
@@ -438,7 +425,6 @@ impl App {
     fn shutdown(&mut self) {
         // SAFETY: tears down what `run` created.
         unsafe {
-            self.end_move_mode();
             let _ = UnregisterHotKey(Some(self.controller), HOTKEY_ID);
             self.tray(NIM_DELETE, false, "");
             let _ = KillTimer(Some(self.controller), TIMER_ID);
@@ -555,12 +541,6 @@ impl App {
                 ID_SHOW,
                 PCWSTR(wide("Show monitor").as_ptr()),
             );
-            let _ = AppendMenuW(
-                menu,
-                MF_STRING | check(self.move_mode),
-                ID_MOVE,
-                PCWSTR(wide("Move monitor").as_ptr()),
-            );
             let sizes = CreatePopupMenu().expect("size menu");
             for (i, (name, scale)) in SCALES.iter().enumerate() {
                 let on = (self.config.placement.scale - scale).abs() < 0.01;
@@ -652,15 +632,6 @@ impl App {
                 self.save_config();
                 let connected = self.hub.live().is_some_and(|s| s.connected);
                 self.apply_visibility(connected);
-            }
-            ID_MOVE => {
-                if self.move_mode {
-                    // SAFETY: unhooks and restores the click-through style.
-                    unsafe { self.end_move_mode() };
-                } else {
-                    // SAFETY: lifts click-through and installs the temporary mouse hook.
-                    unsafe { self.begin_move_mode() };
-                }
             }
             i if (ID_SCALE_BASE..ID_SCALE_BASE + SCALES.len()).contains(&i) => {
                 self.config.placement.scale = SCALES[i - ID_SCALE_BASE].1;
@@ -813,63 +784,6 @@ impl App {
         }
     }
 
-    /// # Safety
-    /// Must run on the UI thread.
-    unsafe fn begin_move_mode(&mut self) {
-        self.move_mode = true;
-        // SAFETY: style change on our own window; the hook procedure is a plain function.
-        unsafe {
-            let ex = GetWindowLongPtrW(
-                self.overlay,
-                windows::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE,
-            );
-            SetWindowLongPtrW(
-                self.overlay,
-                windows::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE,
-                ex & !(WS_EX_TRANSPARENT.0 as isize),
-            );
-            let proc: HOOKPROC = Some(mouse_hook);
-            self.hook = SetWindowsHookExW(WH_MOUSE_LL, proc, None, 0).ok();
-        }
-        if !self.visible {
-            // Moving needs something to grab even before iRacing runs.
-            self.visible = true;
-            // SAFETY: shows our own window.
-            unsafe {
-                let _ = ShowWindow(self.overlay, SW_SHOWNOACTIVATE);
-            }
-        }
-        self.invalidate();
-    }
-
-    /// # Safety
-    /// Must run on the UI thread.
-    unsafe fn end_move_mode(&mut self) {
-        if !self.move_mode {
-            return;
-        }
-        self.move_mode = false;
-        // SAFETY: undoes `begin_move_mode`.
-        unsafe {
-            if let Some(hook) = self.hook.take() {
-                let _ = UnhookWindowsHookEx(hook);
-            }
-            let ex = GetWindowLongPtrW(
-                self.overlay,
-                windows::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE,
-            );
-            SetWindowLongPtrW(
-                self.overlay,
-                windows::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE,
-                ex | WS_EX_TRANSPARENT.0 as isize,
-            );
-        }
-        self.save_placement();
-        self.visible = false;
-        let connected = self.hub.live().is_some_and(|s| s.connected);
-        self.apply_visibility(connected);
-    }
-
     fn save_placement(&mut self) {
         // SAFETY: reads our own window rectangle.
         let rect = unsafe {
@@ -907,9 +821,7 @@ impl App {
             self.invalidate();
         }
         let live = self.hub.live();
-        if !self.move_mode {
-            self.apply_visibility(live.is_some_and(|s| s.connected));
-        }
+        self.apply_visibility(live.is_some_and(|s| s.connected));
         if self.last_tray.elapsed().as_millis() >= TRAY_REFRESH_MS {
             self.last_tray = Instant::now();
             self.update_tray(false);
@@ -1011,31 +923,6 @@ impl App {
     }
 }
 
-/// Low-level mouse hook active only in move mode: a click outside the overlay ends it.
-unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code >= 0 && (wparam.0 as u32 == WM_LBUTTONDOWN || wparam.0 as u32 == WM_RBUTTONDOWN) {
-        // SAFETY: for WH_MOUSE_LL, lparam points to an MSLLHOOKSTRUCT.
-        let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
-        let overlay = HWND(HOOK_OVERLAY.load(Ordering::SeqCst) as *mut _);
-        let mut rect = RECT::default();
-        // SAFETY: queries the overlay window rectangle.
-        let inside = unsafe { GetWindowRect(overlay, &mut rect).is_ok() }
-            && info.pt.x >= rect.left
-            && info.pt.x < rect.right
-            && info.pt.y >= rect.top
-            && info.pt.y < rect.bottom;
-        if !inside {
-            let controller = HWND(HOOK_CONTROLLER.load(Ordering::SeqCst) as *mut _);
-            // SAFETY: posts to our own window.
-            unsafe {
-                let _ = PostMessageW(Some(controller), MOVE_ENDED_MSG, WPARAM(0), LPARAM(0));
-            }
-        }
-    }
-    // SAFETY: pass the event on.
-    unsafe { CallNextHookEx(None, code, wparam, lparam) }
-}
-
 unsafe fn app_of(hwnd: HWND) -> Option<&'static mut App> {
     // SAFETY: the pointer is set once by `run` and valid until the loop ends.
     unsafe {
@@ -1062,9 +949,7 @@ unsafe extern "system" fn overlay_proc(
             WM_ERASEBKGND => return LRESULT(1),
             WM_MOUSEACTIVATE => return LRESULT(3), // MA_NOACTIVATE
             WM_NCHITTEST => {
-                if app_of(hwnd).is_some_and(|a| a.move_mode) {
-                    return LRESULT(HTCAPTION as isize);
-                }
+                return LRESULT(HTCAPTION as isize);
             }
             WM_EXITSIZEMOVE => {
                 if let Some(app) = app_of(hwnd) {
@@ -1110,12 +995,6 @@ unsafe extern "system" fn controller_proc(
             WM_HOTKEY => {
                 if let Some(app) = app_of(hwnd) {
                     app.on_command(ID_SHOW);
-                }
-                return LRESULT(0);
-            }
-            MOVE_ENDED_MSG => {
-                if let Some(app) = app_of(hwnd) {
-                    app.end_move_mode();
                 }
                 return LRESULT(0);
             }

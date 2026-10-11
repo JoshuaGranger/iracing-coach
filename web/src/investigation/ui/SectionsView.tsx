@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useElementSize } from "../../core/element-size";
 import { theme } from "../../gen/theme";
 import type { TelemetryCursor } from "../cursor/telemetry-cursor";
+import { createTrackMap, type TrackMapController } from "../cursor/track-map";
 import { n, percentText, seconds, signedText } from "../format";
 import { mapPointAt, type MapGeometry, type MapPoint } from "../geometry/map-model";
 import type { TraceData } from "../geometry/trace-model";
@@ -22,7 +23,7 @@ import "./sections.css";
  * laps on the tires and the lap's traffic beside the time, select the laps the telemetry draws and `Open in Traces` opens with the
  * cursor at the section start. The right panel draws those laps' speed, throttle, brake and steering over the section with the
  * median lap in grey, cursor-synced with a marker on the section segment. Every figure is the projector's (`section_laps`, the CCOL
- * traces, the race and runs views). Section tabs follow the producer's recoverable time, greatest first.
+ * traces, the race and runs views). Section tabs follow the track from start/finish.
  */
 
 /** The median lap's line: the chart reference grey. */
@@ -136,8 +137,7 @@ export function sectionPriorities(inv: Investigation): Map<string, PacePriority>
 }
 
 export function orderedSections(inv: Investigation): Section[] {
-  const priorities = sectionPriorities(inv);
-  return [...inv.sections.sections].sort((a, b) => (priorities.get(b.id)?.recoverableS ?? -1) - (priorities.get(a.id)?.recoverableS ?? -1));
+  return [...inv.sections.sections].sort((a, b) => a.startPct - b.startPct || a.endPct - b.endPct);
 }
 
 export function paceFigures(p: PacePriority): { time: string; energy: string | null; energyEvidence: "derived" | "proxy" } {
@@ -169,8 +169,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   const hotLap = listed.find((lap) => lap.lap === hot) ?? null;
   const opens = lapsToOpen(listed.map((lap) => lap.lap), selected);
   const contexts = useMemo(() => lapContexts(race, runs), [race, runs]);
-  // The approach is bounded by the previous section's start on the lap (race_inspection.approach_start); `sections` is in priority order, so
-  // the previous one is the nearest earlier start, not the previous tab.
+  // The approach is bounded by the nearest earlier section start on the lap (race_inspection.approach_start).
   const previousStartPct = useMemo(() => {
     if (!section) return null;
     const earlier = inv.sections.sections.map((s) => s.startPct).filter((start) => start < section.startPct);
@@ -179,12 +178,15 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
 
   const svgRef = useRef<SVGSVGElement>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
+  const mapController = useRef<TrackMapController | null>(null);
+  const boxRef = useRef<[number, number, number, number]>(map ? viewBoxOf(map) : [0, 0, 1, 1]);
+  const [zoom, setZoom] = useState(1);
   const markerRef = useRef<HTMLDivElement>(null);
   const mapSize = useElementSize(svgRef);
   const k = scaleFor(useRemPx());
   const placed = useMemo(() => sectionMapPoints(map), [map]);
   const span = map ? Math.max(map.bounds[2], map.bounds[3]) : 1;
-  const pxPerUnit = map && mapSize.width > 0 && mapSize.height > 0 ? Math.min(mapSize.width / map.bounds[2], mapSize.height / map.bounds[3]) : 0;
+  const pxPerUnit = map && mapSize.width > 0 && mapSize.height > 0 ? Math.min(mapSize.width / map.bounds[2], mapSize.height / map.bounds[3]) * zoom : 0;
   const unitsPerPx = pxPerUnit > 0 ? 1 / pxPerUnit : span / 400;
   // Section labels keep one size on screen (1.25x the data size) whatever the map's scale.
   const labelFont = pxPerUnit > 0 ? theme.typography.dataPx * 1.25 * k * unitsPerPx : span * 0.04;
@@ -283,11 +285,24 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
       marker.style.visibility = "hidden";
       return;
     }
-    const { px, py } = mapPixel(viewBoxOf(current), sizeRef.current.width, sizeRef.current.height, point.x, point.y);
+    const { px, py } = mapPixel(boxRef.current, sizeRef.current.width, sizeRef.current.height, point.x, point.y);
     marker.style.transform = `translate3d(${px.toFixed(1)}px,${py.toFixed(1)}px,0)`;
     marker.style.visibility = "";
   };
   useEffect(() => { placeMarker(fractionRef.current, lapPctRef.current ?? undefined); }, [sectionPoints, mapSize.width, mapSize.height]);
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const base = svgRef.current;
+    if (!overlay || !base || !map) return undefined;
+    const controller = createTrackMap(overlay, map.viewBox, analysisKey, (view) => {
+      boxRef.current = [view.x, view.y, view.width, view.height];
+      base.setAttribute("viewBox", boxRef.current.join(" "));
+      setZoom(viewBoxOf(map)[2] / view.width);
+      placeMarker(fractionRef.current, lapPctRef.current ?? undefined);
+    });
+    mapController.current = controller;
+    return () => { controller.dispose(); mapController.current = null; };
+  }, [map, analysisKey, sections.length === 0]);
   const zoneRect = useRef<DOMRect | null>(null);
   useEffect(() => {
     const drop = (): void => { zoneRect.current = null; };
@@ -304,7 +319,8 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     if (!overlay || !current || pointsRef.current.length < 2) return;
     zoneRect.current ??= overlay.getBoundingClientRect();
     const rect = zoneRect.current;
-    const { x, y } = mapUnits(viewBoxOf(current), rect.width, rect.height, event.clientX - rect.left, event.clientY - rect.top);
+    if (overlay.classList.contains("map-panning")) return;
+    const { x, y } = mapUnits(boxRef.current, rect.width, rect.height, event.clientX - rect.left, event.clientY - rect.top);
     const local = projectOnSection(pointsRef.current, x, y);
     fractionRef.current = local;
     if (cursorRef.current) cursorRef.current.setFraction(local);
@@ -359,6 +375,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
             <span class="ri-sl-key"><span><i class="g" />Fastest {fastest.length}</span><span><i class="r" />Slowest {slowest.length}</span><span>clean laps · section {section?.label}</span></span>
           )}
           {!map && <span>not recorded</span>}
+          {map && <button type="button" class="ri-pill-button small" aria-label="Fit track" title="Scroll to zoom · drag to pan" onClick={() => mapController.current?.fit()}>Fit</button>}
         </div>
         {map && map.points.length > 2 ? (
           <div class="ri-sl-stage" data-sl-map>

@@ -11,6 +11,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "analyze-iracing-race
 sys.path.insert(0, str(SCRIPTS))
 
 from analysis_engine import TelemetryTable, _track_usage_context, investigation_lap_exclusions  # noqa: E402
+from iracing_sectors import iracing_sectors
 from race_investigation import TEST_DAY_RUN_LAPS, build_race_investigation, trial_reachability  # noqa: E402
 
 
@@ -40,6 +41,7 @@ def investigation_fixture() -> dict:
         ]})
     return {
         "laps": laps, "lap_traces": {"traces": traces},
+        "iracing_sectors": iracing_sectors({"SplitTimeInfo": {"Sectors": [{"SectorStartPct": 0.0}, {"SectorStartPct": 0.5}]}}),
         "runs": [
             {"run_number": 1, "start_lap": 1, "end_lap": 10,
              "pit_service": {"tires_changed_observed": ["LF", "RF", "LR", "RR"]},
@@ -83,7 +85,7 @@ class RaceInvestigationTests(unittest.TestCase):
         action = comparison["actions"][0]
         self.assertEqual(action["title"], "Test a smoother brake release")
         self.assertEqual(action["lap_numbers"], [11, 12, 13, 18, 19, 20])
-        self.assertIn(action["start_pct"], (0.1, 0.6))
+        self.assertIn(action["start_pct"], (0.0, 0.5))
         self.assertIn("brake", action["signal_keys"])
         self.assertIn("excluded laps", action["limitation"])
         self.assertIn("minimum speed", action["instruction"])
@@ -186,6 +188,7 @@ class RaceInvestigationTests(unittest.TestCase):
                     trace["points"] = None
             else:
                 analysis["track_profile"]["detected_corner_segments"] = None
+                del analysis["iracing_sectors"]
             result = self.build(analysis)
             self.assertTrue(result["comparisons"])
             self.assertTrue(all(not item["corners"] for item in result["comparisons"]))
@@ -572,6 +575,7 @@ def long_run_fixture(extra_a: Callable[[int], float] = lambda age: 0.0,
         ]})
     return {
         "laps": laps, "lap_traces": {"traces": traces},
+        "iracing_sectors": iracing_sectors({"SplitTimeInfo": {"Sectors": [{"SectorStartPct": 0.0}, {"SectorStartPct": 0.5}]}}),
         "runs": [{"run_number": 1, "start_lap": 1, "end_lap": lap_count}],
         "track_profile": {"detected_corner_segments": [{"start_pct": 0.1, "end_pct": 0.4}, {"start_pct": 0.6, "end_pct": 0.9}]},
         "damage_repair": {"status": "available", "summary": {"recorded_repair_episodes": 0}, "incident_points": {"events": []}},
@@ -619,14 +623,14 @@ class TestDayReachabilityTests(unittest.TestCase):
         self.assertEqual(early["compared"]["lap_numbers"], [16, 17, 18, 19, 20])
         self.assertEqual(early["eligibility"], "eligible")
         self.assertTrue(early["pace_comparable"])
-        early_action = next(item for item in early["actions"] if item["section_id"] == "B")
+        early_action = next(item for item in early["actions"] if item["section_id"] == "S2")
         self.assertEqual(early_action["trial"]["exposure_window"], [16.0, 20.0])
         self.assertTrue(early_action["trial"]["reachability"]["test_day_reachable"])
         # The early test carries its own loss and threshold, not the late window's.
         self.assertAlmostEqual(early_action["trial"]["baseline"]["median_s"] - early_action["trial"]["reference"]["median_s"], 0.3, places=3)
         self.assertIsNone(early_action["early_run_version"])
         late = self.comparison(result, "run-1-clean")
-        self.assertEqual(late["actions"][0]["section_id"], "B")
+        self.assertEqual(late["actions"][0]["section_id"], "S2")
         self.assertEqual(late["actions"][0]["early_run_version"], {"comparison_id": "run-1-early", "action_priority": early_action["priority"]})
         # The late window stays the investigation's lead finding.
         self.assertEqual(result["default_comparison_id"], "run-1-clean")
@@ -645,9 +649,9 @@ class TestDayReachabilityTests(unittest.TestCase):
         result = self.build(long_run_fixture(extra_a=lambda age: 0.01 * min(age, 20),
                                              extra_b=lambda age: 0.03 * max(0, age - 30)))
         early = self.comparison(result, "run-1-early")
-        self.assertEqual([action["section_id"] for action in early["actions"] if action["trial"]], ["A"])
+        self.assertEqual([action["section_id"] for action in early["actions"] if action["trial"]], ["S1"])
         late = self.comparison(result, "run-1-clean")
-        self.assertEqual(late["actions"][0]["section_id"], "B")
+        self.assertEqual(late["actions"][0]["section_id"], "S2")
         self.assertIsNone(late["actions"][0]["early_run_version"])
 
     def test_early_runs_change_nothing_when_the_late_window_is_already_reachable(self) -> None:
@@ -677,6 +681,7 @@ class TestDayReachabilityTests(unittest.TestCase):
         analysis["runs"].append({"run_number": 16, "start_lap": offset + 1, "end_lap": offset + 90})
         analysis["lap_traces"] = long["lap_traces"]
         analysis["track_profile"] = long["track_profile"]
+        analysis["iracing_sectors"] = long["iracing_sectors"]
         result = self.build(analysis)
         self.assertGreater(result["comparison_coverage"]["candidate_count"], 24)
         ids = {item["id"] for item in result["comparisons"]}

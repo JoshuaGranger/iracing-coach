@@ -27,8 +27,9 @@
 .ri-sl-key i.r { background: linear-gradient(90deg, var(--sl-r3), var(--sl-r2), var(--sl-r1)); }
 /* The map and, over it with the same box, the racing lines, the scrub band along the section and the cursor marker. */
 .ri-sl-stage { position: relative; flex: 1; min-height: 8rem; }
-.ri-sl-svg, .ri-sl-over { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: pan-y; }
-.ri-sl-over { pointer-events: none; }
+.ri-sl-svg, .ri-sl-over { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.ri-sl-over { pointer-events: auto; }
+.ri-sl-over.map-panning, .ri-sl-over.map-panning .ri-sl-zone { cursor: grabbing; }
 .ri-sl-zone { pointer-events: auto; cursor: crosshair; }
 .ri-sl-over .ri-sl-label { pointer-events: auto; }
 .ri-sl-scrub { fill: none; stroke: transparent; stroke-width: 1.75rem; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; }.ri-sl-track { fill: none; stroke: var(--color-border-strong); stroke-width: 4px; stroke-linejoin: round; vector-effect: non-scaling-stroke; }

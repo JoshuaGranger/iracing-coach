@@ -80,12 +80,51 @@ fn covered(points: &[Point], start: f64, end: f64) -> bool {
 /// `time` holds NaN where a sample has no session time.
 pub(crate) fn section_elapsed(pct: &[f64], time: &[f64], start: f64, end: f64) -> Option<f64> {
     let points = ordered(pct, time);
-    if !covered(&points, start, end) {
+    elapsed_points(&points, start, end)
+}
+
+fn elapsed_points(points: &[Point], start: f64, end: f64) -> Option<f64> {
+    if !covered(points, start, end) {
         return None;
     }
-    let entered = crossing(&points, start)?;
-    let exited = crossing(&points, end)?;
+    let entered = crossing(points, start)?;
+    let exited = crossing(points, end)?;
     (exited > entered).then_some(exited - entered)
+}
+
+/// Recorded raw start/finish crossings supplement bin centres only for section timing.
+fn trace_elapsed(trace: &RawTrace, start: f64, end: f64) -> Option<f64> {
+    if !trace.meta.contains_key("sector_boundaries") {
+        return section_elapsed(&trace.lap_pct, &trace.core[SESSION_TIME], start, end);
+    }
+    let mut points = ordered(&trace.lap_pct, &trace.core[SESSION_TIME]);
+    if points.is_empty() {
+        return None;
+    }
+    if let Some(boundaries) = trace
+        .meta
+        .get("sector_boundaries")
+        .and_then(Value::as_array)
+    {
+        for boundary in boundaries.iter().filter_map(Value::as_object) {
+            let (Some(x), Some(t)) = (num(boundary, "lap_pct"), num(boundary, "session_time_s"))
+            else {
+                continue;
+            };
+            if x == 0.0 && points[0].0 > 0.0 {
+                if points[0].1 == Some(t) {
+                    points.remove(0);
+                }
+                points.insert(0, (x, Some(t)));
+            } else if x == 1.0 && points.last()?.0 < 1.0 {
+                if points.last()?.1 == Some(t) {
+                    points.pop();
+                }
+                points.push((x, Some(t)));
+            }
+        }
+    }
+    elapsed_points(&points, start, end)
 }
 
 /// Python's `round(x, 3)`: the exact binary value rounded to 3 decimals, ties to even (Rust's
@@ -141,10 +180,7 @@ pub(crate) fn build(investigation: &Obj, traces: &[RawTrace]) -> Value {
         }
         let mut timed: Vec<(f64, i64)> = laps
             .iter()
-            .filter_map(|(lap, trace)| {
-                section_elapsed(&trace.lap_pct, &trace.core[SESSION_TIME], start, end)
-                    .map(|s| (round3(s), *lap))
-            })
+            .filter_map(|(lap, trace)| trace_elapsed(trace, start, end).map(|s| (round3(s), *lap)))
             .collect();
         timed.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         let times: Vec<f64> = timed.iter().map(|(s, _)| *s).collect();
@@ -225,5 +261,34 @@ mod tests {
         assert_eq!(median(&[1.0]), 1.0);
         assert_eq!(median(&[1.0, 2.0]), 1.5);
         assert_eq!(median(&[1.0, 2.0, 9.0]), 2.0);
+    }
+
+    #[test]
+    fn official_sectors_use_recorded_boundaries_and_keep_missing_coverage_unknown() {
+        let mut trace = RawTrace {
+            meta: serde_json::Map::new(),
+            lap_pct: (0..100).map(|i| (f64::from(i) + 0.5) / 100.0).collect(),
+            core: vec![
+                Vec::new(),
+                (0..100)
+                    .map(|i| (f64::from(i) + 0.5) / 100.0 * 30.0)
+                    .collect(),
+            ],
+            extras: Vec::new(),
+            points: 100,
+        };
+        assert_eq!(trace_elapsed(&trace, 0.0, 0.5), None);
+        trace.meta.insert(
+            "sector_boundaries".into(),
+            json!([
+                {"lap_pct": 0.0, "session_time_s": 0.0},
+                {"lap_pct": 1.0, "session_time_s": 30.0},
+            ]),
+        );
+        assert_eq!(trace_elapsed(&trace, 0.0, 0.5), Some(15.0));
+        assert_eq!(trace_elapsed(&trace, 0.5, 1.0), Some(15.0));
+        trace.core[SESSION_TIME][20] = f64::NAN;
+        assert_eq!(trace_elapsed(&trace, 0.0, 0.5), None);
+        assert_eq!(trace_elapsed(&trace, 0.5, 1.0), Some(15.0));
     }
 }

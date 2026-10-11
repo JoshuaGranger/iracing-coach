@@ -66,7 +66,7 @@ function svgPoint(element: SVGSVGElement, clientX: number, clientY: number): { x
   return { x: box.x + ((clientX - rect.left) / rect.width) * box.width, y: box.y + ((clientY - rect.top) / rect.height) * box.height };
 }
 
-export function createTrackMap(element: SVGSVGElement, viewBox: string, key: string): TrackMapController {
+export function createTrackMap(element: SVGSVGElement, viewBox: string, key: string, onViewChange?: (view: ViewBox) => void): TrackMapController {
   let base = parseViewBox(viewBox) ?? { x: 0, y: 0, width: 420, height: 280 };
   let raceKey = key;
   let view: ViewBox = { ...base };
@@ -83,6 +83,7 @@ export function createTrackMap(element: SVGSVGElement, viewBox: string, key: str
       const baseRadius = Number(cursor.dataset.mapCursorRadius);
       if (Number.isFinite(baseRadius) && baseRadius > 0) cursor.setAttribute("r", (baseRadius / zoom).toFixed(4));
     }
+    onViewChange?.({ ...view });
   }
 
   const onWheel = (event: WheelEvent): void => {
@@ -95,6 +96,8 @@ export function createTrackMap(element: SVGSVGElement, viewBox: string, key: str
   };
   const onDown = (event: PointerEvent): void => {
     if (event.button !== 0 || !event.isPrimary) return;
+    // Sector markers keep their click target rather than capturing it to the map.
+    if ((event.target as Element | null)?.closest?.("[role=button], button")) return;
     dragging = true;
     pointerId = event.pointerId;
     lastX = event.clientX;
