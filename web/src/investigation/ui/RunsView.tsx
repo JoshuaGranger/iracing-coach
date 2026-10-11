@@ -188,7 +188,6 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
                   {stop.durationS !== null && <span class="ri-pit-duration">{durationText(stop)}<small>s</small></span>}
                   <span class="ri-pit-tires">{stop.tires === null ? "Tires unknown" : tiresText(stop)}</span>
                   <span class="ri-pit-gal">{stop.fuelAddedGal === null ? "Fuel unknown" : `+${stop.fuelAddedGal.toFixed(1)} gal`}</span>
-                  <small>Observed service · green tires changed</small>
                 </div></div>
               </div>),
             ];
