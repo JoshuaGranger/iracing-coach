@@ -209,6 +209,7 @@ pub const RACE_DATA_QUALITY: &[&str] = &["confidence"];
 pub const INVESTIGATION: &[&str] = &[
     "schema_version",
     "projection_version",
+    "section_laps",
     "status",
     "summary",
     "default_comparison_id",
