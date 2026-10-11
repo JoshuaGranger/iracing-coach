@@ -1045,7 +1045,19 @@
               ],
               "additionalProperties": true,
               "x-source": "analysis_view.field_pace",
-              "x-consumed-fields": []
+              "x-consumed-fields": [
+                "results"
+              ],
+              "properties": {
+                "results": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": true,
+                  "description": "Optional Python field_results schema 1. cars are ordered by recorded overall position (unknown last).\nEach car carries car_index, driver_name, car_number, is_player, position, position_source,\nlaps_completed, fastest_lap_s, fastest_source, pace_median_s, pace_lap_count, pit_visits,\ntires_taken, fuel_used_l, laps and pit_events. Unknown quantities are null, never inferred zero.\nOrder is a recorded snapshot, not confirmed final classification. Competitor timing measures\nintervals between consecutive completed-lap counter transitions within the selected session,\nwithout sample gaps over 2 seconds or intervening unscoped samples. Distance wraps are linearly\ninterpolated when both adjacent samples cover start/finish; otherwise transition timestamps\nproduce approximate sampled intervals. Delayed CarIdxLastLapTime values are not assigned to laps.\nPace is the median of at least three whole recorded green laps with known pit-road state and no\npit samples, traffic included. Pit visits count observed off-to-on pit-road transitions during\nracing; drive-throughs count and pre-recording entries do not. Competitor tires and fuel are null.\nPlayer lap timing prefers backend lap summaries when their sample span belongs to this phase.\nPlayer tires use positive tires_changed_observed, excluding post-run or unscoped service;\nan empty observed list does not prove zero tires. Fuel sums known complete phase-scoped laps.\nlaps contain lap, lap_time_s, lap_time_source, position, flag_state, on_pit_road, pace_eligible.\nlap_time_source/fastest_source distinguish backend player timing, recorded_interpolated_distance_crossings,\nrecorded_lap_counter_intervals and session_results_snapshot. pit_events contain\nlap, session_time_s, evidence_class. Quantities pass through unchanged. To fit the 2 MiB race\nbudget, per-car laps may be omitted with progression_unavailable_reason=payload_budget;\nparticipant summaries and pit events remain. Old analyses may omit results entirely.\n"
+                }
+              }
             },
             "conditions": {
               "type": [
@@ -1295,7 +1307,7 @@
             "race_investigation": {
               "type": "object",
               "additionalProperties": true,
-              "x-source": "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v7; test-data/race-investigation.json)",
+              "x-source": "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v8; test-data/race-investigation.json)",
               "x-consumed-fields": [
                 "schema_version",
                 "projection_version",
@@ -3940,7 +3952,8 @@
             "race",
             "runs",
             "sections",
-            "traces"
+            "traces",
+            "results"
           ]
         },
         "comparison_id": {

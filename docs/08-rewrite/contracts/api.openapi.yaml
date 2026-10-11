@@ -249,7 +249,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/AnalysisId" }]
     get:
       tags: [views]
-      summary: Sections and comparisons (race_investigation, schema 2, projection sections-trials-v7).
+      summary: Sections and comparisons (race_investigation, schema 2, projection sections-trials-v8).
       responses:
         "200":
           description: Investigation view
@@ -1503,7 +1503,37 @@ components:
                 - incident_points.events[].slip_angle_deg
                 - episodes[].run_context.overlapping_run_numbers
                 - episodes[].timing.repair_work_completed_s
-            field_pace: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.field_pace", x-consumed-fields: [] }
+            field_pace:
+              type: [object, "null"]
+              additionalProperties: true
+              x-source: "analysis_view.field_pace"
+              x-consumed-fields: [results]
+              properties:
+                results:
+                  type: [object, "null"]
+                  additionalProperties: true
+                  description: |
+                    Optional Python field_results schema 1. cars are ordered by recorded overall position (unknown last).
+                    Each car carries car_index, driver_name, car_number, is_player, position, position_source,
+                    laps_completed, fastest_lap_s, fastest_source, pace_median_s, pace_lap_count, pit_visits,
+                    tires_taken, fuel_used_l, laps and pit_events. Unknown quantities are null, never inferred zero.
+                    Order is a recorded snapshot, not confirmed final classification. Competitor timing measures
+                    intervals between consecutive completed-lap counter transitions within the selected session,
+                    without sample gaps over 2 seconds or intervening unscoped samples. Distance wraps are linearly
+                    interpolated when both adjacent samples cover start/finish; otherwise transition timestamps
+                    produce approximate sampled intervals. Delayed CarIdxLastLapTime values are not assigned to laps.
+                    Pace is the median of at least three whole recorded green laps with known pit-road state and no
+                    pit samples, traffic included. Pit visits count observed off-to-on pit-road transitions during
+                    racing; drive-throughs count and pre-recording entries do not. Competitor tires and fuel are null.
+                    Player lap timing prefers backend lap summaries when their sample span belongs to this phase.
+                    Player tires use positive tires_changed_observed, excluding post-run or unscoped service;
+                    an empty observed list does not prove zero tires. Fuel sums known complete phase-scoped laps.
+                    laps contain lap, lap_time_s, lap_time_source, position, flag_state, on_pit_road, pace_eligible.
+                    lap_time_source/fastest_source distinguish backend player timing, recorded_interpolated_distance_crossings,
+                    recorded_lap_counter_intervals and session_results_snapshot. pit_events contain
+                    lap, session_time_s, evidence_class. Quantities pass through unchanged. To fit the 2 MiB race
+                    budget, per-car laps may be omitted with progression_unavailable_reason=payload_budget;
+                    participant summaries and pit events remain. Old analyses may omit results entirely.
             conditions: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.conditions", x-consumed-fields: [] }
             data_quality: { type: [object, "null"], additionalProperties: true, x-source: "analysis_view.data_quality", x-consumed-fields: [confidence] }
 
@@ -1617,7 +1647,7 @@ components:
             race_investigation:
               type: object
               additionalProperties: true
-              x-source: "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v7; test-data/race-investigation.json)"
+              x-source: "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v8; test-data/race-investigation.json)"
               x-consumed-fields:
                 # RaceInvestigationMapper.cs; trial fields (actions[].trial, actions[].early_run_version) are parked (D8)
                 - schema_version
@@ -2619,7 +2649,7 @@ components:
       properties:
         session_id: { type: integer }
         analysis_id: { type: string }
-        view: { type: string, enum: [race, runs, sections, traces] }
+        view: { type: string, enum: [race, runs, sections, traces, results] }
         comparison_id: { type: [string, "null"] }
         section_id: { type: [string, "null"] }
 

@@ -33,6 +33,16 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 ## Change log
 
+### 2026-10-10, recorded iRacing sectors and field comparison
+
+Owner request: Sections must use iRacing sectors in track order in P/Q/R; Race needs a car selector and Results Summary after Traces.
+
+- Python profile v27, investigation `sections-trials-v8`: `iracing_sectors` carries the recorded `SplitTimeInfo.Sectors` partition. Active review sections use it exclusively; absent/invalid definitions yield an explicit unavailable reason. Detected corners stay separate from official sector labels. Optional `lap_traces.traces[].sector_boundaries` carries raw interpolated start/finish crossing timestamps; binned native trace output is unchanged. The section timing projection consumes these endpoints under the same coverage checks.
+- `RaceView.field_pace.results`: additive optional Python schema 1 participant summaries, recorded lap progression and pit-road entries. Competitor timing uses consecutive observed counter transitions, interpolating start/finish distance wraps when available; sampled timing is approximate and delayed last-lap scoreboard values are never assigned to the wrong lap. Player summaries and service are scoped to this phase; an empty observed tire-change list does not establish zero tires. Recorded order is not a final-classification claim. Fuel and observed tire changes exist only for the player; private competitor service is unavailable. No UI telemetry math. The race view retains summaries under its 2 MiB budget; lap progression can be omitted with an explicit budget reason.
+- `LastInvestigation.view` adds `results`. Generated wire outputs regenerated. Projection version 6 becomes 7 so old projections are refreshed. Existing analyses require reanalysis for the new backend sector/field evidence.
+- Racing decisions: locate loss in the same sector across sessions; compare observed race pace and pit visits against competitors; inspect a competitor's recorded progression. Later recordings can check whether those pace and service differences persist.
+- Verification: Python sector and field-results regressions, Rust sector boundary/parity vectors and field projection preservation, web picker/table/map tests and desktop/tablet/phone visual checks. Native stage algorithms are unchanged.
+
 Each contract change adds one entry here in the same commit; review per the rule at the top.
 
 ### 2026-10-09, Phase 1 item 3: section pace attribution (additive optional field, no review needed)
