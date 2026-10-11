@@ -18,9 +18,10 @@ not suggest copying another driver's inputs or infer their fuel/tire service.
   Incident candidates, pit transitions, restarts and other exclusions still apply.
   Python owns this trend; the projector copies it. Coaching-reference fits retain
   their existing stricter eligibility rules and their supported endpoints.
-- Setups open a recent car with visible setup rows grouped by track. Actual linked
-  sessions provide last-used dates and session counts. A mobile car selector replaces
-  the desktop sidebar. Baseline search receives the current car/track context.
+- Setups open a recent car with visible setup rows grouped by track in one compact
+  board with shared column headings. Actual linked sessions provide last-used dates
+  and session counts. Equal-sized car choices sit above the board; phones use a car
+  selector. Track separators carry concise Baseline links with car/track context.
 
 ## Recording and integrity
 

@@ -106,10 +106,11 @@ function FileEntry({ e }: { e: Extract<Entry, { kind: "file" }> }) {
 }
 
 function CarSection({ g, customerId, track }: { g: CarGroup; customerId: number; track: string | null }) {
-  return <section class="s-car" aria-label={g.carName}>
-    <h2 class="s-selected-title">{track ?? "Track not recorded"}</h2>
-    {track ? <a class="s-track-baseline" href={href({ page: "baseline", customerId }, { car: g.carPath, track })}>Find a baseline for {track}</a> : null}
-    <div class="s-cols s-grid" aria-hidden="true"><span>Setup</span><span>Sessions</span><span>Last used</span></div>
+  return <section class="s-track" aria-label={track ?? "Track not recorded"}>
+    <div class="s-track-head">
+      <h2>{track ?? "Track not recorded"}</h2>
+      {track ? <a class="s-track-baseline" aria-label={`Baseline for ${track}`} href={href({ page: "baseline", customerId }, { car: g.carPath, track })}>Baseline<Chevron /></a> : null}
+    </div>
     <ul class="s-list">{g.entries.map((e) => e.kind === "setup" ? <SetupEntry key={e.key} e={e} customerId={customerId} /> : e.kind === "captures" ? <Captures key={e.key} e={e} customerId={customerId} /> : <FileEntry key={e.key} e={e} />)}</ul>
   </section>;
 }
@@ -146,7 +147,7 @@ function FilesWithoutValues({ cars }: { cars: CarGroup[] }) {
         <span class="s-files-rule" aria-hidden="true" />
         <Chevron down={open} />
         <span class="s-files-label">
-          Files without values Â· {cars.length} {cars.length === 1 ? "car" : "cars"}
+          Files without values · {cars.length} {cars.length === 1 ? "car" : "cars"}
         </span>
         <span class="s-files-rule" aria-hidden="true" />
       </button>
@@ -238,7 +239,7 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
     const known = new Set(offered.map((c) => c.carPath.toLowerCase()));
     return sel.cars.filter((c) => known.has(c.toLowerCase()));
   }, [sel.cars, offered]);
-  const selectedCars = cars.length ? cars : offered.slice(0, 1).map((c) => c.carPath);
+  const selectedCars = cars.length ? cars.slice(0, 1) : offered.slice(0, 1).map((c) => c.carPath);
   const effective: SetupSelection = { ...sel, cars: selectedCars };
   const everything = useMemo(() => groupLibrary(setups, files, { cars: new Set(selectedCars), raced }), [setups, files, selectedCars, raced]);
   const groups = useMemo(() => groupTrackLibrary(setups, files, { cars: new Set(selectedCars), raced }).flatMap((g) => carsWithValues(g.cars).map((car) => ({ track: g.track, car }))), [setups, files, selectedCars, raced]);
@@ -247,25 +248,28 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
 
   return (
     <div class="setups-page ds">
-      <h1>Setups</h1>
+      <header class="s-page-head">
+        <h1>Setups</h1>
+        <a class="s-baseline" href={href({ page: "baseline", customerId }, { car: selectedCars.length === 1 ? selectedCars[0] : undefined })}>Find a baseline</a>
+      </header>
       <div class="s-workspace">
-        <aside class="s-car-picker" aria-label="Cars">
+        <div class="s-car-picker" role="group" aria-label="Cars">
           <label class="s-phone-car">Car<select aria-label="Car" value={selectedCars[0] ?? ""} onChange={(e) => setSel({ ...sel, cars: [e.currentTarget.value] })}>{offered.map((c) => <option key={c.carPath} value={c.carPath}>{c.carName}</option>)}</select></label>
-          <div class="s-desktop-cars"><span class="s-picker-label">Cars · recent first</span>{offered.map((c) => <button key={c.carPath} class="s-car-choice" aria-pressed={selectedCars.includes(c.carPath)} onClick={() => setSel({ ...sel, cars: [c.carPath] })}><span>{c.carName}</span><small>{c.setups} {c.setups === 1 ? "setup" : "setups"}</small></button>)}</div>
-        </aside>
+          <div class="s-desktop-cars">{offered.map((c) => <button key={c.carPath} class="s-car-choice" style={`--car:${c.color}`} aria-pressed={selectedCars.includes(c.carPath)} onClick={() => setSel({ ...sel, cars: [c.carPath] })}><span>{c.carName}</span><small>{c.setups} {c.setups === 1 ? "setup" : "setups"}</small></button>)}</div>
+        </div>
         <div class="s-results">
           <div class="s-list-tools">
             <label class="s-search"><span class="visually-hidden">Search setups</span><input type="search" placeholder="Search setups" value={text} onInput={(e) => setSel({ ...sel, text: e.currentTarget.value })} /></label>
             <Segmented label="Raced" options={RACED_FILTERS} value={raced} onChange={(next) => setSel({ ...sel, raced: next })} />
-            <a class="s-baseline" href={href({ page: "baseline", customerId }, { car: selectedCars.length === 1 ? selectedCars[0] : undefined })}>Find a baseline</a>
           </div>
       {first.error && !first.data ? <ErrorLine error={first.error} /> : null}
       {first.error && first.data ? <Notice tone="warn">Could not refresh: {first.error.message}</Notice> : null}
       {!first.data && !first.error ? <Loading what="setups" /> : null}
       {first.data && groups.length === 0 && withoutValues.length === 0 ? <Empty title={filtering ? "No setups match" : "No setups yet"} /> : null}
-      <div class="s-cars" aria-label="Setups">
+      {groups.length > 0 && <div class="s-board" aria-label="Setups">
+        <div class="s-cols s-grid" aria-hidden="true"><span>Setup</span><span>Sessions</span><span>Last used</span></div>
         {groups.map(({ track, car }) => <CarSection key={`${car.carPath}|${track}`} g={car} track={track} customerId={customerId} />)}
-      </div>
+      </div>}
       {first.data && withoutValues.length > 0 ? <FilesWithoutValues cars={withoutValues} /> : null}
         </div>
       </div>

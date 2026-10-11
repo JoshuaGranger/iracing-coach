@@ -1092,35 +1092,41 @@
     min-height: var(--touch-target);
   }
 }
-/* Setup browser: keep the car choice and its rows visible together. */
-.setups-page .s-workspace { display:grid; grid-template-columns:15rem minmax(0,1fr); gap:var(--space-5); margin-top:var(--space-4); }
-.setups-page .s-results { min-width:0; }
-.setups-page .s-desktop-cars { display:grid; gap:var(--space-1); }
-.setups-page .s-picker-label { color:var(--color-text-muted); font-size:var(--text-compact); padding:var(--space-2) var(--space-3); }
-.setups-page .s-car-choice { display:grid; gap:var(--space-1); width:100%; min-height:var(--touch-target); text-align:left; padding:var(--space-3); border:1px solid transparent; border-radius:var(--radius-small); background:transparent; color:var(--color-text-secondary); }
-.setups-page .s-car-choice[aria-pressed="true"] { border-color:var(--color-border-strong); background:var(--color-surface2); color:var(--color-text-primary); }
-.setups-page .s-car-choice small { color:var(--color-text-muted); }
+/* One compact car picker and one setup board; track names divide the rows. */
+.setups-page .s-page-head { display:flex; align-items:center; justify-content:space-between; gap:var(--space-4); }
+.setups-page .s-page-head h1 { margin:0; }
+.setups-page .s-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--space-4); margin-top:var(--space-5); }
+.setups-page .s-results, .setups-page .s-car-picker { min-width:0; }
+.setups-page .s-desktop-cars { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr)); gap:var(--space-2); }
+.setups-page .s-car-choice { display:grid; justify-content:stretch; justify-items:start; align-content:center; gap:var(--space-2); min-width:0; min-height:5.25rem; padding:var(--space-3) var(--space-4); border:1px solid var(--color-border-subtle); border-radius:var(--radius-card); background:var(--color-surface1); color:var(--color-text-secondary); font-family:var(--font-ui); text-align:left; text-transform:none; white-space:normal; letter-spacing:normal; box-shadow:inset 3px 0 0 color-mix(in srgb,var(--car) 55%,transparent); }
+.setups-page .s-car-choice:hover { background:var(--color-surface-hover); }
+.setups-page .s-car-choice[aria-pressed="true"] { border-color:var(--car); background:color-mix(in srgb,var(--car) 12%,var(--color-surface2)); color:var(--color-text-primary); box-shadow:inset 3px 0 0 var(--car); }
+.setups-page .s-car-choice > span { max-width:100%; min-height:2.5em; font-weight:var(--weight-semibold); font-size:var(--text-compact); line-height:1.25; white-space:normal; overflow-wrap:anywhere; }
+.setups-page .s-car-choice small { color:var(--color-text-muted); font-size:var(--text-compact); }
 .setups-page .s-phone-car { display:none; }
 .setups-page .s-list-tools { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); margin-bottom:var(--space-4); }
 .setups-page .s-search { flex:1 1 12rem; }
 .setups-page .s-search input { width:100%; }
-.setups-page .s-car { border:1px solid var(--color-border-subtle); background:var(--color-surface1); box-shadow:none; border-radius:var(--radius-small); overflow:hidden; margin-bottom:var(--space-4); }
-.setups-page .s-car::before { display:none; }
-.setups-page .s-selected-title { margin:0; padding:var(--space-4); font-size:var(--text-list-name); font-family:var(--font-ui); text-transform:none; letter-spacing:normal; }
+.setups-page .s-board { border:1px solid var(--color-border-subtle); border-radius:var(--radius-card); overflow:clip; background:var(--ds-card); }
+.setups-page .s-track + .s-track { border-top:1px solid var(--color-border-subtle); }
+.setups-page .s-track-head { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); padding:0 var(--space-4) 0 var(--space-6); background:color-mix(in srgb,var(--color-surface2) 65%,transparent); border-bottom:1px solid var(--ds-line); }
+.setups-page .s-track-head h2 { margin:0; font-family:var(--ds-disp); font-size:var(--text-list-name); font-weight:var(--weight-semibold); letter-spacing:0.04em; text-transform:uppercase; }
+.setups-page .s-track-baseline { display:inline-flex; flex:none; align-items:center; justify-content:flex-end; gap:var(--space-1); min-height:var(--touch-target); color:var(--color-text-muted); font-family:var(--ds-disp); font-size:var(--text-compact); letter-spacing:0.06em; text-transform:uppercase; text-decoration:none; }
+.setups-page .s-track-baseline:hover { color:var(--color-text-primary); }
 .setups-page .s-cols { color:var(--color-text-muted); font-size:var(--text-compact); }
+.setups-page .s-cols > :nth-child(n+2) { text-align:right; }
+@media(min-width:761px) and (max-width:1200px) {
+ .setups-page .s-desktop-cars { grid-template-columns:repeat(4,minmax(0,1fr)); }
+}
 @media(max-width:760px) {
- .setups-page .s-workspace { grid-template-columns:minmax(0,1fr); gap:var(--space-3); }
+ .setups-page .s-workspace { gap:var(--space-3); margin-top:var(--space-4); }
  .setups-page .s-desktop-cars { display:none; }
  .setups-page .s-phone-car { display:grid; gap:var(--space-1); color:var(--color-text-muted); }
- .setups-page .s-phone-car select { width:100%; min-height:var(--touch-target); background:var(--color-surface2); color:var(--color-text-primary); border:1px solid var(--color-border-strong); padding:var(--space-2); }
+ .setups-page .s-phone-car select { width:100%; min-height:var(--touch-target); border-radius:var(--radius-pill); background:var(--color-surface2); color:var(--color-text-primary); border:1px solid var(--color-border-strong); padding:var(--space-2) var(--space-4); }
  .setups-page .s-list-tools { gap:var(--space-2); }
  .setups-page .s-search { flex-basis:100%; }
+ .setups-page .s-track-head { padding-left:var(--space-4); }
+ .setups-page .s-track-head h2 { font-size:var(--text-body); }
  .setups-page .s-grid .date::before { content:"Last used "; color:var(--color-text-muted); }
+ .setups-page .s-grid .num::after { content:" sessions"; color:var(--color-text-muted); }
 }
-
-.setups-page .s-track-baseline { display:inline-flex; min-height:var(--touch-target); align-items:center; padding:0 var(--space-4); color:var(--color-text-secondary); }
-
-@media(max-width:760px) { .setups-page .s-grid .num::after { content:" sessions"; color:var(--color-text-muted); } }
-
-.setups-page .s-car-choice { justify-items:start; font-family:var(--font-ui); text-transform:none; letter-spacing:normal; }
-.setups-page .s-cols > :nth-child(n+2) { text-align:right; }

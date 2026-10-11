@@ -45,7 +45,7 @@ for (const device of DEVICES) {
     test("a write in flight never moves the page: the bar is an overlay at the bottom edge", async ({ page, context }) => {
       const pages: { name: string; path: string; ready: string; probes: string[] }[] = [
         { name: "sessions", path: `/d/${DRIVER}/sessions`, ready: "li.session-row", probes: ["main", "main h1", ".sx-events", ".sx-event"] },
-        { name: "setups", path: `/d/${DRIVER}/setups`, ready: ".s-car", probes: ["main", "main h1", ".s-car"] },
+        { name: "setups", path: `/d/${DRIVER}/setups`, ready: ".s-board", probes: ["main", "main h1", ".s-board"] },
         { name: "live", path: `/d/${DRIVER}/live`, ready: ".live-grid", probes: ["main", "main h1", ".live-grid", ".tile-cell"] },
         { name: "setup detail", path: `/d/${DRIVER}/setups/1`, ready: "main h1", probes: ["main", "main h1", "main section"] },
       ];
