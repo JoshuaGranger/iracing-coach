@@ -1649,11 +1649,12 @@ components:
             race_investigation:
               type: object
               additionalProperties: true
-              x-source: "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v8; test-data/race-investigation.json)"
+              x-source: "analysis_view.race_investigation (race_investigation.py schema 2, projection sections-trials-v9; test-data/race-investigation.json)"
               x-consumed-fields:
                 # RaceInvestigationMapper.cs; trial fields (actions[].trial, actions[].early_run_version) are parked (D8)
                 - schema_version
                 - projection_version
+                - section_laps
                 - status
                 - summary
                 - default_comparison_id
@@ -1869,14 +1870,23 @@ components:
     SectionLaps:
       type: object
       description: |
-        Projector-derived (projection 3; absent from views projected before it): per detected section, the clean laps' times
-        through it. A lap's section time is the backend's own rule, `race_inspection.section_elapsed` (session time at the end
+        Backend-produced in race_investigation.section_laps and passed through by the projector (projection 9).
+        Per detected section, observed green racing laps' times through it. A lap's section time is the backend's own rule,
+        `race_inspection.section_elapsed` (session time at the end
         boundary minus at the start, each interpolated inside the first plausible sample pair of `lap_traces`; withheld when a
         sample pair touching the section is untimed, more than 2 s or more than 0.03 lap apart), rounded to 3 decimals as the
-        backend rounds a pass's `section_s`. Clean is the backend's lap screen, `race_investigation.laps[].eligible` (green, no
-        pit, no incident or off-track, no close traffic, no restart). Nothing is screened again.
+        backend rounds a pass's `section_s`. The observed population permits close_traffic and ongoing damage_repair_context
+        while retaining all other coaching exclusions, including incidents, pit entry/exit, off-track, caution, partial laps,
+        restart, repair episode overlap and unknown eligibility. Context and strict coaching eligibility stay visible.
+        race_investigation.laps[].eligible and exclusion_reasons never change; additive observed_section_eligible and
+        observed_section_exclusion_reasons state the backend's separate observation screen. Full section coverage is required
+        independently for each included lap. Rankings and medians describe recorded passes, not clean coaching references or
+        estimates of recoverable time. No telemetry math or eligibility screen is performed again by the projector.
+        Legacy analyses without the backend object retain the original clean-only projector fallback; absent population means
+        clean laps, and clean_lap_count describes that legacy membership.
       required: [sections]
       properties:
+        population: { type: string, enum: [observed_green_racing_laps], description: "Explicit observed membership; absent in legacy clean-only projections." }
         sections:
           type: array
           description: "One per `race_investigation.sections.sections[]` entry with 0 <= start_pct < end_pct <= 1, in that order."
@@ -1886,11 +1896,13 @@ components:
             properties:
               section_id: { type: string, description: "race_investigation.sections.sections[].id (a detected section, not an official turn)." }
               clean_lap_count: { type: integer, minimum: 0, description: "Clean laps with a section time." }
-              median_s: { type: [number, "null"], description: "Median of those section times (the mean of the middle two for an even count), 3 decimals; null without one." }
-              median_lap: { type: [integer, "null"], description: "The lap the median trace follows: the lower-middle lap of the sorted clean section times; null without one." }
+              observed_lap_count: { type: integer, minimum: 0, description: "Observed laps with full timed section coverage; includes the strict clean subset." }
+              lap_numbers: { type: array, items: { type: integer }, description: "Exact timed population for this section, sorted by lap number." }
+              median_s: { type: [number, "null"], description: "Median of the declared population's section times (mean of middle two for even count), 3 decimals; null without one." }
+              median_lap: { type: [integer, "null"], description: "Lap the median trace follows: lower-middle lap of sorted population times; null without one." }
               fastest:
                 type: array
-                description: "Up to three fastest, fastest first; min(3, floor(clean_lap_count / 2)) entries, so fastest and slowest never share a lap. Ties order by lap."
+                description: "Up to three fastest, fastest first; min(3, floor(population count / 2)) entries, so fastest and slowest never share a lap. Ties order by lap."
                 items: { $ref: "#/components/schemas/SectionLap" }
               slowest:
                 type: array
@@ -1904,6 +1916,8 @@ components:
         lap: { type: integer }
         section_s: { type: number, description: "Seconds through the section, 3 decimals." }
         delta_s: { type: number, description: "section_s minus the section's median_s, 3 decimals; negative is faster." }
+        eligible: { type: boolean, description: "Original strict coaching eligibility, not the observed-section eligibility." }
+        context_reasons: { type: array, items: { type: string }, description: "Retained close_traffic and/or damage_repair_context for this observed lap; these are not removed from its original coaching exclusions." }
 
     SteeringBasis:
       type: object

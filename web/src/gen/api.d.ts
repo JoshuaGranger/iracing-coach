@@ -2668,25 +2668,42 @@ export interface components {
             [key: string]: unknown;
         };
         /**
-         * @description Projector-derived (projection 3; absent from views projected before it): per detected section, the clean laps' times
-         *     through it. A lap's section time is the backend's own rule, `race_inspection.section_elapsed` (session time at the end
+         * @description Backend-produced in race_investigation.section_laps and passed through by the projector (projection 9).
+         *     Per detected section, observed green racing laps' times through it. A lap's section time is the backend's own rule,
+         *     `race_inspection.section_elapsed` (session time at the end
          *     boundary minus at the start, each interpolated inside the first plausible sample pair of `lap_traces`; withheld when a
          *     sample pair touching the section is untimed, more than 2 s or more than 0.03 lap apart), rounded to 3 decimals as the
-         *     backend rounds a pass's `section_s`. Clean is the backend's lap screen, `race_investigation.laps[].eligible` (green, no
-         *     pit, no incident or off-track, no close traffic, no restart). Nothing is screened again.
+         *     backend rounds a pass's `section_s`. The observed population permits close_traffic and ongoing damage_repair_context
+         *     while retaining all other coaching exclusions, including incidents, pit entry/exit, off-track, caution, partial laps,
+         *     restart, repair episode overlap and unknown eligibility. Context and strict coaching eligibility stay visible.
+         *     race_investigation.laps[].eligible and exclusion_reasons never change; additive observed_section_eligible and
+         *     observed_section_exclusion_reasons state the backend's separate observation screen. Full section coverage is required
+         *     independently for each included lap. Rankings and medians describe recorded passes, not clean coaching references or
+         *     estimates of recoverable time. No telemetry math or eligibility screen is performed again by the projector.
+         *     Legacy analyses without the backend object retain the original clean-only projector fallback; absent population means
+         *     clean laps, and clean_lap_count describes that legacy membership.
          */
         SectionLaps: {
+            /**
+             * @description Explicit observed membership; absent in legacy clean-only projections.
+             * @enum {string}
+             */
+            population?: "observed_green_racing_laps";
             /** @description One per `race_investigation.sections.sections[]` entry with 0 <= start_pct < end_pct <= 1, in that order. */
             sections: {
                 /** @description race_investigation.sections.sections[].id (a detected section, not an official turn). */
                 section_id: string;
                 /** @description Clean laps with a section time. */
                 clean_lap_count: number;
-                /** @description Median of those section times (the mean of the middle two for an even count), 3 decimals; null without one. */
+                /** @description Observed laps with full timed section coverage; includes the strict clean subset. */
+                observed_lap_count?: number;
+                /** @description Exact timed population for this section, sorted by lap number. */
+                lap_numbers?: number[];
+                /** @description Median of the declared population's section times (mean of middle two for even count), 3 decimals; null without one. */
                 median_s: number | null;
-                /** @description The lap the median trace follows: the lower-middle lap of the sorted clean section times; null without one. */
+                /** @description Lap the median trace follows: lower-middle lap of sorted population times; null without one. */
                 median_lap?: number | null;
-                /** @description Up to three fastest, fastest first; min(3, floor(clean_lap_count / 2)) entries, so fastest and slowest never share a lap. Ties order by lap. */
+                /** @description Up to three fastest, fastest first; min(3, floor(population count / 2)) entries, so fastest and slowest never share a lap. Ties order by lap. */
                 fastest: components["schemas"]["SectionLap"][];
                 /** @description Up to three slowest, slowest first; as many entries as `fastest`. */
                 slowest: components["schemas"]["SectionLap"][];
@@ -2698,6 +2715,10 @@ export interface components {
             section_s: number;
             /** @description section_s minus the section's median_s, 3 decimals; negative is faster. */
             delta_s: number;
+            /** @description Original strict coaching eligibility, not the observed-section eligibility. */
+            eligible?: boolean;
+            /** @description Retained close_traffic and/or damage_repair_context for this observed lap; these are not removed from its original coaching exclusions. */
+            context_reasons?: string[];
         };
         /** @description TD-037: road-wheel steering when the ratio is known; never guessed. A declaration that is not basis road_wheel with steering_ratio > 0 is read as steering-wheel angle (SteeringBasisMapper.cs). */
         SteeringBasis: {
