@@ -1,21 +1,24 @@
 import { asArray, asRecord, num, str } from "../types";
 
 /**
- * `InvestigationView.section_laps` (projection 3): per detected section, the clean laps' median section time and the three
- * fastest and three slowest of them, as the projector ranked them. The browser only selects and draws; it ranks nothing.
+ * `InvestigationView.section_laps`: backend-ranked section times. New analyses include observed green racing laps;
+ * older projections contain only strictly clean laps. The browser only selects and draws; it ranks nothing.
  */
 
 export interface SectionLap {
   lap: number;
   sectionS: number;
   deltaS: number;
+  contextReasons?: string[];
 }
 
 export interface SectionLapEntry {
   sectionId: string;
   cleanLapCount: number;
+  population: "clean" | "observed_green_racing_laps";
+  timedLapCount: number;
   medianS: number | null;
-  /** The clean lap whose section time is the median (`median_lap`, optional); null when the view does not report it. */
+  /** Recorded reference nearest the median; the lower middle pass for an even count. */
   medianLap: number | null;
   /** Fastest first. */
   fastest: SectionLap[];
@@ -38,7 +41,7 @@ function laps(value: unknown): SectionLap[] {
     const lap = num(r.lap);
     const sectionS = num(r.section_s);
     const deltaS = num(r.delta_s);
-    return lap !== null && sectionS !== null && deltaS !== null ? [{ lap, sectionS, deltaS }] : [];
+    return lap !== null && sectionS !== null && deltaS !== null ? [{ lap, sectionS, deltaS, contextReasons: asArray(r.context_reasons).filter((reason): reason is string => typeof reason === "string") }] : [];
   });
 }
 
@@ -51,7 +54,8 @@ export function parseSectionLaps(raw: unknown): SectionLaps | null {
     const s = asRecord(item);
     const sectionId = str(s.section_id);
     if (sectionId === null) continue;
-    out.set(sectionId, { sectionId, cleanLapCount: num(s.clean_lap_count) ?? 0, medianS: num(s.median_s), medianLap: num(s.median_lap), fastest: laps(s.fastest).slice(0, 3), slowest: laps(s.slowest).slice(0, 3) });
+    const population = r.population === "observed_green_racing_laps" ? "observed_green_racing_laps" : "clean";
+    out.set(sectionId, { sectionId, population, timedLapCount: num(population === "clean" ? s.clean_lap_count : s.observed_lap_count) ?? 0, cleanLapCount: num(s.clean_lap_count) ?? 0, medianS: num(s.median_s), medianLap: num(s.median_lap), fastest: laps(s.fastest).slice(0, 3), slowest: laps(s.slowest).slice(0, 3) });
   }
   return out;
 }

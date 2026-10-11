@@ -690,7 +690,7 @@ fn a_real_backend_document_projects() {
     let dir = scratch("real");
     let out = dir.join("out");
     let summary = project(&input, &out).unwrap();
-    assert_eq!(summary.profile_version, "post-race-foundations-v28");
+    assert_eq!(summary.profile_version, "post-race-foundations-v29");
     assert_eq!(summary.lap_count, 1);
     assert_eq!(summary.bins_per_lap, 640);
     // no geometry and no GPS: no track view, no latitude or longitude channel

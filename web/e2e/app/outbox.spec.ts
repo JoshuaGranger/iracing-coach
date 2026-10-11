@@ -8,13 +8,22 @@ for (const device of DEVICES) {
       await page.getByRole("button", { name: "Add note" }).click();
     }
 
+    test("restored writes save on first load without a reconnect or another edit", async ({ page, request }) => {
+      await page.goto(hash(`/d/${DRIVER}/setups/1`));
+      await page.evaluate((driver) => localStorage.setItem("coach.outbox.v1", JSON.stringify([{ id: "33333333-3333-4333-8333-333333333333", method: "POST", path: `/api/v1/drivers/${driver}/notes`, body: { subject_kind: "setup", subject_id: "1", body: "Restored note" }, label: "New note", createdAt: Date.now(), attempts: 1, state: "sending" }])), DRIVER);
+      await page.reload();
+      await expect.poll(async () => (await mockState(request)).notes.length).toBe(1);
+      await expect(page.getByTestId("outbox")).toHaveCount(0);
+      await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("coach.outbox.v1") ?? "[]").length)).toBe(0);
+    });
+
     test("a write made while the server is unreachable stays visible, then lands exactly once", async ({ page, context, request }) => {
       await page.goto(hash(`/d/${DRIVER}/setups/1`));
       await expect(page.getByRole("heading", { name: "Notes" })).toBeVisible();
       await context.route("**/api/v1/drivers/*/notes", (r) => (r.request().method() === "POST" ? r.abort() : r.continue()));
       await addNote(page, "Pressures were low");
       const bar = page.getByTestId("outbox");
-      await expect(bar).toContainText("1 change waiting to save");
+      await expect(bar).toContainText("New note waiting to save");
       await expect(page.getByTestId("offline-banner")).toContainText("1 change waiting");
       await expect(page.locator(".note-queued")).toContainText("Waiting to save");
       await expectNoHorizontalScroll(page);
@@ -84,7 +93,7 @@ for (const device of DEVICES) {
       await page.getByLabel("Edit note").fill("Mine");
       await page.getByRole("button", { name: "Save" }).click();
       const bar = page.getByTestId("outbox");
-      await expect(bar).toContainText("1 conflict");
+      await expect(bar).toContainText("Edit note conflict");
       await expect(bar).toContainText("changed on the server");
       await bar.getByRole("button", { name: "Keep mine" }).click();
       await expect(page.getByTestId("outbox")).toHaveCount(0);
@@ -110,7 +119,7 @@ for (const device of DEVICES) {
       await page.goto(hash(`/d/${DRIVER}/setups/1`));
       await setMock(request, { failWrites: true });
       await addNote(page, "During an outage");
-      await expect(page.getByTestId("outbox")).toContainText("1 change waiting to save");
+      await expect(page.getByTestId("outbox")).toContainText("New note waiting to save");
       await setMock(request, { failWrites: false });
       await page.evaluate(() => window.dispatchEvent(new Event("online")));
       await expect(page.getByTestId("outbox")).toHaveCount(0, { timeout: 8000 });

@@ -78,6 +78,8 @@ export class Outbox {
 
   constructor(private readonly deps: OutboxDeps) {
     this.entries.set(this.load());
+    // Restored writes must resume on the first load, independently of SSE reconnect events.
+    if (this.entries.get().some((entry) => entry.state === "pending")) this.cancelRetry = this.deps.schedule(() => void this.drain(), 0);
   }
 
   /** Record the version of a resource just read, so later writes to `path` send the right `If-Match`. */
@@ -144,6 +146,8 @@ export class Outbox {
         this.patch(entry.id, { state: "sending", attempts: entry.attempts + 1 });
         const sending = this.entries.get().find((e) => e.id === entry.id)!;
         const ifMatch = sending.ifMatch !== undefined ? sending.ifMatch : sending.method === "POST" ? undefined : this.versions.get(sending.path);
+        // Persist the conditional version used by an in-flight request, so reload retries the same write.
+        if (ifMatch !== undefined) this.patch(sending.id, { ifMatch });
         try {
           const res = await this.deps.send(sending, ifMatch);
           this.finish(sending, res);
@@ -264,8 +268,20 @@ export class Outbox {
 function browserDeps(): OutboxDeps {
   return {
     storage: safeStorage,
-    send: (entry, ifMatch) =>
-      request(entry.method, entry.path, entry.body, { idempotencyKey: entry.id, ifMatch }).then((r) => ({ status: r.status, body: r.body })),
+    send: async (entry, ifMatch) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const response = await request(entry.method, entry.path, entry.body, { idempotencyKey: entry.id, ifMatch, signal: controller.signal });
+        return { status: response.status, body: response.body };
+      } catch (error) {
+        // A silent connection must retry the same persisted idempotency key.
+        if (controller.signal.aborted) throw new NetworkError();
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
     now: () => Date.now(),
     uuid: uuid4,
     schedule: (fn, ms) => {

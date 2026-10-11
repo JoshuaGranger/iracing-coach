@@ -53,6 +53,7 @@ export interface SectionTracesProps {
   laps: readonly SectionTraceLap[];
   /** The section's median lap (`section_laps[].median_lap`): the gap row's reference, also when it is one of the listed laps. */
   medianLap?: number | null;
+  medianRepair?: boolean;
   hot: number | null;
   /** Where the cursor starts across the section, and where it is kept between sections. */
   fractionRef: { current: number };
@@ -199,7 +200,7 @@ export function SectionTraces(props: SectionTracesProps) {
     <div class="ri-st" data-sl-traces data-status={props.status}>
       <div class="ri-st-head">
         {props.head}
-        {median && <span class="ri-st-key" data-sl-median-key>{medianLine && <i aria-hidden="true" />}Median L{median.lap}</span>}
+        {median && <span class="ri-st-key" data-sl-median-key title="Recorded lap nearest the median sector time">{medianLine && <i aria-hidden="true" />}Reference L{median.lap}{props.medianRepair ? "*" : ""}</span>}
         <span class="ri-st-key" data-sl-approach-key><i class="approach" aria-hidden="true" />Approach</span>
         <strong ref={distance} class="ri-st-pct" title="Lap distance at the cursor" data-sl-cursor-pct>{pctText(windowPctAt(windowPosition(props.fractionRef.current, win), win))}</strong>
       </div>

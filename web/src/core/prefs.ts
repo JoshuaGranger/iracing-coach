@@ -46,7 +46,7 @@ async function knowVersion(customerId: number): Promise<void> {
   }
 }
 
-export async function savePrefs(customerId: number, patch: DriverPrefsPatch): Promise<unknown> {
+export async function savePrefs(customerId: number, patch: DriverPrefsPatch, label = "Preferences"): Promise<unknown> {
   await knowVersion(customerId);
   const key = paths.prefs(customerId);
   const current = cachedValue<DriverPrefs>(key);
@@ -54,7 +54,7 @@ export async function savePrefs(customerId: number, patch: DriverPrefsPatch): Pr
   const body: DriverPrefsPatch = { ...rest, ...patch };
   if (current) setCached(key, { ...current, ...patch });
   return outbox
-    .enqueue({ method: "PUT", path: key, body, label: "Preferences", coalesceKey: `prefs:${customerId}` })
+    .enqueue({ method: "PUT", path: key, body, label, coalesceKey: `prefs:${customerId}` })
     .then((applied) => {
       // The cached copy carries the version the write replaced. A page that mounts later re-observes it, so the next write would
       // send a stale If-Match and open a conflict against the driver's own save.
@@ -75,7 +75,7 @@ export function getLastInvestigation(customerId: number, serverValue?: LastInves
 /** Called by the investigation workspace whenever its session, view, comparison or section changes. */
 export function rememberInvestigation(customerId: number, last: LastInvestigation): void {
   writeJson(lastKey(customerId), last);
-  void savePrefs(customerId, { last_investigation: last });
+  void savePrefs(customerId, { last_investigation: last }, "Last viewed session");
 }
 
 /** Operating-system reduced-motion preference combined with the driver's stored one. */

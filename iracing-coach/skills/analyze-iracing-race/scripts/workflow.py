@@ -2273,7 +2273,7 @@ def _analysis_pipeline_sha256() -> str:
 # Python-owned observed run trends. Traffic/ongoing repair may support an observed
 # trend while coaching-reference exclusions remain unchanged. Native kernels are unchanged.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "9f3a7484ffadd13efdad152d10d55493bda94177c4f3b85773f8def8986129b8"
+    "bd3188650f43dc414a8a1962ea46c9313b144590f448a0cf5f3ba3370c14e85e"
 )
 
 

@@ -17,7 +17,7 @@ import { scaleFor, useRemPx } from "./unit";
 import "./sections.css";
 
 /**
- * Sections (backlog #48, #49, #64, #75, #76): per detected section, the three fastest and three slowest clean laps by that section's
+ * Sections (backlog #48, #49, #64, #75, #76): per section, the backend's three fastest and three slowest timed laps by that section's
  * time, the section's median as zero, green shades faster and red shades slower. The map draws each lap's own racing line through
  * the section from its recorded positions (no line where it recorded none); the tab strip picks the section; the lap rows, with the
  * laps on the tires and the lap's traffic beside the time, select the laps the telemetry draws and `Open in Traces` opens with the
@@ -72,8 +72,9 @@ const OPEN_SIGNALS = ["speed", "throttle", "brake", "steering"];
 /** What the view loads: the four telemetry channels and the positions the racing lines are drawn from. */
 const LOAD_SIGNALS = [...SECTION_SIGNALS, ...POSITION_SIGNALS];
 
-function countText(count: number): string {
-  return `${count} clean ${count === 1 ? "lap" : "laps"} timed`;
+function countText(entry: SectionLapEntry | null): string {
+  const count = entry?.timedLapCount ?? 0;
+  return `${count} ${entry?.population === "observed_green_racing_laps" ? "green" : "clean"} ${count === 1 ? "lap" : "laps"} timed`;
 }
 
 function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; context: LapContext | null; selected: boolean; hot: boolean; onToggle(): void; onHot(lap: number | null): void }) {
@@ -82,14 +83,15 @@ function LapRow(props: { lap: ShadedLap; listed: readonly ShadedLap[]; context: 
   const tag = contextTitle(context);
   const traffic = context?.traffic?.fraction ?? null;
   const cell = trafficCell(context?.traffic);
+  const repair = lap.contextReasons?.includes("damage_repair_context") === true;
   return (
     <button
       type="button" class={`ri-lap-row ri-sgrid${props.selected ? " selected" : ""}${props.hot ? " hot" : ""}`} data-lap={lap.lap} data-shade={lap.shade}
-      aria-pressed={props.selected} style={`--lap:var(--sl-${lap.shade})`} title={`L${lap.lap} · ${seconds(lap.sectionS)} s · ${signedText(lap.deltaS)} s to the median${tag ? ` · ${tag}` : ""}`}
+      aria-pressed={props.selected} style={`--lap:var(--sl-${lap.shade})`} title={`L${lap.lap} · ${seconds(lap.sectionS)} s · ${signedText(lap.deltaS)} s to the median${tag ? ` · ${tag}` : ""}${repair ? " · Repair context" : ""}`}
       onClick={props.onToggle} onPointerEnter={() => props.onHot(lap.lap)} onPointerLeave={() => props.onHot(null)} onFocus={() => props.onHot(lap.lap)} onBlur={() => props.onHot(null)}
     >
       <span class="ri-sl-sw" aria-hidden="true" />
-      <span class="ri-n">{lap.lap}</span>
+      <span class="ri-n">{lap.lap}{repair && <sup aria-label="Repair context">*</sup>}</span>
       <span class="ri-tm">{seconds(lap.sectionS)}</span>
       <span class={`ri-sl-dl ${bar.side}`}>{signedText(lap.deltaS)}</span>
       <span class="ri-sl-bar" aria-hidden="true">{bar.widthPct > 0 && <i class={bar.side} style={bar.side === "gain" ? `right:50%;width:${n(bar.widthPct)}%` : `left:50%;width:${n(bar.widthPct)}%`} />}</span>
@@ -161,13 +163,17 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   const sections = useMemo(() => orderedSections(inv), [inv]);
   const priorities = useMemo(() => sectionPriorities(inv), [inv]);
   const entry: SectionLapEntry | null = section ? sectionLaps?.get(section.id) ?? null : null;
+  const observed = entry?.population === "observed_green_racing_laps";
   const { fastest, slowest } = useMemo(() => shadedLaps(entry), [entry]);
   const listed = useMemo(() => [...fastest, ...slowest], [fastest, slowest]);
   const [picked, setPicked] = useState<{ sectionId: string | null; laps: ReadonlySet<number> }>({ sectionId: null, laps: new Set() });
   const selected: ReadonlySet<number> = picked.sectionId === section?.id ? picked.laps : new Set();
   const [hot, setHot] = useState<number | null>(null);
   const hotLap = listed.find((lap) => lap.lap === hot) ?? null;
-  const opens = lapsToOpen(listed.map((lap) => lap.lap), selected);
+  const opens = lapsToOpen(listed.length ? listed.map((lap) => lap.lap) : entry?.medianLap != null ? [entry.medianLap] : [], selected);
+  const hasTelemetryLaps = listed.length > 0 || entry?.medianLap != null;
+  const medianRepair = inv.laps.find((lap) => lap.lap === entry?.medianLap)?.exclusionReasons.includes("damage_repair_context") === true;
+  const hasRepair = medianRepair || listed.some((lap) => lap.contextReasons?.includes("damage_repair_context"));
   const contexts = useMemo(() => lapContexts(race, runs), [race, runs]);
   // The approach is bounded by the nearest earlier section start on the lap (race_inspection.approach_start).
   const previousStartPct = useMemo(() => {
@@ -224,7 +230,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
   const [loaded, setLoaded] = useState<{ key: string; status: SectionTraceStatus; data: TraceData | null }>({ key: analysisKey, status: "loading", data: null });
   const traceState = loaded.key === analysisKey ? loaded : { key: analysisKey, status: "loading" as const, data: null };
   const [attempt, setAttempt] = useState(0);
-  const wantsTraces = traces !== undefined && listed.length > 0;
+  const wantsTraces = traces !== undefined && hasTelemetryLaps;
   const tracesRef = useRef(traces);
   tracesRef.current = traces;
   useEffect(() => {
@@ -247,6 +253,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
     });
   }, [traceState.data, map, section?.id, section?.startPct, section?.endPct, listed]);
   const lines = hot === null ? recorded : [...recorded.filter((item) => item.lap.lap !== hot), ...recorded.filter((item) => item.lap.lap === hot)];
+  const singleLine = useMemo(() => listed.length === 0 && entry?.medianLap != null ? sectionRacingLines(traceState.data, map, section, [entry.medianLap])[0] : undefined, [traceState.data, map, section, listed.length, entry?.medianLap]);
 
   const selectedKey = [...selected].sort((a, b) => a - b).join(",");
   const drawnLaps: SectionTraceLap[] = useMemo(() => {
@@ -361,7 +368,8 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
       <div class="ri-sl-facts">
         <PaceFigures priority={section ? priorities.get(section.id) : undefined} />
         <span>Median<b>{entry?.medianS != null ? `${seconds(entry.medianS)} s` : "—"}</b></span>
-        <span>Clean laps<b>{entry ? entry.cleanLapCount : "—"}</b></span>
+        <span>{observed ? "Green laps" : "Clean laps"}<b>{entry ? entry.timedLapCount : "—"}</b></span>
+        {observed && <span>Traffic included{hasRepair ? " · * repair context" : ""}</span>}
       </div>
     </>
   );
@@ -372,7 +380,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
         <div class="ri-card-label">
           <span class="ri-card-title">Track</span>
           {listed.length > 0 && segment.length > 1 && (
-            <span class="ri-sl-key"><span><i class="g" />Fastest {fastest.length}</span><span><i class="r" />Slowest {slowest.length}</span><span>clean laps · section {section?.label}</span></span>
+            <span class="ri-sl-key"><span><i class="g" />Fastest {fastest.length}</span><span><i class="r" />Slowest {slowest.length}</span><span>{observed ? "green" : "clean"} laps · section {section?.label}</span></span>
           )}
           {!map && <span>not recorded</span>}
           {map && <button type="button" class="ri-pill-button small" aria-label="Fit track" title="Scroll to zoom · drag to pan" onClick={() => mapController.current?.fit()}>Fit</button>}
@@ -389,6 +397,7 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
               {segment.length > 1 && (
                 <g class="ri-sl-zone" data-sl-zone aria-hidden="true" onPointerEnter={drive} onPointerMove={drive} onPointerDown={drive} onPointerLeave={() => { zoneRect.current = null; }}>
                   <path d={mapPath(segment)} class="ri-sl-scrub" />
+                  {singleLine && <path d={singleLine.d} class="ri-sl-line" style={`--lap:${MEDIAN_STROKE}`} data-sl-line={singleLine.lap} />}
                   {lines.map(({ lap, line }) => (
                     <path key={lap.lap} d={line.d} class={`ri-sl-line${hot === lap.lap ? " hot" : ""}${selected.has(lap.lap) ? " selected" : ""}`}
                       style={`--lap:var(--sl-${lap.shade})`} data-sl-line={lap.lap} data-shade={lap.shade}
@@ -440,20 +449,23 @@ export function SectionsView({ inv, section, map, sectionLaps, onSelectSection, 
               {slowest.map(row)}
             </>
           ) : (
-            <div class="ri-sl-none">{sectionLaps === null ? "No section times" : countText(entry?.cleanLapCount ?? 0)}</div>
+            <div class="ri-sl-none">{sectionLaps === null ? "No section times" : countText(entry)}{entry?.medianLap != null && <span> · L{entry.medianLap} · {seconds(entry.medianS)} s</span>}</div>
           )}
         </div>
       </div>
 
       <div class="ri-sl-open">
-        {section && listed.length > 0 && traces ? (
+        {section && hasTelemetryLaps && traces ? (
           <SectionTraces
             data={traceState.data} status={traceState.status} onRetry={() => setAttempt((value) => value + 1)}
             section={{ id: section.id, startPct: section.startPct, endPct: section.endPct, previousStartPct }} laps={drawnLaps} medianLap={entry?.medianLap ?? null} hot={hot}
-            fractionRef={fractionRef} cursorRef={cursorRef} onFraction={placeMarker} analysisKey={analysisKey} head={head}
+            fractionRef={fractionRef} cursorRef={cursorRef} onFraction={placeMarker} analysisKey={analysisKey} head={head} medianRepair={medianRepair}
           />
         ) : (
-          <div class="ri-st-head">{head}</div>
+          <>
+            <div class="ri-st-head">{head}</div>
+            {!hasTelemetryLaps && <div class="ri-sl-none">{observed ? "No green racing laps have a complete sector time." : "No screened laps have a complete sector time."}</div>}
+          </>
         )}
         <div class="ri-sl-action">
           <span>{opens.length ? `${opens.length} ${opens.length === 1 ? "lap" : "laps"}` : ""}</span>

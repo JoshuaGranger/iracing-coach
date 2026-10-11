@@ -32,6 +32,18 @@ function harness(script: (entry: OutboxEntry, ifMatch: string | null | undefined
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe("outbox", () => {
+  it("automatically resumes a restored write without a reconnect or new edit", async () => {
+    const h = harness(() => ({ status: 201, body: {} }));
+    h.store.set("coach.outbox.v1", JSON.stringify([{ id: "persisted", method: "POST", path: "/notes", body: { body: "durable" }, label: "New note", createdAt: 1, attempts: 1, state: "sending" }]));
+    const box = h.make();
+    expect(h.timers).toHaveLength(1);
+    expect(h.timers[0]!.ms).toBe(0);
+    h.timers[0]!.fn();
+    await flush();
+    expect(h.sent.map((entry) => entry.id)).toEqual(["persisted"]);
+    expect(box.entries.get()).toHaveLength(0);
+  });
+
   it("sends writes in order under their own idempotency keys and removes them when accepted", async () => {
     const h = harness(() => ({ status: 200, body: { version: 2 } }));
     const box = h.make();
@@ -44,6 +56,19 @@ describe("outbox", () => {
     ]);
     expect(box.entries.get()).toHaveLength(0);
     expect(box.versionOf("/a")).toBe("2");
+  });
+
+  it("persists the conditional version for a request interrupted by reload", async () => {
+    const h = harness(() => ({ status: 200, body: {} }));
+    let resolve!: (response: { status: number; body: unknown }) => void;
+    const gate = new Promise<{ status: number; body: unknown }>((done) => { resolve = done; });
+    const box = new Outbox({ ...h.deps, send: () => gate });
+    box.observe("/prefs", 7);
+    void box.enqueue({ method: "PUT", path: "/prefs", body: { units: "metric" }, label: "Preferences" });
+    await flush();
+    expect(JSON.parse(h.store.get("coach.outbox.v1")!)[0]).toMatchObject({ state: "sending", ifMatch: "7" });
+    resolve({ status: 200, body: {} });
+    await flush();
   });
 
   it("uses the last observed version as If-Match for PUT and DELETE, never for POST", async () => {

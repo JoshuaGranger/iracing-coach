@@ -1,10 +1,10 @@
 {
- "analysis_id": "0fd8f8e5523856f37daeaa16",
+ "analysis_id": "f7da13c81646748cd4a73826",
  "analysis_profile": {
   "target_hz": 20.0
  },
- "analysis_profile_version": "post-race-foundations-v28",
- "analyzed_at": "2026-10-10T00:00:00+00:00",
+ "analysis_profile_version": "post-race-foundations-v29",
+ "analyzed_at": "2026-10-11T00:00:00+00:00",
  "coaching_signals": [
   {
    "coaching": "Keep disk telemetry enabled and return cleanly to pit service after the run to capture tire readings.",
@@ -421,27 +421,10 @@
  },
  "iracing_sectors": {
   "provenance": "iRacing SplitTimeInfo.Sectors recorded with this session.",
-  "sections": [
-   {
-    "boundary_status": "iracing_sector",
-    "end_pct": 0.5,
-    "id": "S1",
-    "label": "S1",
-    "provenance": "iRacing SplitTimeInfo.Sectors recorded with this session.",
-    "start_pct": 0.0
-   },
-   {
-    "boundary_status": "iracing_sector",
-    "end_pct": 1.0,
-    "id": "S2",
-    "label": "S2",
-    "provenance": "iRacing SplitTimeInfo.Sectors recorded with this session.",
-    "start_pct": 0.5
-   }
-  ],
+  "sections": [],
   "source": "iracing_split_time_info",
-  "unavailable_reason": null,
-  "version": "iracing-sectors/1/4c937c22a546"
+  "unavailable_reason": "iRacing sector definitions were not recorded for this session.",
+  "version": "iracing-sectors/1"
  },
  "lap_trace_columns": {
   "definition": "lap_traces reduced in narrower lap-distance bins for the trace chart; each value comes from the recorded samples in its bin, and session_time_s is the time at the bin centre, linear between the two samples either side",
@@ -1189,16 +1172,13 @@
   "distance_bins_per_lap": 160,
   "downsampling": "lap-distance bins retain representative values plus speed range, minimum throttle, peak brake, and peak absolute steering",
   "schema_version": 2,
-  "sector_start_pcts": [
-   0.0,
-   0.5
-  ],
+  "sector_start_pcts": [],
   "steering": {
    "basis": "steering_wheel",
    "definition": "Recorded SteeringWheelAngle. Without the car's steering ratio it cannot be converted to road-wheel angle, so it is never compared with road-wheel steering.",
    "degree_digits": 1,
    "evidence_class": "measured",
-   "label": "Steering wheel angle — ratio not recorded",
+   "label": "Steering wheel angle \u2014 ratio not recorded",
    "ratio_source": null,
    "raw_channel": "SteeringWheelAngle",
    "reason": "The garage setup does not state a steering ratio.",
@@ -2713,7 +2693,7 @@
    "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible.",
    "Steering is steering-wheel angle, not road-wheel steering: The garage setup does not state a steering ratio."
   ],
-  "projection_version": "sections-trials-v8",
+  "projection_version": "sections-trials-v9",
   "runs": [
    {
     "first_lap": 1,
@@ -2732,30 +2712,17 @@
    }
   ],
   "schema_version": 2,
+  "section_laps": {
+   "population": "observed_green_racing_laps",
+   "sections": []
+  },
   "sections": {
    "configuration_key": "9001-oval",
    "provenance": "iRacing SplitTimeInfo.Sectors recorded with this session.",
-   "sections": [
-    {
-     "boundary_status": "iracing_sector",
-     "end_pct": 0.5,
-     "id": "S1",
-     "label": "S1",
-     "provenance": "iRacing SplitTimeInfo.Sectors recorded with this session.",
-     "start_pct": 0.0
-    },
-    {
-     "boundary_status": "iracing_sector",
-     "end_pct": 1.0,
-     "id": "S2",
-     "label": "S2",
-     "provenance": "iRacing SplitTimeInfo.Sectors recorded with this session.",
-     "start_pct": 0.5
-    }
-   ],
+   "sections": [],
    "source": "iracing_split_time_info",
-   "unavailable_reason": null,
-   "version": "iracing-sectors/1/4c937c22a546"
+   "unavailable_reason": "iRacing sector definitions were not recorded for this session.",
+   "version": "iracing-sectors/1"
   },
   "status": "insufficient_evidence",
   "steering": {
@@ -2763,7 +2730,7 @@
    "definition": "Recorded SteeringWheelAngle. Without the car's steering ratio it cannot be converted to road-wheel angle, so it is never compared with road-wheel steering.",
    "degree_digits": 1,
    "evidence_class": "measured",
-   "label": "Steering wheel angle — ratio not recorded",
+   "label": "Steering wheel angle \u2014 ratio not recorded",
    "ratio_source": null,
    "raw_channel": "SteeringWheelAngle",
    "reason": "The garage setup does not state a steering ratio.",
@@ -3309,7 +3276,7 @@
   "definition": "Recorded SteeringWheelAngle. Without the car's steering ratio it cannot be converted to road-wheel angle, so it is never compared with road-wheel steering.",
   "degree_digits": 1,
   "evidence_class": "measured",
-  "label": "Steering wheel angle — ratio not recorded",
+  "label": "Steering wheel angle \u2014 ratio not recorded",
   "ratio_source": null,
   "raw_channel": "SteeringWheelAngle",
   "reason": "The garage setup does not state a steering ratio.",
@@ -3542,7 +3509,7 @@
     },
     {
      "action": "Compare overlap locations with the faster laps; the measurement describes technique and does not prove that overlap is harmful.",
-     "detail": "Median time per lap with at least 8% brake and at least 4.6° of steering-wheel angle.",
+     "detail": "Median time per lap with at least 8% brake and at least 4.6\u00b0 of steering-wheel angle.",
      "evidence_type": "derived",
      "group": "driver execution",
      "label": "Brake / steer overlap",

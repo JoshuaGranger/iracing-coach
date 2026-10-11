@@ -65,6 +65,69 @@ class RaceInvestigationTests(unittest.TestCase):
     def build(self, analysis: dict) -> dict:
         return build_race_investigation(analysis, lap_exclusions=investigation_lap_exclusions(analysis))
 
+    def test_sections_compare_observed_traffic_without_relabeling_clean_laps(self):
+        analysis = investigation_fixture()
+        analysis['damage_repair']['incident_points']['events'] = []
+        for lap in analysis['laps']:
+            lap['clean_context']['traffic_proximity_fraction'] = 1.0
+        result = self.build(analysis)
+        self.assertFalse(any(lap['eligible'] for lap in result['laps']))
+        self.assertTrue(all(lap['observed_section_eligible'] for lap in result['laps']))
+        self.assertTrue(all(lap['exclusion_reasons'] == ['close_traffic'] for lap in result['laps']))
+        self.assertEqual(result['section_laps']['population'], 'observed_green_racing_laps')
+        for section in result['section_laps']['sections']:
+            self.assertEqual(section['observed_lap_count'], 20)
+            self.assertEqual(section['clean_lap_count'], 0)
+            self.assertEqual(section['lap_numbers'], list(range(1,21)))
+            self.assertTrue(all(not item['eligible'] and item['context_reasons'] == ['close_traffic']
+                                for item in section['fastest'] + section['slowest']))
+
+    def test_observed_sections_allow_ongoing_repair_but_exclude_incidents_pits_restart_and_disruption(self):
+        analysis = investigation_fixture()
+        analysis['damage_repair']['incident_points']['events'] = [{'candidate_lap':4,'points_added':1}]
+        for lap in analysis['laps']:
+            lap['clean_context']['traffic_proximity_fraction'] = 1.0
+            lap['damage_repair_context'] = {'automatic_coaching_reference_eligible':False}
+        analysis['laps'][4]['pit_entry'] = True
+        analysis['laps'][5]['flag_state'] = 'caution'
+        analysis['laps'][7]['damage_repair_context']['exclusion_reason_codes'] = ['recorded_repair_evidence']
+        analysis['laps'][8]['clean_context']['on_track_fraction'] = 0.5
+        result = self.build(analysis)
+        expected = [1,2,3,*range(10,21)]
+        self.assertEqual(result['section_laps']['sections'][0]['lap_numbers'],expected)
+        self.assertFalse(any(row['eligible'] for row in result['laps']))
+        self.assertIn('pit_entry_or_exit',result['laps'][4]['observed_section_exclusion_reasons'])
+        self.assertIn('restart',result['laps'][6]['observed_section_exclusion_reasons'])
+        self.assertEqual(result['section_laps']['sections'][0]['clean_lap_count'],0)
+        self.assertTrue(all(item['context_reasons'] == ['close_traffic','damage_repair_context']
+                            for item in result['section_laps']['sections'][0]['fastest']))
+
+    def test_section_membership_requires_full_coverage_independently_per_sector(self):
+        analysis = investigation_fixture()
+        analysis['lap_traces']['traces'][0]['points'].pop(0)  # First sector's entry is absent.
+        analysis['lap_traces']['traces'][1]['points'].pop(10)  # Interior gap exceeds 3% lap.
+        result = self.build(analysis)
+        first, second = result['section_laps']['sections']
+        self.assertNotIn(1,first['lap_numbers'])
+        self.assertNotIn(2,first['lap_numbers'])
+        self.assertIn(1,second['lap_numbers'])
+        self.assertIn(2,second['lap_numbers'])
+        self.assertNotIn(18,first['lap_numbers'])  # Recorded incident remains excluded.
+
+    def test_one_observed_sector_lap_retains_median_without_inventing_rank_pairs(self):
+        analysis = investigation_fixture()
+        analysis['laps'] = [analysis['laps'][1]]
+        analysis['laps'][0]['clean_context']['traffic_proximity_fraction'] = 1.0
+        analysis['lap_traces']['traces'] = [analysis['lap_traces']['traces'][1]]
+        result = self.build(analysis)
+        for section in result['section_laps']['sections']:
+            self.assertEqual(section['observed_lap_count'],1)
+            self.assertEqual(section['clean_lap_count'],0)
+            self.assertEqual(section['median_lap'],2)
+            self.assertEqual(section['median_s'],15.02)
+            self.assertEqual(section['fastest'],[])
+            self.assertEqual(section['slowest'],[])
+
     def test_observed_finish_retains_fade_laps_and_exact_exclusion_reasons(self) -> None:
         result = self.build(investigation_fixture())
         comparison = next(item for item in result["comparisons"] if item["id"] == "run-2-finish")

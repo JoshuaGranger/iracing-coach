@@ -168,3 +168,14 @@ fn no_clean_lap_gives_a_section_with_no_median() {
     assert_eq!(a["fastest"], json!([]));
     assert_eq!(a["slowest"], json!([]));
 }
+
+#[test]
+fn backend_observed_population_passes_through_without_retiming_or_screening() {
+    let mut analysis = race(json!([section("A", 0.1, 0.4)]), &[false; 12]);
+    let backend = json!({"population":"observed_green_racing_laps","future_optional":{"source":"python"},
+        "sections":[{"section_id":"A","observed_lap_count":1,"clean_lap_count":0,"lap_numbers":[10],
+        "median_s":123.456,"median_lap":10,"fastest":[],"slowest":[]}]});
+    analysis["race_investigation"]["section_laps"] = backend.clone();
+    let served = projected(&analysis);
+    assert_eq!(served["section_laps"], backend);
+}

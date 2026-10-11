@@ -20,7 +20,7 @@ SCHEMA_VERSION = 2
 # Bump when any projection below changes; cached analyses rebuild it without decoding.
 # v7: steering is road-wheel angle when the recording states its steering ratio
 # (labelled steering-wheel angle otherwise), with steering thresholds to match.
-PROJECTION_VERSION = "sections-trials-v8"
+PROJECTION_VERSION = "sections-trials-v9"
 # A steering change worth naming, stated on steering-wheel angle (degrees) and
 # converted to the recording's basis (road wheel: 2/12 deg).
 STEERING_CHANGE_DEG = 2.0
@@ -85,6 +85,54 @@ def _plot_pace(lap: Mapping[str, Any]) -> bool:
                 and (_number(lap.get("pit_time_s")) or 0) < 1
                 and (_number(lap.get("lap_time_s")) or 0) > 0
                 and (racing is None or racing >= 0.98 or scored_finish))
+
+
+OBSERVED_SECTION_CONTEXT = frozenset({"close_traffic", "damage_repair_context"})
+
+
+def _observed_section_exclusions(lap: Mapping[str, Any], strict_reasons: Sequence[str]) -> list[str]:
+    """A recorded comparison may retain traffic/ongoing repair; coaching stays strict."""
+    reasons = [reason for reason in strict_reasons if reason not in OBSERVED_SECTION_CONTEXT]
+    if not lap.get("complete"):
+        reasons.append("partial")
+    if lap.get("flag_state") != "green":
+        reasons.append("caution_or_mixed")
+    if (_number(lap.get("lap_time_s")) or 0) <= 0:
+        reasons.append("lap_timing_unavailable")
+    if any(lap.get(key) is True for key in ("pit_entry", "pit_exit", "pit_in", "pit_out")):
+        reasons.append("pit_entry_or_exit")
+    return list(dict.fromkeys(reasons))
+
+
+def _observed_section_laps(rows: Sequence[Mapping[str, Any]], traces: Mapping[int, Mapping[str, Any]],
+                           sections: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    try:
+        from .race_inspection import section_elapsed
+    except ImportError:  # pragma: no cover - normal CLI/MCP script loading.
+        from race_inspection import section_elapsed
+    candidates = {row["lap"]: row for row in rows if row.get("observed_section_eligible", row["eligible"])}
+    result = []
+    for section in sections:
+        start, end = _number(section.get("start_pct")), _number(section.get("end_pct"))
+        if start is None or end is None or not 0 <= start < end <= 1:
+            continue
+        timed = sorted((round(seconds, 3), number) for number in candidates
+                       if (seconds := section_elapsed(traces.get(number), start, end)) is not None)
+        middle = round(statistics.median(seconds for seconds, _ in timed), 3) if timed else None
+        shown = min(3, len(timed) // 2)
+        def entry(item):
+            seconds, number = item
+            row = candidates[number]
+            return {"lap": number, "section_s": seconds, "delta_s": round(seconds - middle, 3),
+                    "eligible": row["eligible"],
+                    "context_reasons": [reason for reason in row["exclusion_reasons"] if reason in OBSERVED_SECTION_CONTEXT]}
+        result.append({"section_id": section["id"], "observed_lap_count": len(timed),
+                       "clean_lap_count": sum(candidates[number]["eligible"] for _, number in timed),
+                       "lap_numbers": sorted(number for _, number in timed), "median_s": middle,
+                       "median_lap": timed[(len(timed) - 1) // 2][1] if timed else None,
+                       "fastest": [entry(item) for item in timed[:shown]],
+                       "slowest": [entry(item) for item in reversed(timed[len(timed) - shown:])] if shown else []})
+    return {"population": "observed_green_racing_laps", "sections": result}
 
 
 def _window_text(numbers: Sequence[int]) -> str:
@@ -860,6 +908,14 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
                  "plot_pace": _plot_pace(lap),
                  "exclusion_reasons": list(lap_exclusions.get(int(lap["lap"]), ["eligibility_unknown"])), "run_number": run_for_lap.get(int(lap["lap"])),
                  "green_exposure": _round(ages.get(int(lap["lap"])), 3)} for lap in laps]
+    for row, lap in zip(lap_rows, laps):
+        observed_reasons = _observed_section_exclusions(lap, row["exclusion_reasons"])
+        # Strictly eligible laps normally need no duplicate declaration. Emit the separate
+        # observed screen whenever it differs or excludes a lap, keeping large races bounded.
+        if not row["eligible"] or observed_reasons:
+            row["observed_section_eligible"] = not observed_reasons
+            if observed_reasons:
+                row["observed_section_exclusion_reasons"] = observed_reasons
     return {
         "schema_version": SCHEMA_VERSION, "projection_version": PROJECTION_VERSION,
         "steering": steering.describe(),
@@ -868,6 +924,7 @@ def build_race_investigation(analysis: Mapping[str, Any], *, lap_exclusions: Map
         "default_comparison_id": default["id"] if default else None,
         "comparisons": comparisons, "comparison_coverage": comparison_coverage,
         "laps": lap_rows,
+        "section_laps": _observed_section_laps(lap_rows, traces, sections),
         "runs": run_views([row for row in lap_rows if row["plot_pace"]], laps),
         "sections": {key: value for key, value in section_set.items()},
         "timeline": _timeline(analysis, laps), "track_evolution": track,

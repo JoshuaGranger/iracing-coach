@@ -41,6 +41,22 @@ describe("parseSectionLaps", () => {
     const laps = parseSectionLaps({ sections: [{ section_id: "A", clean_lap_count: 12, median_s: 5, fastest: [{ lap: 1, section_s: 4.9 }, ...[2, 3, 4, 5].map((lap) => ({ lap, section_s: 4.9, delta_s: -0.1 }))], slowest: [] }] })!;
     expect(laps.get("A")!.fastest.map((lap) => lap.lap)).toEqual([2, 3, 4]);
   });
+
+  it("keeps observed membership separate when every timed lap fails the strict screen", () => {
+    const entry = parseSectionLaps({ population: "observed_green_racing_laps", sections: [{
+      section_id: "S1", clean_lap_count: 0, observed_lap_count: 2,
+      median_s: 15.25, median_lap: 33,
+      fastest: [{ lap: 33, section_s: 15.2, delta_s: -0.05, eligible: false, context_reasons: ["close_traffic", "damage_repair_context"] }],
+      slowest: [{ lap: 34, section_s: 15.3, delta_s: 0.05, eligible: false, context_reasons: ["close_traffic"] }],
+    }] })!.get("S1")!;
+    expect(entry.cleanLapCount).toBe(0);
+    expect(entry.timedLapCount).toBe(2);
+    expect(entry.population).toBe("observed_green_racing_laps");
+    expect(entry.fastest[0]?.contextReasons).toContain("damage_repair_context");
+    expect(shadedLaps(entry).fastest[0]?.lap).toBe(33);
+    expect(parseSectionLaps(RAW)!.get("A")?.population).toBe("clean");
+    expect(parseSectionLaps(RAW)!.get("A")?.timedLapCount).toBe(9);
+  });
 });
 
 describe("shadedLaps: time order, green shades faster, red shades slower", () => {

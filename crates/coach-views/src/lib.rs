@@ -32,7 +32,7 @@ use parse::{Doc, Kind};
 use prune::Spec;
 use val::{Obj, int_of};
 
-pub const PROJECTION_VERSION: u32 = 8;
+pub const PROJECTION_VERSION: u32 = 9;
 
 /// `analysis_view.schema_version` this crate reads, and the analysis document's own.
 const VIEW_SCHEMA_VERSION: i64 = 1;
@@ -521,8 +521,14 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
         )?,
     ));
 
-    // Investigation, with the projector's per-section clean-lap times beside the backend's subtree.
-    let section_laps = investigation_map.map(|inv| section_laps::build(inv, &lap_traces.traces));
+    // New section populations and timings are authoritative Python output. Preserve the
+    // clean-only fallback solely for legacy analyses without the optional backend object.
+    let section_laps = investigation_map.map(|inv| {
+        inv.get("section_laps")
+            .filter(|value| value.is_object())
+            .cloned()
+            .unwrap_or_else(|| section_laps::build(inv, &lap_traces.traces))
+    });
     if let Some(section_laps) = section_laps {
         let mut view = Map::new();
         envelope.apply(&mut view);

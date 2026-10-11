@@ -66,3 +66,24 @@ Publishing the installer does not install it on DESKTOP-SIM. This chat has no ca
 remote-engineering tools, so installation and the G4 sim-impact measurement remain
 unverified. Existing companion installations do not gain field capture until updated.
 No private race data or raw iRacing source files were changed or committed.
+
+## Follow-up: empty sectors and pending saves
+
+The sector list previously used strict coaching eligibility. Traffic could exclude
+every lap even when complete sector telemetry was present. Python now supplies a
+separate observed green racing population, allowing traffic and ongoing repair
+context while preserving every original coaching exclusion. Incident, pit, restart,
+caution, incomplete and untimed passes remain excluded. Sector times require full
+coverage. The projector passes this population through without recalculating it.
+
+The UI names green membership, retains traffic columns, marks repair context, and
+labels the actual reference lap separately from the statistical median. A single
+timed pass displays its recorded trace and racing line without a fastest/slowest
+ranking. A genuinely empty population has an explanation beside the sector header.
+
+Persisted pending saves now resume on initial load, with the original idempotency
+key and conditional version. Silent connections time out and retry. The toast
+names the pending change and stays quiet for saves shorter than 600 ms; conflicts
+and failures remain visible immediately. Regression checks include interrupted
+saves, outage recovery, conflict handling, observed sectors with no clean laps,
+and singleton telemetry on desktop, tablet and phone.

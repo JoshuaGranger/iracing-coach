@@ -182,7 +182,7 @@ for (const device of ROUND2_DEVICES) {
       expect(strokes.slice(0, 6)).toEqual(swatches);
       expect(strokes[6]).toBe(REFERENCE_GREY);
       await expect(page.locator(`[data-sl-trace="${median}"][data-median]`).first()).toBeAttached();
-      await expect(page.locator("[data-sl-median-key]")).toHaveText(`Median L${median}`);
+      await expect(page.locator("[data-sl-median-key]")).toHaveText(`Reference L${median}`);
       // The x axis is lap distance from the approach (gap ledger G6: the backend's lead-in, 8 % lap here) to the section end, the section
       // start marked by one boundary line; the approach is dashed and the fastest and slowest laps (the pass pair) are thick.
       const ticks = await page.locator("[data-sl-traces] [data-sl-tick]").allTextContents();

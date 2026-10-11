@@ -2991,6 +2991,7 @@
       "green_exposure": 10.0,
       "lap": 10,
       "lap_time_s": 31.2,
+      "observed_section_eligible": true,
       "plot_pace": true,
       "position": 3.0,
       "run_number": 1
@@ -3004,6 +3005,7 @@
       "green_exposure": 11.0,
       "lap": 11,
       "lap_time_s": 31.22,
+      "observed_section_eligible": true,
       "plot_pace": true,
       "position": 3.0,
       "run_number": 1
@@ -3017,6 +3019,7 @@
       "green_exposure": 12.0,
       "lap": 12,
       "lap_time_s": 31.24,
+      "observed_section_eligible": true,
       "plot_pace": true,
       "position": 3.0,
       "run_number": 1
@@ -3031,7 +3034,7 @@
     "Corner timing uses recorded distance-binned samples; absent boundaries, gaps or fewer than two observations withhold that metric. Local traffic is not controlled.",
     "Complete SDK-scored green laps crossing the checkered transition stay in observed pace windows; their clean-screen exclusions remain visible."
   ],
-  "projection_version": "sections-trials-v8",
+  "projection_version": "sections-trials-v9",
   "runs": [
     {
       "first_lap": 1,
@@ -3220,6 +3223,157 @@
     }
   ],
   "schema_version": 2,
+  "section_laps": {
+    "population": "observed_green_racing_laps",
+    "sections": [
+      {
+        "clean_lap_count": 9,
+        "fastest": [
+          {
+            "context_reasons": [],
+            "delta_s": -0.055,
+            "eligible": true,
+            "lap": 1,
+            "section_s": 15.01
+          },
+          {
+            "context_reasons": [],
+            "delta_s": -0.045,
+            "eligible": true,
+            "lap": 2,
+            "section_s": 15.02
+          },
+          {
+            "context_reasons": [],
+            "delta_s": -0.035,
+            "eligible": true,
+            "lap": 3,
+            "section_s": 15.03
+          }
+        ],
+        "lap_numbers": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "median_lap": 6,
+        "median_s": 15.065,
+        "observed_lap_count": 12,
+        "section_id": "S1",
+        "slowest": [
+          {
+            "context_reasons": [
+              "close_traffic"
+            ],
+            "delta_s": 0.555,
+            "eligible": false,
+            "lap": 12,
+            "section_s": 15.62
+          },
+          {
+            "context_reasons": [
+              "close_traffic"
+            ],
+            "delta_s": 0.545,
+            "eligible": false,
+            "lap": 11,
+            "section_s": 15.61
+          },
+          {
+            "context_reasons": [
+              "close_traffic"
+            ],
+            "delta_s": 0.535,
+            "eligible": false,
+            "lap": 10,
+            "section_s": 15.6
+          }
+        ]
+      },
+      {
+        "clean_lap_count": 9,
+        "fastest": [
+          {
+            "context_reasons": [],
+            "delta_s": -0.055,
+            "eligible": true,
+            "lap": 1,
+            "section_s": 15.01
+          },
+          {
+            "context_reasons": [],
+            "delta_s": -0.045,
+            "eligible": true,
+            "lap": 2,
+            "section_s": 15.02
+          },
+          {
+            "context_reasons": [],
+            "delta_s": -0.035,
+            "eligible": true,
+            "lap": 3,
+            "section_s": 15.03
+          }
+        ],
+        "lap_numbers": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "median_lap": 6,
+        "median_s": 15.065,
+        "observed_lap_count": 12,
+        "section_id": "S2",
+        "slowest": [
+          {
+            "context_reasons": [
+              "close_traffic"
+            ],
+            "delta_s": 0.555,
+            "eligible": false,
+            "lap": 12,
+            "section_s": 15.62
+          },
+          {
+            "context_reasons": [
+              "close_traffic"
+            ],
+            "delta_s": 0.545,
+            "eligible": false,
+            "lap": 11,
+            "section_s": 15.61
+          },
+          {
+            "context_reasons": [
+              "close_traffic"
+            ],
+            "delta_s": 0.535,
+            "eligible": false,
+            "lap": 10,
+            "section_s": 15.6
+          }
+        ]
+      }
+    ]
+  },
   "sections": {
     "configuration_key": null,
     "provenance": "iRacing SplitTimeInfo.Sectors recorded with this session.",
