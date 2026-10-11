@@ -4,7 +4,7 @@ import "./field-results.css";
 export function ResultsSummaryView({ results, onSelectCar }: { results: FieldResults; onSelectCar?(index: number): void }) {
   return <div class="ri-results-summary" data-ri-view="results">
     <div class="ri-chart-head"><strong>Results Summary · recorded order</strong><small>— unavailable</small></div>
-    {results.cars.length === 0 ? <div class="ri-empty">No field results recorded</div> : <div class="ri-results-scroll">
+    {results.cars.length === 0 ? <div class="ri-empty">{results.unavailableReason ?? "No field results recorded"}</div> : <div class="ri-results-scroll">
       <table class="ri-results-table"><thead><tr>
         <th>Pos</th><th>Driver / car</th><th>Laps</th>
         <th title="Recorded pit-road entries, including drive-throughs; entries before recording are unknown">Pit visits</th>

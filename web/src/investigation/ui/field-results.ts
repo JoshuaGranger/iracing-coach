@@ -8,11 +8,17 @@ export interface FieldCar {
   fastestSource: string | null; progressionUnavailableReason: string | null;
   laps: FieldLap[]; pitEvents: { lap: number | null; time: number | null }[];
 }
-export interface FieldResults { cars: FieldCar[]; definition: string; limitations: string[] }
+export interface FieldResults { cars: FieldCar[]; definition: string; limitations: string[]; unavailableReason: string | null }
 /** Optional projection fields retain backend order and evidence; no metrics are fitted in the browser. */
 export function fieldResults(raw: unknown): FieldResults {
   const results = asRecord(raw);
+  if (Object.keys(results).length > 0 && results.schema_version !== 1) {
+    return { cars: [], definition: "", limitations: [], unavailableReason: results.schema_version === undefined
+      ? "Field results unavailable: required schema version is missing"
+      : "Field results unavailable: incompatible schema version" };
+  }
   return {
+    unavailableReason: null,
     definition: typeof results.pace_definition === "string" ? results.pace_definition : "Recorded green-lap median; traffic included.",
     limitations: asArray(results.limitations).filter((item): item is string => typeof item === "string"),
     cars: asArray(results.cars).flatMap((rawCar) => {

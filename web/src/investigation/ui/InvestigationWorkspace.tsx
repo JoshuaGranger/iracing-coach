@@ -138,6 +138,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
   const field = useMemo(() => fieldResults(asRecord(overviewValue?.race.field_pace).results), [overviewValue]);
   const fieldCar = field.cars.find((car) => car.index === selectedCar) ?? field.cars.find((car) => car.player);
   const carPicker = <label class="ri-field-picker">Car
+    {field.unavailableReason && <span role="status">{field.unavailableReason}</span>}
     <select aria-label="Race car" value={fieldCar?.index ?? "player"} onChange={(event) => setSelectedCar(event.currentTarget.value === "player" ? null : Number(event.currentTarget.value))}>
       {!field.cars.some((car) => car.player) && <option value="player">You</option>}
       {field.cars.map((car) => <option key={car.index} value={car.index}>{car.position === null ? "—" : `P${car.position}`} · #{car.number || "—"} {car.name}{car.player ? " · You" : ""}</option>)}

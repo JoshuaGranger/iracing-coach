@@ -12,7 +12,7 @@ const row = (index: number, name: string, player: boolean, position: number) => 
   laps: Array.from({ length: 30 }, (_, i) => ({ lap: i + 1, lap_time_s: 29.4 + i * .04, position: i < 10 ? 3 : position, flag_state: "green", on_pit_road: i === 14, pace_eligible: i !== 14 })),
   pit_events: [{ lap: 15, session_time_s: 445 }],
 });
-analysis.race.field_pace = { results: { cars: [row(2, "Race Leader", false, 1), row(0, "Joshua Granger", true, 2), row(3, "Third Driver", false, 3)], pace_definition: "Recorded whole green laps; traffic included." } };
+analysis.race.field_pace = { results: { schema_version: 1, cars: [row(2, "Race Leader", false, 1), row(0, "Joshua Granger", true, 2), row(3, "Third Driver", false, 3)], pace_definition: "Recorded whole green laps; traffic included." } };
 
 for (const device of DEVICES) appTest(device, () => {
   test("field comparison defaults to player, offers recorded order and opens competitor progression", async ({ page }) => {

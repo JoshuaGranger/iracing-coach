@@ -3,7 +3,7 @@ import { fieldResults, fieldTime, sampledTime, timeSourceLabel } from "../ui/fie
 import { FieldRaceView } from "../ui/FieldRaceView";
 import { ResultsSummaryView } from "../ui/ResultsSummaryView";
 
-const raw = { cars: [
+const raw = { schema_version: 1, cars: [
   { car_index: 4, driver_name: "Leader", car_number: "7", position: 1, is_player: false, pace_median_s: null, pace_lap_count: 2, tires_taken: null, fuel_used_l: null, pit_visits: 1,
     laps: [{ lap: 3, lap_time_s: 60.1, position: 1, flag_state: "green", pace_eligible: true }, { lap: 4, lap_time_s: 79.2, position: 2, flag_state: "caution", pace_eligible: false }], pit_events: [{ lap: 4, session_time_s: 242 }] },
   { car_index: 0, driver_name: "Player", position: 2, is_player: true, tires_taken: [], fuel_used_l: 0, pit_visits: 0 },
@@ -20,7 +20,16 @@ describe("recorded field comparison", () => {
   });
   it("does not invent field rows when optional results are missing or malformed", () => {
     expect(fieldResults(null).cars).toEqual([]);
-    expect(fieldResults({ cars: [{ car_index: -1 }, {}, { car_index: 2.3 }] }).cars).toEqual([]);
+    expect(fieldResults({ schema_version: 1, cars: [{ car_index: -1 }, {}, { car_index: 2.3 }] }).cars).toEqual([]);
+  });
+  it("reports incompatible or missing required versions without failing render and accepts optional fields", () => {
+    expect(fieldResults(null).unavailableReason).toBeNull();
+    expect(fieldResults({ ...raw, schema_version: 2 }).cars).toEqual([]);
+    expect(fieldResults({ ...raw, schema_version: 2 }).unavailableReason).toContain("incompatible");
+    const missing = fieldResults({ cars: raw.cars });
+    expect(missing.unavailableReason).toContain("missing");
+    expect(JSON.stringify(ResultsSummaryView({ results: missing }))).toContain("required schema version is missing");
+    expect(fieldResults({ ...raw, future_optional: { value: true } }).cars).toHaveLength(2);
   });
   it("renders observed lap dots and pit marks and no unsupported service figures", () => {
     const car = fieldResults(raw).cars[0]!;
@@ -53,11 +62,11 @@ describe("recorded field comparison", () => {
     expect(timeSourceLabel("session_results_snapshot")).toBe("iRacing results snapshot");
   });
   it("preserves sampled timing evidence and explains omitted oversized progression", () => {
-    const results = fieldResults({ cars: [{ ...raw.cars[0], fastest_source: "recorded_lap_counter_intervals", progression_unavailable_reason: "payload_budget", laps: [] }] });
+    const results = fieldResults({ schema_version: 1, cars: [{ ...raw.cars[0], fastest_source: "recorded_lap_counter_intervals", progression_unavailable_reason: "payload_budget", laps: [] }] });
     expect(results.cars[0]!.fastestSource).toBe("recorded_lap_counter_intervals");
     expect(JSON.stringify(ResultsSummaryView({ results }))).toContain("Approximate sampled interval");
     expect(JSON.stringify(FieldRaceView({ car: results.cars[0]! }))).toContain("oversized recording");
-    const laps = fieldResults({ cars: [{ ...raw.cars[0], laps: [{ ...raw.cars[0]!.laps![0], lap_time_source: "recorded_interpolated_distance_crossings" }] }] });
+    const laps = fieldResults({ schema_version: 1, cars: [{ ...raw.cars[0], laps: [{ ...raw.cars[0]!.laps![0], lap_time_source: "recorded_interpolated_distance_crossings" }] }] });
     expect(laps.cars[0]!.laps[0]!.timeSource).toBe("recorded_interpolated_distance_crossings");
     expect(JSON.stringify(FieldRaceView({ car: laps.cars[0]! }))).toContain("≈60.1");
   });
