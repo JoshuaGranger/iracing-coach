@@ -33,6 +33,10 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 ## Change log
 
+### 2026-10-10, race snapshot position numbering correction
+
+`field_pace.results` preserves the SDK's one-based `ResultsPositions.Position`, including gaps in partial snapshots. Only a snapshot explicitly containing position zero receives a one-position offset for legacy zero-based data. It does not compact or rerank the recorded field. Normal and partial one-based snapshots and explicit zero-based snapshots have regression coverage; live recorded positions still take precedence.
+
 ### 2026-10-10, recorded iRacing sectors and field comparison
 
 Owner request: Sections must use iRacing sectors in track order in P/Q/R; Race needs a car selector and Results Summary after Traces.

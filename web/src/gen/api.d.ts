@@ -2545,7 +2545,9 @@ export interface components {
                  *     Each car carries car_index, driver_name, car_number, is_player, position, position_source,
                  *     laps_completed, fastest_lap_s, fastest_source, pace_median_s, pace_lap_count, pit_visits,
                  *     tires_taken, fuel_used_l, laps and pit_events. Unknown quantities are null, never inferred zero.
-                 *     Order is a recorded snapshot, not confirmed final classification. Competitor timing measures
+                 *     Order is a recorded snapshot, not confirmed final classification. Positive SDK ResultsPositions
+                 *     positions and holes are preserved; only a snapshot explicitly starting at zero is shifted by one.
+                 *     Competitor timing measures
                  *     intervals between consecutive completed-lap counter transitions within the selected session,
                  *     without sample gaps over 2 seconds or intervening unscoped samples. Distance wraps are linearly
                  *     interpolated when both adjacent samples cover start/finish; otherwise transition timestamps
