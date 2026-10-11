@@ -2266,8 +2266,11 @@ def _analysis_pipeline_sha256() -> str:
 # endpoints, and adds phase-scoped field results with observed timing/pit visits.
 # Competitor fuel/tire service remains unavailable; sampled timing is explicit.
 # Existing caches require reanalysis. Native stage algorithms remain unchanged.
+# Review 2026-10-10: accept a null ResultsPositions snapshot as absent, matching
+# an empty snapshot. Successful output and evidence semantics remain unchanged;
+# only previously failing recordings recover, so v27 stays current.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "5b58a9c6285f794f825335082cc680b2cda990895a2fe580a4ccf0f877ece798"
+    "6695d4ebc621891018d96ac8c8cb055c90091f294d3615d1f4bfabbfbcaa7456"
 )
 
 

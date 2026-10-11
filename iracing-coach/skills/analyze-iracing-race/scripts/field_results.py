@@ -43,7 +43,7 @@ def build_field_results(channels: Mapping[str, Sequence[Any]], session_info: Map
     session = next((s for s in sessions if isinstance(s, Mapping) and integer(s.get("SessionNum")) == phase), {})
     phase_type = str(metadata.get("sim_session_type") or session.get("SessionType") or "").strip()
     is_race = phase_type.casefold() == "race"
-    snapshot = {integer(r.get("CarIdx")): r for r in session.get("ResultsPositions", ()) if isinstance(r, Mapping)}
+    snapshot = {integer(r.get("CarIdx")): r for r in (session.get("ResultsPositions") or ()) if isinstance(r, Mapping)}
     snapshot_positions = {car: integer(row.get("Position")) for car, row in snapshot.items()
                           if car is not None and integer(row.get("Position")) is not None}
     # SDK ResultsPositions is normally one-based. Only a snapshot explicitly

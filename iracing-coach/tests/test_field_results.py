@@ -107,6 +107,16 @@ class FieldResultsTests(unittest.TestCase):
         rows = self.build(channels, info)["cars"]
         self.assertEqual([(r["car_index"], r["position"]) for r in rows], [(0, 1), (1, 2)])
 
+    def test_null_results_positions_is_absent_snapshot_not_an_analysis_failure(self):
+        channels, info, _ = fixture()
+        expected = self.build(channels, info)
+        info["SessionInfo"]["Sessions"][0]["ResultsPositions"] = None
+        self.assertEqual(self.build(channels, info), expected)
+        del channels["CarIdxPosition"]
+        rows = self.build(channels, info)["cars"]
+        self.assertTrue(all(row["position"] is None for row in rows))
+        self.assertTrue(all(row["pace_median_s"] == 2 for row in rows))
+
     def test_player_laps_survive_missing_competitor_arrays(self):
         channels, info, metadata = fixture()
         channels = {k: v for k, v in channels.items() if not k.startswith("CarIdx")}
