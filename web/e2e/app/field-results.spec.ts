@@ -45,4 +45,3 @@ for (const device of DEVICES) appTest(device, () => {
     await page.screenshot({ path: `test-results/field-review/field-race-${device.viewport.width}.png`, fullPage: true });
   });
 });
-

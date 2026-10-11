@@ -208,7 +208,22 @@ class FieldResultsTests(unittest.TestCase):
         channels, info, _ = fixture()
         del channels["CarIdxPosition"]
         info["SessionInfo"]["Sessions"][0]["ResultsPositions"] = [{"CarIdx": 0, "Position": 5}, {"CarIdx": 1, "Position": 8}]
-        self.assertEqual([row["position"] for row in self.build(channels, info)["cars"]], [6, 9])
+        self.assertEqual([row["position"] for row in self.build(channels, info)["cars"]], [5, 8])
+
+    def test_sdk_one_based_results_snapshot_preserves_positions_and_holes(self):
+        channels, info, _ = fixture()
+        del channels["CarIdxPosition"]
+        for positions in ((1, 2), (1, 4), (3, 8)):
+            info["SessionInfo"]["Sessions"][0]["ResultsPositions"] = [
+                {"CarIdx": 0, "Position": positions[0]}, {"CarIdx": 1, "Position": positions[1]}]
+            self.assertEqual([row["position"] for row in self.build(channels, info)["cars"]], list(positions))
+
+    def test_explicit_zero_based_results_snapshot_preserves_holes(self):
+        channels, info, _ = fixture()
+        del channels["CarIdxPosition"]
+        info["SessionInfo"]["Sessions"][0]["ResultsPositions"] = [
+            {"CarIdx": 0, "Position": 0}, {"CarIdx": 1, "Position": 4}]
+        self.assertEqual([row["position"] for row in self.build(channels, info)["cars"]], [1, 5])
 
     def test_sanitized_fixture_matches_producer(self):
         path = Path(__file__).resolve().parents[2] / "test-data" / "field-results.json"

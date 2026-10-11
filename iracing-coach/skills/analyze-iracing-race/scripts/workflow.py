@@ -2267,7 +2267,7 @@ def _analysis_pipeline_sha256() -> str:
 # Competitor fuel/tire service remains unavailable; sampled timing is explicit.
 # Existing caches require reanalysis. Native stage algorithms remain unchanged.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "f1a488333dab2590b084e08ef94c2e596524e81783bd1e6206e1ab570e9cabc7"
+    "5b58a9c6285f794f825335082cc680b2cda990895a2fe580a4ccf0f877ece798"
 )
 
 

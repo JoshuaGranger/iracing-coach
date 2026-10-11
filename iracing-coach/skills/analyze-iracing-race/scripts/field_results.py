@@ -46,6 +46,9 @@ def build_field_results(channels: Mapping[str, Sequence[Any]], session_info: Map
     snapshot = {integer(r.get("CarIdx")): r for r in session.get("ResultsPositions", ()) if isinstance(r, Mapping)}
     snapshot_positions = {car: integer(row.get("Position")) for car, row in snapshot.items()
                           if car is not None and integer(row.get("Position")) is not None}
+    # SDK ResultsPositions is normally one-based. Only a snapshot explicitly
+    # containing zero establishes the legacy zero-based representation.
+    snapshot_offset = 1 if min(snapshot_positions.values(), default=1) == 0 else 0
     times = channels.get("SessionTime", ())
     states = channels.get("SessionState", ())
     flags = channels.get("SessionFlags", ())
@@ -169,7 +172,7 @@ def build_field_results(channels: Mapping[str, Sequence[Any]], session_info: Map
             previous_count, previous_pit, previous_time, previous_index = count, pit, time, i
         recorded = snapshot.get(car, {})
         raw_position = snapshot_positions.get(car)
-        result_pos = raw_position + 1 if raw_position is not None and raw_position >= 0 else None
+        result_pos = raw_position + snapshot_offset if raw_position is not None and raw_position >= 0 else None
         fastest = number(recorded.get("FastestTime"))
         fastest = fastest if fastest is not None and fastest > 0 else None
         if car == player and scoped_player_laps:
