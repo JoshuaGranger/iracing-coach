@@ -459,8 +459,7 @@ a.sx-line-body:focus-visible {
     --cols: 2;
   }
 }
-/* A line over 56 rem: the head beside the figures, all on one row. Items sit on the last baseline: the head's text baseline is the
-   figures' baseline, their labels above it. */
+/* A line over 56 rem: the head sits vertically centred beside the labelled figures. */
 @container sx-line (min-width: 56.01rem) {
   .sx-slots {
     grid-template-columns: var(--head) repeat(7, minmax(max-content, 1fr));
@@ -469,6 +468,7 @@ a.sx-line-body:focus-visible {
   }
   .sx-head {
     grid-column: 1;
+    align-self: center;
   }
   .sx-slots[data-figures="false"] {
     grid-template-columns: var(--head) max-content;
