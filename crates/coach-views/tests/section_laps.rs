@@ -24,6 +24,9 @@ fn race(sections: Value, eligible: &[bool; 12]) -> Value {
         }
     }
     let ri = &mut doc["race_investigation"];
+    // These vectors exercise legacy projector timing; current fixtures already carry
+    // Python timings, which must be removed before substituting synthetic traces.
+    ri.as_object_mut().unwrap().remove("section_laps");
     for lap in ri["laps"].as_array_mut().unwrap() {
         let n = lap["lap"].as_u64().unwrap() as usize;
         lap["eligible"] = json!(eligible[n - 1]);
