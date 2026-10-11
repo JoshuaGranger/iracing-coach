@@ -1632,7 +1632,7 @@ components:
         backend's screened pace fit (`race_investigation.runs[].fit`), which leaves traffic laps out; it is drawn only
         between `first_lap` and `last_lap`, never extended.
       required: [slope_s_per_lap, intercept_s, first_lap, last_lap, laps_used]
-      additionalProperties: false
+      additionalProperties: true
       properties:
         slope_s_per_lap: { type: number, description: "Seconds per lap, 4 decimals; positive is slowing." }
         intercept_s: { type: number, description: "The line's lap time at lap 0, seconds, 4 decimals: the time at lap x is intercept_s + slope_s_per_lap * x." }

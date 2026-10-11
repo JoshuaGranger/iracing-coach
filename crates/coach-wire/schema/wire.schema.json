@@ -1266,7 +1266,7 @@
         "last_lap",
         "laps_used"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "slope_s_per_lap": {
           "type": "number",

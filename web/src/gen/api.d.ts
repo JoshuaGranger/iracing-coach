@@ -2630,6 +2630,8 @@ export interface components {
             last_lap: number;
             /** @description Counted laps. */
             laps_used: number;
+        } & {
+            [key: string]: unknown;
         };
         InvestigationView: components["schemas"]["ViewEnvelope"] & {
             race_investigation: {
