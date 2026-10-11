@@ -692,6 +692,14 @@ impl Row {
         self.bytes[at..at + 4].copy_from_slice(&v.to_le_bytes());
         self
     }
+
+    pub fn set_array_bool(&mut self, name: &str, idx: usize, v: bool) -> &mut Row {
+        let (kind, off, count) = self.slot(name);
+        assert_eq!(kind, ty::BOOL);
+        assert!(idx < count);
+        self.bytes[off + idx] = u8::from(v);
+        self
+    }
 }
 
 /// Inputs for a synthetic session-info document in iRacing's layout.

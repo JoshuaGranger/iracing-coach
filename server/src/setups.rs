@@ -541,6 +541,8 @@ struct ObsRow {
     ambiguous: bool,
     /// The recording's library (`main` or `lab`; recording observations only).
     library: Option<String>,
+    track: Option<String>,
+    session_start: Option<String>,
 }
 
 fn base_name(relative_path: &str) -> &str {
@@ -587,7 +589,11 @@ fn load_observations(conn: &Connection, customer: i64) -> rusqlite::Result<Vec<O
                 (SELECT s.current_analysis_id FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id
                    WHERE sr.recording_sha256 = o.recording_sha256 LIMIT 1),
                 COALESCE((SELECT v.ambiguous_name FROM garage_visits v WHERE v.visit_id = o.visit_id), 0),
-                (SELECT r.library FROM recordings r WHERE r.sha256 = o.recording_sha256)
+                (SELECT r.library FROM recordings r WHERE r.sha256 = o.recording_sha256),
+                (SELECT s.track FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id
+                   WHERE sr.recording_sha256 = o.recording_sha256 LIMIT 1),
+                (SELECT s.start_time_utc FROM session_recordings sr JOIN sessions s ON s.session_id = sr.session_id
+                   WHERE sr.recording_sha256 = o.recording_sha256 LIMIT 1)
          FROM setup_observations o WHERE o.customer_id = ?1 ORDER BY o.observed_at DESC, o.observation_id DESC",
     )?;
     let rows = stmt
@@ -607,6 +613,8 @@ fn load_observations(conn: &Connection, customer: i64) -> rusqlite::Result<Vec<O
                 analysis_id: r.get(12)?,
                 ambiguous: r.get::<_, i64>(13)? != 0,
                 library: r.get(14)?,
+                track: r.get(15)?,
+                session_start: r.get(16)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -670,6 +678,9 @@ struct Usage {
     /// Distinct race sessions with a recording of the setup; None when a recording of it belongs
     /// to no session yet, or to one whose type is unknown (the count could be short).
     raced_count: Option<usize>,
+    session_count: Option<usize>,
+    last_used_at: Option<String>,
+    tracks: Vec<Value>,
 }
 
 impl Usage {
@@ -679,6 +690,9 @@ impl Usage {
         summary["observation_count"] = json!(self.count);
         summary["raced"] = json!(self.raced);
         summary["raced_count"] = json!(self.raced_count);
+        summary["session_count"] = json!(self.session_count);
+        summary["last_used_at"] = json!(self.last_used_at);
+        summary["tracks"] = json!(self.tracks);
     }
 }
 
@@ -687,6 +701,9 @@ impl Usage {
 fn usage<'a>(setup_id: i64, obs: impl IntoIterator<Item = &'a ObsRow>) -> Usage {
     let (mut sources, mut count, mut raced) = (BTreeSet::new(), 0, false);
     let (mut races, mut unknown) = (BTreeSet::new(), false);
+    let (mut sessions, mut unlinked) = (BTreeSet::new(), false);
+    let mut last_used_at: Option<String> = None;
+    let mut tracks: BTreeMap<String, (BTreeSet<i64>, Option<String>)> = BTreeMap::new();
     for o in obs.into_iter().filter(|o| o.setup_id == setup_id) {
         count += 1;
         sources.insert(match o.source.as_str() {
@@ -697,6 +714,25 @@ fn usage<'a>(setup_id: i64, obs: impl IntoIterator<Item = &'a ObsRow>) -> Usage 
         });
         if o.source != "recording" {
             continue;
+        }
+        if let Some(session) = o.session_id {
+            sessions.insert(session);
+            if let Some(start) = &o.session_start
+                && last_used_at.as_ref().is_none_or(|last| start > last)
+            {
+                last_used_at = Some(start.clone());
+            }
+            if let Some(track) = o.track.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+                let entry = tracks.entry(track.to_string()).or_default();
+                entry.0.insert(session);
+                if let Some(start) = &o.session_start
+                    && entry.1.as_ref().is_none_or(|last| start > last)
+                {
+                    entry.1 = Some(start.clone());
+                }
+            }
+        } else {
+            unlinked = true;
         }
         let race = o
             .session_type
@@ -716,6 +752,16 @@ fn usage<'a>(setup_id: i64, obs: impl IntoIterator<Item = &'a ObsRow>) -> Usage 
         count,
         raced,
         raced_count: (!unknown).then_some(races.len()),
+        session_count: (!unlinked).then_some(sessions.len()),
+        last_used_at,
+        tracks: tracks
+            .into_iter()
+            .map(|(track, (sessions, last))| {
+                json!({
+                    "track": track, "session_count": sessions.len(), "last_used_at": last
+                })
+            })
+            .collect(),
     }
 }
 
@@ -1414,6 +1460,8 @@ mod tests {
             analysis_id: None,
             ambiguous: false,
             library: None,
+            track: None,
+            session_start: None,
         }
     }
 
@@ -1443,6 +1491,36 @@ mod tests {
             ..obs(1, "recording", Some((14, "")))
         }];
         assert_eq!(usage(1, &untyped).raced_count, None);
+    }
+
+    #[test]
+    fn usage_groups_tracks_and_counts_reconnects_once() {
+        let at = "2026-10-02T00:00:00Z";
+        let race = ObsRow {
+            track: Some("Lime Rock".into()),
+            session_start: Some(at.into()),
+            ..obs(1, "recording", Some((10, "Race")))
+        };
+        let practice = ObsRow {
+            track: Some("Lime Rock".into()),
+            session_start: Some("2026-10-01T00:00:00Z".into()),
+            ..obs(1, "recording", Some((11, "Practice")))
+        };
+        let rows = [race.clone(), race, practice, obs(1, "garage_commit", None)];
+        let u = usage(1, &rows);
+        assert_eq!(u.session_count, Some(2));
+        assert_eq!(u.last_used_at.as_deref(), Some(at));
+        assert_eq!(
+            u.tracks,
+            vec![json!({"track":"Lime Rock", "session_count":2, "last_used_at":at})]
+        );
+        let pending = [rows[0].clone(), obs(1, "recording", None)];
+        assert_eq!(usage(1, &pending).session_count, None);
+        let exports = [obs(1, "htm_export", None)];
+        let u = usage(1, &exports);
+        assert_eq!(u.session_count, Some(0));
+        assert!(u.tracks.is_empty());
+        assert!(u.last_used_at.is_none());
     }
 
     #[test]

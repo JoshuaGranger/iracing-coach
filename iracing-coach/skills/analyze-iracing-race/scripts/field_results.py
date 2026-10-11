@@ -231,7 +231,7 @@ def build_field_results(channels: Mapping[str, Sequence[Any]], session_info: Map
             "laps_completed": completed if completed is not None else integer(recorded.get("LapsComplete")),
             "fastest_lap_s": observed_best or fastest, "fastest_source": next((lap.get("lap_time_source") for lap in laps if lap["lap_time_s"] == observed_best), "session_results_snapshot"),
             "pace_median_s": round(median(lap_times), 4) if len(lap_times) >= 3 else None,
-            "pace_lap_count": len(lap_times), "pit_visits": len(pits) if pit_samples else None,
+            "pace_lap_count": len(lap_times) if laps else None, "pit_visits": len(pits) if pit_samples else None,
             "tires_taken": tires if car == player and known_services else None,
             "fuel_used_l": round(sum(used), 3) if car == player and used else None,
             "laps": laps, "pit_events": pits,

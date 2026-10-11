@@ -79,11 +79,13 @@ PIT_SERVICE_BITS = {
 METERS_TO_INCHES = 39.37007874015748
 KPA_TO_PSI = 0.14503773773020923
 ANALYSIS_SCHEMA_VERSION = 2
-ANALYSIS_PROFILE_VERSION = "post-race-foundations-v27"
+ANALYSIS_PROFILE_VERSION = "post-race-foundations-v28"
 ANALYZER_SOURCE_FILES = (
     "analysis_engine.py",
     "competitor_pace.py",
     "field_results.py",
+    "field_recording.py",
+    "observed_run_trend.py",
     "iracing_sectors.py",
     "groove_analysis.py",
     "ibt_reader.py",
@@ -8984,6 +8986,8 @@ def analyze_telemetry(
     runs = _runs(table, laps)
     _annotate_tire_set_lifecycle(runs)
     damage_repair = _damage_repair_summary(table, laps, runs)
+    from observed_run_trend import annotate_observed_trends
+    annotate_observed_trends(laps, runs, damage_repair, _corner_lap_exclusion_reasons)
     setup_series = _setup_channel_series(table)
     setup_telemetry = _setup_telemetry(table, setup_series)
     track_profile = _track_profile(table, setup_series=setup_series)

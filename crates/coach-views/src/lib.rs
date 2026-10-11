@@ -32,7 +32,7 @@ use parse::{Doc, Kind};
 use prune::Spec;
 use val::{Obj, int_of};
 
-pub const PROJECTION_VERSION: u32 = 7;
+pub const PROJECTION_VERSION: u32 = 8;
 
 /// `analysis_view.schema_version` this crate reads, and the analysis document's own.
 const VIEW_SCHEMA_VERSION: i64 = 1;
@@ -338,7 +338,7 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
     };
     let mut take = |name: &str| doc.values.remove(name).unwrap_or(Value::Null);
     let identity = take("identity");
-    let mut runs = take("runs");
+    let runs = take("runs");
     let lap_values = take("laps");
     let geometry = take("track_geometry");
     let profile = take("track_profile");
@@ -434,9 +434,8 @@ fn build(mut root: Doc) -> Result<Built, ProjectError> {
         .as_object()
         .and_then(|g| geometry::track_view(g, &envelope));
 
-    // Each backend run gains its observed trend over the projected lap rows (backlog #90).
+    // Observed trends pass through from the authoritative Python worker.
     let pit_stops = laps::pit_stops(run_items);
-    trend::annotate(&mut runs, &lap_rows, &damage_repair);
 
     // Race.
     let mut race = Map::new();

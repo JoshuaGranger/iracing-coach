@@ -497,6 +497,12 @@ impl App {
         } else {
             server
         };
+        let gaps = self.hub.field_capture_gaps.load(Ordering::Relaxed);
+        let sim = if gaps > 0 {
+            format!("Field recording gaps: {gaps} · {sim}")
+        } else {
+            sim
+        };
         (sim, server)
     }
 

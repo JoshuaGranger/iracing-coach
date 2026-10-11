@@ -32,9 +32,14 @@ pub const MIGRATIONS: &[(i64, &str, &str)] = &[
         "lab library: recordings carry main or lab, lab windows",
         include_str!("../migrations/0003_lab_library.sql"),
     ),
+    (
+        4,
+        "durable field recordings",
+        include_str!("../migrations/0004_field_recordings.sql"),
+    ),
 ];
 
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 pub struct Store {
     writer: Mutex<Option<mpsc::Sender<WriteJob>>>,
@@ -91,15 +96,36 @@ pub fn migrate_with(
         }
     }
     for (version, description, sql) in pending {
-        let tx = conn.transaction()?;
-        tx.execute_batch(sql)?;
-        if *version > 1 {
-            tx.execute(
+        if *version == 4 {
+            conn.pragma_update(None, "foreign_keys", false)?;
+        }
+        let migrated = (|| -> Result<()> {
+            let tx = conn.transaction()?;
+            tx.execute_batch(sql)?;
+            if *version > 1 {
+                tx.execute(
                 "INSERT INTO schema_migrations(version, applied_at, description, app_version) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![version, crate::util::iso_now(), description, app_version],
             )?;
+            }
+            if *version == 4 {
+                let violations: i64 =
+                    tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
+                        r.get(0)
+                    })?;
+                if violations != 0 {
+                    return Err(Error::internal(
+                        "field migration failed foreign key validation",
+                    ));
+                }
+            }
+            tx.commit()?;
+            Ok(())
+        })();
+        if *version == 4 {
+            conn.pragma_update(None, "foreign_keys", true)?;
         }
-        tx.commit()?;
+        migrated?;
     }
     conn.execute(
         "INSERT OR IGNORE INTO server_counters(name, value) VALUES ('user_data_generation', 0)",

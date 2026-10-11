@@ -42,25 +42,23 @@ for (const device of ROUND2_DEVICES) {
     test("Runs (G8): a run with a measured reading shows its four tires at the run's end; a run without shows none", async ({ page }) => {
       await page.goto(hash(`/d/${DRIVER}/s/103/runs`));
       await expect(page.locator(".ri-run-card").first()).toBeVisible();
-      const pictures = page.locator("[data-run-tires-picture]");
+      await expect(page.locator(".ri-run-card [data-tire-wear]")).toHaveCount(0);
+      const pictures = page.locator(".ri-pit-tire-picture [data-tire-wear]");
       await expect(pictures).toHaveCount(2);
-      await expect(page.locator("[data-run-card='3'] [data-run-tires-picture]")).toHaveCount(0);
-      const first = page.locator("[data-run-card='1']");
-      await expect(first.locator("[data-run-tires-caption]")).toContainText(/^RF 61 %/);
-      await expect(first.locator("[data-run-tires-at]")).toContainText(/^at L\d+ · 146–206 °F$/);
-      await expect(first.locator("[data-tire-wear] [data-band]")).toHaveCount(12);
-      // Three bars per tire, nine fills for the readings sent (no tire is drawn from nothing).
-      await expect(first.locator("[data-tire-wear] rect[data-remaining]")).toHaveCount(12);
+      const first = page.locator(".ri-pit-tire-picture").first();
+      await expect(first.locator("[data-band]")).toHaveCount(12);
+      await expect(first.locator("rect[data-remaining]")).toHaveCount(12);
       const heights = await page.locator(".ri-run-card").evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
       expect(new Set(heights).size).toBe(1);
       await first.focus();
       await expect(page.locator("[data-run-tire-details]")).toBeVisible();
       await expect(page.locator("[data-detail-tire]")).toHaveCount(4);
       await expect(page.locator(".ri-tire-detail-band")).toHaveCount(12);
+      await expect(page.locator("[data-detail-tire='LF']")).toContainText("74%");
       await expect(page.locator("[data-detail-tire='RF']")).toContainText("33.4 psi");
       const requests: string[] = [];
       page.on("request", (request) => requests.push(request.url()));
-      await first.locator("[data-run-tires-picture]").hover();
+      await first.hover();
       expect(requests).toEqual([]);
       const sequence = await page.locator(".ri-run-cards > *").evaluateAll((cards) => cards.map((card) => card.hasAttribute("data-run-card") ? `run-${card.getAttribute("data-run-card")}` : "pit"));
       expect(sequence[0]).toBe("run-1");

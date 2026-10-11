@@ -11,6 +11,7 @@ pub mod cli;
 pub mod config;
 pub mod cpu;
 pub mod dry;
+pub mod field;
 pub mod fixture;
 pub mod garage;
 pub mod garage_io;

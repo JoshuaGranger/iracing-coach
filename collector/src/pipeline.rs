@@ -34,6 +34,7 @@ pub struct Pipeline {
     garage_tx: Option<Sender<GarageAction>>,
     dry: Option<Arc<DryLog>>,
     wheel: Option<crate::wheel::WheelHandle>,
+    field: Option<crate::field::Capture>,
     /// Encode frames even without viewer demand (dry run); they are counted, not queued.
     force_stream: bool,
     seq: u32,
@@ -83,6 +84,7 @@ impl Pipeline {
             force_stream: dry.is_some(),
             dry,
             wheel: None,
+            field: None,
             seq: 0,
             pending_marker: false,
             first_frame_of_stream: false,
@@ -109,9 +111,15 @@ impl Pipeline {
         self.stats
     }
 
+    pub fn with_field(mut self, capture: crate::field::Capture) -> Self {
+        self.field = Some(capture);
+        self
+    }
+
     /// The replay is over: close the garage channel and publish the sim as not running.
     pub fn finish(&mut self) {
         self.garage_tx = None;
+        self.field = None;
         if let Some(wheel) = &self.wheel {
             wheel.set_sdk_connected(false);
         }
@@ -137,6 +145,9 @@ impl Pipeline {
         }
         self.sync_settings();
         let sample = reader.sample();
+        if let Some(field) = &mut self.field {
+            field.observe(reader, poll == Poll::Tick);
+        }
         if let Some(wheel) = &self.wheel {
             if poll == Poll::Tick {
                 wheel.observe_sdk(

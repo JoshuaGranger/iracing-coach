@@ -8,9 +8,9 @@ import { useElementSize, useSessionNumbers } from "./hooks";
 import { LapDot } from "./LapDot";
 import { identityColour, observedTrend, runCards, runIdentities, runsChartLaps, sparkGeometry, toggleRun, trendLabel, trendOnExposure, stopsBetweenRuns, type RunCard, type RunIdentity } from "./runs-model";
 import { lapKind, lapTraffic } from "./traffic";
-import { SURFACE_TEMP_GRADIENT, SURFACE_TEMP_RANGE_F, TireDiagram } from "../../ui/pictograms";
+import { TireDiagram } from "../../ui/pictograms";
 import { RunTireDetails } from "./RunTireDetails";
-import { PitGlyph, durationText } from "./PitPictogram";
+import { durationText } from "./PitPictogram";
 import "./runs.css";
 import { scaleFor, useRemPx } from "./unit";
 
@@ -26,11 +26,11 @@ export interface RunsViewProps {
 }
 
 /** A run card is the run's toggle on the chart: pressed shows the run, released hides its dots and fit and dims the card. */
-function RunCardView({ card, identity, shown, locked, onToggle, onTires }: { card: RunCard; identity: RunIdentity | undefined; shown: boolean; locked: boolean; onToggle(): void; onTires(card: RunCard | null, element?: HTMLElement): void }) {
+function RunCardView({ card, identity, shown, locked, onToggle }: { card: RunCard; identity: RunIdentity | undefined; shown: boolean; locked: boolean; onToggle(): void }) {
   const color = identity?.color ?? "var(--color-text-muted)";
   const spark = sparkGeometry(card, 96, 24);
   return (
-    <button type="button" class={`ri-run-card${shown ? "" : " hidden"}${card.tires ? " has-tires" : ""}`} aria-pressed={shown} aria-disabled={locked || undefined} data-run-card={card.runNumber} style={`--run:${color}`} onClick={onToggle} onFocus={(event) => onTires(card.tires ? card : null, event.currentTarget)} onBlur={() => onTires(null)}
+    <button type="button" class={`ri-run-card${shown ? "" : " hidden"}${card.tires ? " has-tires" : ""}`} aria-pressed={shown} aria-disabled={locked || undefined} data-run-card={card.runNumber} style={`--run:${color}`} onClick={onToggle}
       title={locked ? "One run stays on the chart" : undefined}>
       <span class="ri-run-card-head">
         <RunSwatch identity={identity} width={22} />
@@ -50,19 +50,6 @@ function RunCardView({ card, identity, shown, locked, onToggle, onTires }: { car
         <span class="ri-fact"><span class="ri-fact-label">Screened</span><b class="ri-fact-value" data-run-screened>{card.screened}</b></span>
         <span class="ri-fact"><span class="ri-fact-label">Tire laps</span><b class="ri-fact-value" data-run-tires>{card.tireLaps ?? "—"}</b></span>
       </span>
-      {card.tires && (
-        <span class="ri-run-tires" data-run-tires-picture={card.runNumber} onMouseEnter={(event) => onTires(card, event.currentTarget)} onMouseLeave={() => onTires(null)}>
-          <TireDiagram wear={card.tires.corners} label={`${card.tires.caption || "Tires"} ${card.tires.atText}`} width={60} height={80} />
-          <span class="ri-run-tires-text">
-            <b class="ri-run-tires-caption" data-run-tires-caption>{card.tires.caption || "Tires"}</b>
-            <span class="ri-run-tires-at" data-run-tires-at>{card.tires.atText}</span>
-            <span class="ri-temp-key" data-temp-key title="Surface temperature, °F">
-              <small>{SURFACE_TEMP_RANGE_F[0]}</small><i style={`background:${SURFACE_TEMP_GRADIENT}`} /><small>{SURFACE_TEMP_RANGE_F[1]}</small>
-            </span>
-          </span>
-        </span>
-      )}
-      {!card.tires && <span class="ri-run-tires empty">Tire reading unavailable</span>}
     </button>
   );
 }
@@ -194,10 +181,10 @@ export function RunsView({ inv, sessionType, runs, race, analysisKey }: RunsView
             const between = stopsBetweenRuns(current, inv.runs.find((run) => run.runNumber === next?.runNumber), stops);
             return [
               <RunCardView key={card.runNumber} card={card} identity={identities.get(card.runNumber)} shown={shown} locked={shown && visibleCount <= 1}
-                onToggle={() => setHidden(toggleRun(hidden, card.runNumber, runNumbers))} onTires={showTires} />,
+                onToggle={() => setHidden(toggleRun(hidden, card.runNumber, runNumbers))} />,
               ...between.map((stop) => <div key={`pit-${stop.lap}`} class="ri-runs-pit" data-runs-pit={stop.lap}>
                 <div class="ri-pit-band"><span>Pit</span><b>L{stop.lap}</b></div>
-                <div class="ri-pit-card-body"><PitGlyph stop={stop} height={78} /><div class="ri-pit-figs">
+                <div class="ri-pit-card-body"><button type="button" class="ri-pit-tire-picture" aria-label={`Tires at pit lap ${stop.lap}`} onMouseEnter={(event) => showTires(card, event.currentTarget)} onMouseLeave={() => showTires(null)} onFocus={(event) => showTires(card, event.currentTarget)} onBlur={() => showTires(null)}>{card.tires ? <TireDiagram wear={card.tires.corners} label={`Tires at L${card.tires.atLap}`} width={76} height={104} /> : <span>Tires unavailable</span>}</button><div class="ri-pit-figs">
                   {stop.durationS !== null && <span class="ri-pit-duration">{durationText(stop)}<small>s</small></span>}
                   <span class="ri-pit-tires">{stop.tires === null ? "Tires unknown" : tiresText(stop)}</span>
                   <span class="ri-pit-gal">{stop.fuelAddedGal === null ? "Fuel unknown" : `+${stop.fuelAddedGal.toFixed(1)} gal`}</span>

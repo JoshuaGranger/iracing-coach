@@ -1,3 +1,5 @@
+//! Legacy observed-trend helpers retained for historical API and regression fixtures.
+//! Production projection passes through Python observed_trend without recomputing it.
 //! A run's observed pace trend (web round 6, backlog #90 #91): the straight least-squares line of
 //! the backend's `lap_time_s` against the lap number over the run's green, complete laps with close
 //! traffic included. An observed trend over the backend's own lap rows, distinct from the backend's
@@ -104,23 +106,6 @@ pub fn observed_trend(rows: &[Value], incidents: &BTreeSet<i64>, run: i64) -> Op
         .filter_map(|row| Some((int(row, "lap")?, num(row, "lap_time_s")?)))
         .collect();
     fit(&points)
-}
-
-/// Sets `observed_trend` (an object, or null) on every backend run that has a `run_number`.
-pub(crate) fn annotate(runs: &mut Value, rows: &[Value], damage_repair: &Value) {
-    let Some(items) = runs.as_array_mut() else {
-        return;
-    };
-    let incidents = incident_laps(damage_repair);
-    for run in items.iter_mut().filter_map(Value::as_object_mut) {
-        let Some(number) = int(run, "run_number") else {
-            continue;
-        };
-        run.insert(
-            "observed_trend".into(),
-            observed_trend(rows, &incidents, number).unwrap_or(Value::Null),
-        );
-    }
 }
 
 #[cfg(test)]

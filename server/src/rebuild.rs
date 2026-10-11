@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::archiver::read_manifests;
 use crate::config::Config;
 use crate::db::Store;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::jobs::{NewJob, enqueue_tx};
 use crate::util::iso_now;
 
@@ -34,9 +34,12 @@ pub fn rebuild_index(cfg: &Config) -> Result<RebuildSummary> {
         for m in &manifests {
             let sha = m["sha256"].as_str().unwrap_or_default();
             let kind = m["kind"].as_str().unwrap_or_default();
-            if sha.len() != 64 || !matches!(kind, "recording" | "setup_file") {
+            if sha.len() != 64 || !matches!(kind, "recording" | "setup_file" | "field_recording") {
                 summary.skipped += 1;
                 continue;
+            }
+            if kind == "field_recording" {
+                validate_field_manifest(m)?;
             }
             let archived_at = m["archived_at"].as_str().unwrap_or("1970-01-01T00:00:00Z");
             let received = m["received_at"].as_str().unwrap_or(archived_at);
@@ -54,6 +57,8 @@ pub fn rebuild_index(cfg: &Config) -> Result<RebuildSummary> {
             }
             let blob_kind = if kind == "recording" {
                 "ibt".to_string()
+            } else if kind == "field_recording" {
+                "field".to_string()
             } else {
                 m["setup_file"]["format"].as_str().unwrap_or("sto").to_string()
             };
@@ -71,7 +76,12 @@ pub fn rebuild_index(cfg: &Config) -> Result<RebuildSummary> {
                     archived_at
                 ],
             )?;
-            if kind == "recording" {
+            if kind == "field_recording" {
+                let f = &m["field_recording"];
+                if let Some(c) = customer {
+                    tx.execute("INSERT OR IGNORE INTO field_recordings VALUES (?1,?2,?3,?4,?5,?6,?7)", params![sha,c,f["subsession_id"].as_i64(),f["session_num"].as_i64(),f["sample_count"].as_i64(),f["first_time"].as_f64().unwrap_or(0.),f["last_time"].as_f64().unwrap_or(0.)])?;
+                }
+            } else if kind == "recording" {
                 let rec = &m["recording"];
                 let header = json!({
                     "record_count": rec["record_count"], "tick_rate": rec["tick_rate"],
@@ -124,6 +134,52 @@ pub fn rebuild_index(cfg: &Config) -> Result<RebuildSummary> {
     })
 }
 
+fn validate_field_manifest(manifest: &Value) -> Result<()> {
+    let field = &manifest["field_recording"];
+    let customer = field["customer_id"].as_i64().filter(|id| *id > 0);
+    let subsession = field.get("subsession_id");
+    if manifest["manifest_version"] != 1
+        || customer.is_none()
+        || customer != manifest["driver"]["customer_id"].as_i64()
+        || !field["session_num"].as_i64().is_some_and(|n| n >= 0)
+        || !field["sample_count"].as_i64().is_some_and(|n| n > 0)
+        || !subsession.is_some_and(|s| s.is_null() || s.as_i64().is_some_and(|n| n > 0))
+    {
+        return Err(Error::invalid(
+            "invalid field recording manifest identity or version",
+        ));
+    }
+    Ok(())
+}
+
 pub fn summary_text(s: &RebuildSummary) -> Value {
     json!({"manifests": s.manifests, "recordings": s.recordings, "setup_files": s.setup_files, "skipped": s.skipped})
+}
+
+#[cfg(test)]
+mod field_manifest_tests {
+    use super::*;
+
+    #[test]
+    fn required_field_identity_is_never_defaulted() {
+        let complete = json!({"manifest_version":1,"driver":{"customer_id":1},
+            "field_recording":{"customer_id":1,"subsession_id":42,"session_num":0,"sample_count":1}});
+        assert!(validate_field_manifest(&complete).is_ok());
+        for key in [
+            "customer_id",
+            "subsession_id",
+            "session_num",
+            "sample_count",
+        ] {
+            let mut missing = complete.clone();
+            missing["field_recording"]
+                .as_object_mut()
+                .unwrap()
+                .remove(key);
+            assert!(validate_field_manifest(&missing).is_err(), "{key}");
+        }
+        let mut incompatible = complete;
+        incompatible["manifest_version"] = json!(2);
+        assert!(validate_field_manifest(&incompatible).is_err());
+    }
 }

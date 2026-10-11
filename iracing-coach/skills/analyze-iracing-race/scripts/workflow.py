@@ -2269,8 +2269,11 @@ def _analysis_pipeline_sha256() -> str:
 # Review 2026-10-10: accept a null ResultsPositions snapshot as absent, matching
 # an empty snapshot. Successful output and evidence semantics remain unchanged;
 # only previously failing recordings recover, so v27 stays current.
+# Review 2026-10-11: v28 adds durable phase-scoped companion field history and
+# Python-owned observed run trends. Traffic/ongoing repair may support an observed
+# trend while coaching-reference exclusions remain unchanged. Native kernels are unchanged.
 ANALYZER_BUNDLE_REVIEWED_SHA256 = (
-    "6695d4ebc621891018d96ac8c8cb055c90091f294d3615d1f4bfabbfbcaa7456"
+    "9f3a7484ffadd13efdad152d10d55493bda94177c4f3b85773f8def8986129b8"
 )
 
 
@@ -2651,6 +2654,10 @@ def _analyze_race_workflow(
     )
     selection_verified = time.perf_counter()
     pipeline_sha256 = _analysis_pipeline_sha256()
+    field_paths = sorted((Path(iracing_root) / "field").glob("*.field.jsonl")) if iracing_root else []
+    field_fingerprints = store.source_fingerprints([str(path) for path in field_paths])
+    if field_fingerprints:
+        pipeline_sha256 = stable_hash({"pipeline": pipeline_sha256, "field": sorted(item["sha256"] for item in field_fingerprints)}, 64)
     analysis_cache_key = _analysis_cache_identity(
         source_fingerprints,
         rate,
@@ -2722,6 +2729,12 @@ def _analyze_race_workflow(
                     "pipeline_sha256": pipeline_sha256,
                 },
             )
+            if field_paths:
+                from field_recording import apply_field_recordings
+                apply_field_recordings(analysis, field_paths, telemetry.get("session_info") or {}, telemetry.get("metadata") or {}, field_fingerprints=field_fingerprints)
+                # Field evidence has its own content-addressed analysis identity.
+                analysis["analysis_id"] = stable_hash({"base": analysis["analysis_id"], "field": sorted(item["sha256"] for item in field_fingerprints)}, 24)
+                analysis["source"]["field_recordings"] = [{"sha256": item["sha256"], "size": item["size"]} for item in field_fingerprints]
         del telemetry
         if not isinstance(analysis, Mapping):
             raise WorkflowError("The telemetry analysis engine returned an invalid result.")

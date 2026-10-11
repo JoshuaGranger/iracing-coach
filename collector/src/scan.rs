@@ -14,6 +14,7 @@ pub enum Kind {
     Ibt,
     Sto,
     Htm,
+    Field,
 }
 
 impl Kind {
@@ -22,6 +23,7 @@ impl Kind {
             Kind::Ibt => "ibt",
             Kind::Sto => "sto",
             Kind::Htm => "htm",
+            Kind::Field => "field",
         }
     }
 
@@ -30,6 +32,7 @@ impl Kind {
             "ibt" => Some(Kind::Ibt),
             "sto" => Some(Kind::Sto),
             "htm" => Some(Kind::Htm),
+            "field" => Some(Kind::Field),
             _ => None,
         }
     }
@@ -40,9 +43,33 @@ impl Kind {
             "ibt" => Some(Kind::Ibt),
             "sto" => Some(Kind::Sto),
             "htm" => Some(Kind::Htm),
+            "jsonl" if path.file_name()?.to_str()?.ends_with(".field.jsonl") => Some(Kind::Field),
             _ => None,
         }
     }
+}
+
+/// Only immutable, finalized field segments; active/crash partial files stay local.
+pub fn scan_fields(dir: &Path, proceed: &dyn Fn() -> bool) -> Result<Vec<Candidate>, Interrupted> {
+    if !proceed() {
+        return Err(Interrupted);
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        if !proceed() {
+            return Err(Interrupted);
+        }
+        let path = entry.path();
+        if Kind::of_path(&path) == Some(Kind::Field)
+            && let Some(c) = candidate(path, Kind::Field, None)
+        {
+            out.push(c);
+        }
+    }
+    Ok(newest_first(out))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

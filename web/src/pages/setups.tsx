@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { type Schemas, api, paths } from "../core/api";
 import { formatDate, formatDateTime } from "../core/format";
 import { savePrefs, usePrefs } from "../core/prefs";
@@ -6,28 +6,17 @@ import { useLibraryChoice } from "../core/library";
 import { useDebounced, useResource } from "../core/resource";
 import { href } from "../core/router";
 import { readJson, writeJson } from "../core/store";
-import { Chip, Empty, ErrorLine, Loading, Notice, Stripe } from "../ui/kit";
-import { FilterBar, type FilterControl } from "../ui/filter-bar";
-import { MultiSelect } from "../ui/multi-select";
+import { Chip, Empty, ErrorLine, Loading, Notice } from "../ui/kit";
 import { Segmented } from "../ui/segmented";
-import { type CarGroup, type Entry, type RacedFilter, carsFilesOnly, carsWithSetups, carsWithValues, fileNames, groupLibrary, racedCountOf } from "../setups/library";
-import { Chevron, RacedMark } from "../setups/glyphs";
+import { type CarGroup, type Entry, type RacedFilter, carsFilesOnly, carsWithSetups, carsWithValues, fileNames, groupLibrary, groupTrackLibrary, entryUsage } from "../setups/library";
+import { Chevron } from "../setups/glyphs";
 import {
-  FIRST_ROWS,
-  MORE_ROWS,
   type SetupSelection,
-  activeCount,
   emptySelection,
   fromSetupFilters,
   isEmptySelection,
   parseSelection,
-  readCollapsed,
-  revealMore,
-  revealed,
-  shownRows,
   toSetupFilters,
-  toggleCollapsed,
-  writeCollapsed,
 } from "../setups/sections";
 import "../setups/setups.css";
 
@@ -42,18 +31,14 @@ const RACED_FILTERS = [
   { value: "not-raced", label: "Not raced" },
 ] as const satisfies readonly { value: RacedFilter; label: string }[];
 
-/** Width of the Name field and of the three-segment Raced control at their minimum, in rem (the FilterBar's fit rule). */
-const NAME_MIN_REM = 12;
-const RACED_MIN_REM = 17;
-
-function SetupRow({ name, raced, count, last, to, nested }: { name: string; raced: boolean; count: number | null; last: string; to: string; nested?: boolean }) {
+function SetupRow({ name, count, last, to, nested }: { name: string; count: number | null; last: string | null; to: string; nested?: boolean }) {
   return (
     <div class={`s-row s-grid${nested ? " s-version" : ""}`}>
       <a class="s-name" href={to}>
         <span class="s-title">{name}</span>
       </a>
-      {raced ? <RacedMark count={count} /> : <span />}
-      <span class="date">{formatDate(last)}</span>
+      <span class="num" title="Usage of selected version" aria-label={count === null ? "Session count unknown" : `${count} sessions`}>{count ?? "—"}</span>
+      <span class="date" title="Usage of selected version">{last ? formatDate(last) : "—"}</span>
     </div>
   );
 }
@@ -62,7 +47,7 @@ function SetupEntry({ e, customerId }: { e: Extract<Entry, { kind: "setup" }>; c
   const newest = e.versions[0]!;
   return (
     <li class="s-entry" data-entry="setup">
-      <SetupRow name={e.name} raced={e.raced} count={e.racedCount} last={e.last} to={href({ page: "setup", customerId, setupId: newest.setup.setup_id })} />
+      <SetupRow name={e.name} {...entryUsage(e)} to={href({ page: "setup", customerId, setupId: newest.setup.setup_id })} />
     </li>
   );
 }
@@ -74,7 +59,7 @@ function Captures({ e, customerId }: { e: Extract<Entry, { kind: "captures" }>; 
     const s = e.setups[0]!;
     return (
       <li class="s-entry" data-entry="captures">
-        <SetupRow name="Garage capture" raced={s.raced} count={e.racedCount} last={s.last_seen_at} to={href({ page: "setup", customerId, setupId: s.setup_id })} />
+        <SetupRow name="Garage capture" {...entryUsage(e)} to={href({ page: "setup", customerId, setupId: s.setup_id })} />
       </li>
     );
   }
@@ -88,14 +73,14 @@ function Captures({ e, customerId }: { e: Extract<Entry, { kind: "captures" }>; 
           </span>
           <Chevron down={open} />
         </button>
-        {e.raced ? <RacedMark count={e.racedCount} /> : <span />}
-        <span class="date">{formatDate(e.last)}</span>
+        <span class="num">{entryUsage(e).count ?? "—"}</span>
+        <span class="date">{entryUsage(e).last ? formatDate(entryUsage(e).last!) : "—"}</span>
       </div>
       {open ? (
         <ul class="s-versions" aria-label="Garage captures">
           {e.setups.map((s) => (
             <li key={s.setup_id}>
-              <SetupRow nested name={formatDateTime(s.last_seen_at)} raced={s.raced} count={racedCountOf(s)} last={s.last_seen_at} to={href({ page: "setup", customerId, setupId: s.setup_id })} />
+              <SetupRow nested name={formatDateTime(s.last_seen_at)} count={s.session_count ?? null} last={s.last_used_at ?? null} to={href({ page: "setup", customerId, setupId: s.setup_id })} />
             </li>
           ))}
         </ul>
@@ -120,87 +105,13 @@ function FileEntry({ e }: { e: Extract<Entry, { kind: "file" }> }) {
   );
 }
 
-/**
- * The height of the first ten rows of a car section, in px: the sum of their main rows and the lines between them. A row's own
- * height follows the width (a phone wraps the date under the name), so it is measured, not assumed. Null until measured, or while
- * the section is hidden. Opening a capture stack inside a row changes the section's content, never this height.
- */
-function useTenRowHeight(region: { current: HTMLDivElement | null }, active: boolean): number | null {
-  const [px, setPx] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const el = region.current;
-    if (!el || !active) return undefined;
-    const measure = () => {
-      const rows = [...el.querySelectorAll<HTMLElement>(":scope > .s-list > .s-entry > .s-row")].slice(0, FIRST_ROWS);
-      if (rows.length < FIRST_ROWS) return;
-      const h = rows.reduce((sum, r) => sum + r.getBoundingClientRect().height, 0) + (FIRST_ROWS - 1);
-      if (h > 0) setPx((p) => (p !== null && Math.abs(p - h) < 0.5 ? p : Math.ceil(h)));
-    };
-    measure();
-    if (typeof ResizeObserver !== "function") return undefined;
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [active]);
-  return px;
-}
-
-function CarSection({
-  g,
-  customerId,
-  collapsed,
-  onToggle,
-  shown,
-  onMore,
-}: {
-  g: CarGroup;
-  customerId: number;
-  collapsed: boolean;
-  onToggle(): void;
-  shown: number;
-  onMore(): void;
-}) {
-  const id = `car-${g.carPath.replace(/[^A-Za-z0-9]+/g, "-")}`;
-  const rest = g.entries.length - shown;
-  const scrolls = g.entries.length > FIRST_ROWS;
-  const region = useRef<HTMLDivElement>(null);
-  const cap = useTenRowHeight(region, scrolls && !collapsed);
-  return (
-    <section class="s-car" style={`--car:${g.color}`} aria-label={g.carName} data-collapsed={collapsed ? "true" : "false"}>
-      <h2 class="s-car-head">
-        <button type="button" class="s-car-toggle" aria-expanded={!collapsed} aria-controls={id} onClick={onToggle}>
-          <Chevron down={!collapsed} />
-          <span class="s-car-text">
-            <span class="s-car-name">{g.carName}</span>
-            <span class="n">
-              <strong>{g.setups}</strong> {g.setups === 1 ? "setup" : "setups"} · <strong>{g.raced}</strong> raced
-            </span>
-          </span>
-        </button>
-      </h2>
-      <div id={id} hidden={collapsed}>
-        {/* Past ten rows the section keeps its ten-row height and scrolls inside; the page takes over at the region's ends. */}
-        <div
-          class="s-scroll"
-          ref={region}
-          data-scroll={scrolls ? "true" : "false"}
-          style={scrolls && cap ? { maxHeight: `${cap}px` } : undefined}
-          {...(scrolls ? { role: "group", "aria-label": `${g.carName} setups`, tabIndex: 0 } : {})}
-        >
-          <ul class="s-list">
-            {g.entries.slice(0, shown).map((e) =>
-              e.kind === "setup" ? <SetupEntry key={e.key} e={e} customerId={customerId} /> : e.kind === "captures" ? <Captures key={e.key} e={e} customerId={customerId} /> : <FileEntry key={e.key} e={e} />,
-            )}
-          </ul>
-          {rest > 0 ? (
-            <button type="button" class="pill s-more" data-remaining={rest} onClick={onMore}>
-              Show {MORE_ROWS} more
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
+function CarSection({ g, customerId, track }: { g: CarGroup; customerId: number; track: string | null }) {
+  return <section class="s-car" aria-label={g.carName}>
+    <h2 class="s-selected-title">{track ?? "Track not recorded"}</h2>
+    {track ? <a class="s-track-baseline" href={href({ page: "baseline", customerId }, { car: g.carPath, track })}>Find a baseline for {track}</a> : null}
+    <div class="s-cols s-grid" aria-hidden="true"><span>Setup</span><span>Sessions</span><span>Last used</span></div>
+    <ul class="s-list">{g.entries.map((e) => e.kind === "setup" ? <SetupEntry key={e.key} e={e} customerId={customerId} /> : e.kind === "captures" ? <Captures key={e.key} e={e} customerId={customerId} /> : <FileEntry key={e.key} e={e} />)}</ul>
+  </section>;
 }
 
 /** One car whose files have no decoded values: its screen name, the file count (never a setup count), the file names on demand. */
@@ -235,7 +146,7 @@ function FilesWithoutValues({ cars }: { cars: CarGroup[] }) {
         <span class="s-files-rule" aria-hidden="true" />
         <Chevron down={open} />
         <span class="s-files-label">
-          Files without values · {cars.length} {cars.length === 1 ? "car" : "cars"}
+          Files without values Â· {cars.length} {cars.length === 1 ? "car" : "cars"}
         </span>
         <span class="s-files-rule" aria-hidden="true" />
       </button>
@@ -321,91 +232,43 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
   const present = carsWithSetups(all);
   if (first.data && !q) offeredCars.current = { at: here, cars: present };
   const offered = offeredCars.current?.at === here ? offeredCars.current.cars : present;
-  const carOptions = offered.map((c) => ({ key: c.carPath, label: c.carName, count: c.setups, mark: <Stripe color={c.color} /> }));
   // A saved car the library no longer holds is not a filter: it could not be cleared from a list that does not show it.
   const cars = useMemo(() => {
     if (offered.length === 0) return sel.cars;
     const known = new Set(offered.map((c) => c.carPath.toLowerCase()));
     return sel.cars.filter((c) => known.has(c.toLowerCase()));
   }, [sel.cars, offered]);
-  const effective: SetupSelection = { ...sel, cars };
-  const everything = useMemo(() => groupLibrary(setups, files, { cars: new Set(cars), raced }), [setups, files, cars, raced]);
-  const groups = useMemo(() => carsWithValues(everything), [everything]);
+  const selectedCars = cars.length ? cars : offered.slice(0, 1).map((c) => c.carPath);
+  const effective: SetupSelection = { ...sel, cars: selectedCars };
+  const everything = useMemo(() => groupLibrary(setups, files, { cars: new Set(selectedCars), raced }), [setups, files, selectedCars, raced]);
+  const groups = useMemo(() => groupTrackLibrary(setups, files, { cars: new Set(selectedCars), raced }).flatMap((g) => carsWithValues(g.cars).map((car) => ({ track: g.track, car }))), [setups, files, selectedCars, raced]);
   const withoutValues = useMemo(() => carsFilesOnly(everything), [everything]);
   const filtering = !isEmptySelection(effective);
 
-  // A car header sticks under the app bar, whatever height the bar wraps to.
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const bar = document.querySelector<HTMLElement>(".topbar");
-    if (!bar) return undefined;
-    const set = () => root.current?.style.setProperty("--s-top", `${bar.getBoundingClientRect().height}px`);
-    set();
-    if (typeof ResizeObserver !== "function") return undefined;
-    const observer = new ResizeObserver(set);
-    observer.observe(bar);
-    return () => observer.disconnect();
-  }, []);
-
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  const [, bump] = useState(0);
-  const toggle = (carPath: string) => {
-    const next = toggleCollapsed(collapsed, carPath);
-    setCollapsed(next);
-    writeCollapsed(next);
-  };
-
-  const controls: FilterControl[] = [
-    { id: "car", label: "Car", node: <MultiSelect label="Car" noun="cars" options={carOptions} selected={cars} onChange={(next) => setSel({ ...sel, cars: next })} /> },
-    {
-      id: "name",
-      label: "Name",
-      minRem: NAME_MIN_REM,
-      node: (
-        <label class="s-search">
-          <span class="visually-hidden">Search setups</span>
-          <input type="search" placeholder="Name" value={text} onInput={(e) => setSel({ ...sel, text: (e.currentTarget as HTMLInputElement).value })} />
-        </label>
-      ),
-    },
-    { id: "raced", label: "Raced", minRem: RACED_MIN_REM, node: <Segmented label="Raced" options={RACED_FILTERS} value={raced} onChange={(next) => setSel({ ...sel, raced: next })} /> },
-  ];
-
   return (
-    <div class="setups-page ds" ref={root}>
-      <FilterBar
-        title={
-          <>
-            <h1>Setups</h1>
-            <a class="s-baseline" href={href({ page: "baseline", customerId })}>
-              Find a baseline
-            </a>
-          </>
-        }
-        controls={controls}
-        activeCount={activeCount(effective)}
-      />
+    <div class="setups-page ds">
+      <h1>Setups</h1>
+      <div class="s-workspace">
+        <aside class="s-car-picker" aria-label="Cars">
+          <label class="s-phone-car">Car<select aria-label="Car" value={selectedCars[0] ?? ""} onChange={(e) => setSel({ ...sel, cars: [e.currentTarget.value] })}>{offered.map((c) => <option key={c.carPath} value={c.carPath}>{c.carName}</option>)}</select></label>
+          <div class="s-desktop-cars"><span class="s-picker-label">Cars · recent first</span>{offered.map((c) => <button key={c.carPath} class="s-car-choice" aria-pressed={selectedCars.includes(c.carPath)} onClick={() => setSel({ ...sel, cars: [c.carPath] })}><span>{c.carName}</span><small>{c.setups} {c.setups === 1 ? "setup" : "setups"}</small></button>)}</div>
+        </aside>
+        <div class="s-results">
+          <div class="s-list-tools">
+            <label class="s-search"><span class="visually-hidden">Search setups</span><input type="search" placeholder="Search setups" value={text} onInput={(e) => setSel({ ...sel, text: e.currentTarget.value })} /></label>
+            <Segmented label="Raced" options={RACED_FILTERS} value={raced} onChange={(next) => setSel({ ...sel, raced: next })} />
+            <a class="s-baseline" href={href({ page: "baseline", customerId }, { car: selectedCars.length === 1 ? selectedCars[0] : undefined })}>Find a baseline</a>
+          </div>
       {first.error && !first.data ? <ErrorLine error={first.error} /> : null}
       {first.error && first.data ? <Notice tone="warn">Could not refresh: {first.error.message}</Notice> : null}
       {!first.data && !first.error ? <Loading what="setups" /> : null}
       {first.data && groups.length === 0 && withoutValues.length === 0 ? <Empty title={filtering ? "No setups match" : "No setups yet"} /> : null}
       <div class="s-cars" aria-label="Setups">
-        {groups.map((g) => (
-          <CarSection
-            key={g.carPath}
-            g={g}
-            customerId={customerId}
-            collapsed={collapsed.has(g.carPath.toLowerCase())}
-            onToggle={() => toggle(g.carPath)}
-            shown={shownRows(g.entries.length, revealed.get(customerId, g.carPath))}
-            onMore={() => {
-              revealed.set(customerId, g.carPath, revealMore(revealed.get(customerId, g.carPath)));
-              bump((n) => n + 1);
-            }}
-          />
-        ))}
+        {groups.map(({ track, car }) => <CarSection key={`${car.carPath}|${track}`} g={car} track={track} customerId={customerId} />)}
       </div>
       {first.data && withoutValues.length > 0 ? <FilesWithoutValues cars={withoutValues} /> : null}
+        </div>
+      </div>
     </div>
   );
 }

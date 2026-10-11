@@ -203,6 +203,9 @@ pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, V
     let sha = value["sha256"].as_str().unwrap_or_default().to_string();
     let size = value["size"].as_i64().unwrap_or_default();
     let kind = value["kind"].as_str().unwrap_or_default().to_string();
+    if kind == "field" && size > 64 * 1024 * 1024 {
+        return Err(Error::invalid("field segments are limited to 64 MiB"));
+    }
     let file_name = value["file_name"].as_str().unwrap_or_default().to_string();
     let relative_path = value["relative_path"].as_str().map(str::to_string);
     let source_mtime = value["source_mtime"].as_str().map(str::to_string);
@@ -245,7 +248,7 @@ pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, V
                     params![sha, kind, file_name, relative_path, source_mtime, collector_id, customer, now],
                 )?;
                 let existing = if blob_exists(&tx, &sha)? {
-                    if kind != "ibt"
+                    if matches!(kind.as_str(), "sto" | "htm")
                         && let Some(customer) = customer
                     {
                         link_setup_file(&tx, customer, &sha, &kind, relative_path.as_deref(), &file_name)?;
@@ -862,6 +865,8 @@ async fn finish_blob(app: &AppState, row: &UploadRow) -> Result<()> {
                         "INSERT OR IGNORE INTO recordings(sha256, ingest_state) VALUES (?1, 'verified')",
                         [&row.sha256],
                     )?;
+                } else if row.kind == "field" {
+                    jobs::enqueue_tx(&tx, &NewJob::archive(&row.sha256), true)?;
                 } else {
                     // Every occurrence the bytes were announced under, not only the path of the
                     // upload that completed (review 23): each is a file of its driver's folder.
@@ -1240,13 +1245,13 @@ async fn fail_ingest(app: &AppState, sha: &str, message: &str) -> Result<()> {
 /// file gets the blob's source mtime with the commit clamp, fsynced before it is published.
 pub async fn restage_recording(app: &AppState, sha: &str) -> Result<()> {
     let sha_owned = sha.to_string();
-    let (size, source_mtime): (i64, Option<String>) = app
+    let (size, source_mtime, kind): (i64, Option<String>, String) = app
         .store
         .read(move |conn| {
             Ok(conn.query_row(
-                "SELECT size, source_mtime FROM blobs WHERE sha256 = ?1",
+                "SELECT size, source_mtime, kind FROM blobs WHERE sha256 = ?1",
                 [sha_owned],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )?)
         })
         .await?;
@@ -1274,8 +1279,12 @@ pub async fn restage_recording(app: &AppState, sha: &str) -> Result<()> {
     app.archiver
         .restage(
             sha,
-            crate::archiver::ArchiveKind::Recording,
-            "ibt",
+            if kind == "field" {
+                crate::archiver::ArchiveKind::FieldRecording
+            } else {
+                crate::archiver::ArchiveKind::Recording
+            },
+            if kind == "field" { "field" } else { "ibt" },
             ready_path(app, sha),
             app.cfg.spool_incoming(),
             Some(mtime),

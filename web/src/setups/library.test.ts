@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Schemas } from "../core/api";
 import { carAccent } from "../core/palette";
-import { carsFilesOnly, carsWithSetups, carsWithValues, fileNames, groupLibrary, racedCountOf, racedCountOver } from "./library";
+import { carsFilesOnly, carsWithSetups, carsWithValues, fileNames, groupLibrary, racedCountOf, racedCountOver, groupTrackLibrary, entryUsage } from "./library";
 
 type Setup = Schemas["SetupSummary"];
 type File = Schemas["SetupFileEntry"];
@@ -161,5 +161,22 @@ describe("files without values (#74)", () => {
     expect(carsFilesOnly(groupLibrary([], files, { raced: "raced" }))).toEqual([]);
     expect(carsFilesOnly(groupLibrary([], files, { cars: new Set(["supra"]) }))).toEqual([]);
     expect(carsFilesOnly(groupLibrary([], files, { cars: new Set(["acuraarx06gtp"]) }))).toHaveLength(1);
+  });
+});
+
+describe("recorded track membership", () => {
+  it("uses session tracks and keeps unrecorded track membership separate", () => {
+    const base = setup(1, ["Daytona.sto"]);
+    const g = groupTrackLibrary([{ ...base, tracks: [{ track: "Lime Rock", session_count: 2, last_used_at: "2026-10-01T12:00:00Z" }] }, setup(2, ["unknown.sto"])], []);
+    expect(g.map((x) => x.track)).toEqual(["Lime Rock", null]);
+    const e = g[0]!.cars[0]!.entries[0]!;
+    if (e.kind === "file") throw new Error("Expected setup");
+    expect(entryUsage(e)).toEqual({ count: 2, last: "2026-10-01T12:00:00Z" });
+  });
+  it("does not add potentially overlapping session counts across versions", () => {
+    const values = [setup(1, ["base.sto"]), setup(2, ["base.sto"])].map((s) => ({ ...s, session_count: 1, last_used_at: s.last_seen_at }));
+    const e = groupLibrary(values, [])[0]!.entries[0]!;
+    if (e.kind === "file") throw new Error("Expected setup");
+    expect(entryUsage(e)).toEqual({ count: 1, last: values[1]!.last_used_at });
   });
 });

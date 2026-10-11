@@ -187,6 +187,10 @@ pub struct Hub {
     pub stream: Mutex<StreamControl>,
     pub frames: FrameQueue,
     pub uploads: UploadStats,
+    /// Durable field recorder diagnostic; atomic so SDK backpressure never takes an I/O lock.
+    pub field_capture_gaps: AtomicU64,
+    pub field_generation: AtomicU64,
+    pub field_scanned_generation: AtomicU64,
     status: Mutex<StatusModel>,
     /// `status.streaming`, readable without cloning the status (the link asks every pass).
     streaming: AtomicBool,
@@ -216,6 +220,9 @@ impl Hub {
             stream: Mutex::new(StreamControl::new()),
             frames: FrameQueue::new(FRAME_QUEUE_CAPACITY),
             uploads: UploadStats::default(),
+            field_capture_gaps: AtomicU64::new(0),
+            field_generation: AtomicU64::new(0),
+            field_scanned_generation: AtomicU64::new(0),
             status: Mutex::new(StatusModel::default()),
             streaming: AtomicBool::new(false),
             status_gen: AtomicU64::new(0),

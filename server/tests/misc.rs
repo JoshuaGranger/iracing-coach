@@ -33,6 +33,7 @@ fn the_migrations_are_the_contract_schema_and_run_once() {
         "0001_initial.sql",
         "0002_garage_snapshots.sql",
         "0003_lab_library.sql",
+        "0004_field_recordings.sql",
     ]
     .iter()
     .map(|name| {
@@ -48,7 +49,7 @@ fn the_migrations_are_the_contract_schema_and_run_once() {
     assert_eq!(
         contract.replace("\r\n", "\n"),
         shipped.join("\n"),
-        "migrations 0001 to 0003, in order, must equal contracts/db-schema.sql"
+        "migrations 0001 to 0004, in order, must equal contracts/db-schema.sql"
     );
     assert_eq!(coach_server::db::MIGRATIONS.len(), shipped.len());
     for ((version, _, sql), file) in coach_server::db::MIGRATIONS.iter().zip(&shipped) {
@@ -68,7 +69,7 @@ fn the_migrations_are_the_contract_schema_and_run_once() {
                 .collect::<rusqlite::Result<_>>()?)
         })
         .unwrap();
-    assert_eq!(versions, vec![1, 2, 3]);
+    assert_eq!(versions, vec![1, 2, 3, 4]);
     let (journal, fk): (String, i64) = store
         .read_blocking(|c| {
             Ok((
@@ -92,7 +93,7 @@ fn a_pending_migration_writes_a_pre_migrate_copy_first() {
     drop(coach_server::db::Store::open(&path, "0.19.0").unwrap());
     let mut conn = Connection::open(&path).unwrap();
     let extra = [(
-        4,
+        5,
         "add a nullable column",
         "ALTER TABLE drivers ADD COLUMN nickname TEXT;",
     )];
@@ -102,15 +103,15 @@ fn a_pending_migration_writes_a_pre_migrate_copy_first() {
         .chain(extra)
         .collect();
     coach_server::db::migrate_with(&mut conn, &path, "0.20.0", &all).unwrap();
-    assert!(dir.path().join("pre-migrate-v3.sqlite3").exists());
+    assert!(dir.path().join("pre-migrate-v4.sqlite3").exists());
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
     // the copy still holds the old schema
-    let old = Connection::open(dir.path().join("pre-migrate-v3.sqlite3")).unwrap();
+    let old = Connection::open(dir.path().join("pre-migrate-v4.sqlite3")).unwrap();
     let cols: i64 = old
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('drivers') WHERE name = 'nickname'",
@@ -530,7 +531,7 @@ fn dev_mode_serves_healthcheck_succeeds_and_idle_memory_is_small() {
         std::thread::sleep(Duration::from_millis(100));
     };
     assert!(health.contains("\"status\":\"ok\""), "{health}");
-    assert!(health.contains("\"schema_version\":3"), "{health}");
+    assert!(health.contains("\"schema_version\":4"), "{health}");
 
     // `coach-server healthcheck` is the Compose healthcheck
     let status = Command::new(env!("CARGO_BIN_EXE_coach-server"))

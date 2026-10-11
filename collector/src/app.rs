@@ -172,6 +172,17 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
         garage_io.run(garage_rx);
     }));
 
+    let (field_capture, mut field_thread) =
+        match crate::field::start(paths.state_dir.join("field"), hub.clone()) {
+            Ok((capture, thread)) => (Some(capture), Some(thread)),
+            Err(error) => {
+                crate::error!("field capture unavailable: {error}");
+                hub.field_capture_gaps
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                (None, None)
+            }
+        };
+
     // The reader and the engine.
     let reader_thread = {
         let hub = hub.clone();
@@ -182,6 +193,9 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
         spawn("reader", move || {
             let mut reader = SdkReader::new(source);
             let mut pipeline = Pipeline::new(hub.clone(), Some(garage_tx), dry);
+            if let Some(capture) = field_capture {
+                pipeline = pipeline.with_field(capture);
+            }
             #[cfg(windows)]
             {
                 pipeline = pipeline.with_wheel(wheel);
@@ -252,6 +266,9 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
         if let Some(t) = garage_thread.take() {
             let _ = t.join();
         }
+        if let Some(t) = field_thread.take() {
+            let _ = t.join();
+        }
         drain(&hub, &opts);
         hub.request_shutdown();
         join_reader(reader_thread)?
@@ -270,6 +287,9 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
     };
 
     if let Some(t) = garage_thread.take() {
+        let _ = t.join();
+    }
+    if let Some(t) = field_thread.take() {
         let _ = t.join();
     }
     #[cfg(windows)]
@@ -328,6 +348,12 @@ fn drain(hub: &Hub, opts: &RunOptions) {
             && uploads == 0
             && hub.frames.is_empty()
             && hub.status_flushed()
+            && hub
+                .field_generation
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == hub
+                    .field_scanned_generation
+                    .load(std::sync::atomic::Ordering::SeqCst)
         {
             return;
         }

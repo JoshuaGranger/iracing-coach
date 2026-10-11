@@ -137,6 +137,7 @@ pub struct SdkReader {
     vars: Option<(VarTable, i32, i32)>,
     session_update: Option<i32>,
     context: Option<Arc<SessionContext>>,
+    session_text: Option<Arc<str>>,
     setup: SetupView,
     /// Set on the 0 to 1 status edge so the session info is read again even if the counter
     /// happens to repeat.
@@ -163,6 +164,7 @@ impl SdkReader {
             vars: None,
             session_update: None,
             context: None,
+            session_text: None,
             setup: SetupView::default(),
             force_reparse: true,
             was_connected: false,
@@ -179,6 +181,27 @@ impl SdkReader {
 
     pub fn sample(&self) -> &Sample {
         &self.sample
+    }
+
+    pub fn field_sample(&self) -> Option<crate::field::FieldSample> {
+        let time = self.sample.session_time?;
+        if !time.is_finite() || time < 0.0 || self.sample.session_num? < 0 {
+            return None;
+        }
+        let (vars, _, _) = self.vars.as_ref()?;
+        let context = self.context.as_deref()?;
+        Some(crate::field::FieldSample {
+            session_info: self.session_text.clone()?,
+            row: json!({
+                "schema_version": 1,
+                "captured_unix_ms": self.sample.captured_unix_ms,
+                "tick": self.sample.tick,
+                "session_info_update": self.session_update?,
+                "driver_id": context.driver_user_id,
+                "subsession_id": context.subsession_id,
+                "channels": crate::field::channels(vars, &self.row),
+            }),
+        })
     }
 
     pub fn setup(&self) -> &SetupView {
@@ -229,6 +252,8 @@ impl SdkReader {
                     return self.disconnected_pulse(now_ms, unix_ms);
                 }
                 Err(e) => {
+                    self.session_text = None;
+                    self.context = None;
                     // Access denied, out of resources, a mapping that cannot be sized: iRacing
                     // may well be running on track.
                     crate::debug!("sdk map open failed: {e}");
@@ -399,12 +424,17 @@ impl SdkReader {
             self.force_reparse = false;
             let text = decode_session_info(&bytes);
             match SessionInfo::parse(&text) {
-                Ok(info) => self.apply_session_info(&info, header.session_info_update),
+                Ok(info) => {
+                    self.session_text = Some(Arc::from(text));
+                    self.apply_session_info(&info, header.session_info_update);
+                }
                 Err(e) => {
                     if self.warned_yaml != Some(header.session_info_update) {
                         crate::warn!("session info not parsed: {e}");
                         self.warned_yaml = Some(header.session_info_update);
                     }
+                    self.session_text = None;
+                    self.context = None;
                 }
             }
         }

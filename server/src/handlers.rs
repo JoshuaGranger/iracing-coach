@@ -467,6 +467,10 @@ async fn analyze(app: &AppState, job: &JobRow, cancel: &Cancel) -> Result<JobOut
         return Ok(outcome);
     }
     let (root, names) = prepare_root(app, job, customer, &recordings, true).await?;
+    if let Err(error) = crate::field::stage(app, &job.subject, &root).await {
+        cleanup_root(&root);
+        return Err(error);
+    }
     let selector = match job.subject["local_file"].as_str() {
         Some(local_sha) => {
             let idx = recordings
@@ -832,7 +836,11 @@ async fn archive(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
             Ok(manifest)
         })
         .await?;
-    let mut manifest = manifest;
+    let mut manifest = if kind == "field" {
+        crate::field::index(app, &sha, &spool).await?
+    } else {
+        manifest
+    };
     manifest["original_name"] = json!(name);
     manifest["source_mtime"] = json!(source_mtime);
     manifest["received_at"] = json!(received);
@@ -842,6 +850,8 @@ async fn archive(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
         size: size as u64,
         kind: if kind == "ibt" {
             ArchiveKind::Recording
+        } else if kind == "field" {
+            ArchiveKind::FieldRecording
         } else {
             ArchiveKind::SetupFile
         },
@@ -907,7 +917,7 @@ pub async fn release_spool(app: &AppState, sha: &str) -> Result<bool> {
             let Some((kind, nas, present)) = row else {
                 return Ok(false);
             };
-            if kind != "ibt" || nas != "archived" || present == 0 {
+            if !matches!(kind.as_str(), "ibt" | "field") || nas != "archived" || present == 0 {
                 return Ok(false);
             }
             let referenced: i64 = conn.query_row(

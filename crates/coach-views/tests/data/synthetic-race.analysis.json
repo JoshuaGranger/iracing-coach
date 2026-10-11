@@ -1,9 +1,9 @@
 {
- "analysis_id": "87e92a8d1b3051ead8fd8ff9",
+ "analysis_id": "0fd8f8e5523856f37daeaa16",
  "analysis_profile": {
   "target_hz": 20.0
  },
- "analysis_profile_version": "post-race-foundations-v27",
+ "analysis_profile_version": "post-race-foundations-v28",
  "analyzed_at": "2026-10-10T00:00:00+00:00",
  "coaching_signals": [
   {
@@ -292,7 +292,7 @@
      "is_player": true,
      "laps": [],
      "laps_completed": null,
-     "pace_lap_count": 0,
+     "pace_lap_count": null,
      "pace_median_s": null,
      "pit_events": [],
      "pit_visits": null,
@@ -3063,6 +3063,7 @@
    "lap_numbers": [
     1
    ],
+   "observed_trend": null,
    "pace": {
     "early_average_lap_s": 1.95,
     "early_to_late_delta_s": 0.0,

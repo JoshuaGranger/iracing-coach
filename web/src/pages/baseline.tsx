@@ -4,7 +4,7 @@ import { humanize } from "../core/format";
 import { obj, str, strings } from "../core/json";
 import { useJobRun } from "../core/jobs";
 import { useResource } from "../core/resource";
-import { href } from "../core/router";
+import { href, parseHash } from "../core/router";
 import { ErrorLine, Loading, Notice, PageHead } from "../ui/kit";
 import { currentSeason, normalizeSeason } from "../setups/model";
 import "../setups/setups.css";
@@ -91,8 +91,8 @@ function CandidateTile({ title, c }: { title: string; c: Candidate | null }) {
 export default function BaselinePage({ customerId }: { customerId: number }) {
   const options = useResource(paths.carsAndTracks(customerId), () => api.carsAndTracks(customerId));
   const [season, setSeason] = useState(() => currentSeason(new Date()));
-  const [car, setCar] = useState("");
-  const [track, setTrack] = useState("");
+  const [car, setCar] = useState(() => parseHash(location.hash).query.car ?? "");
+  const [track, setTrack] = useState(() => parseHash(location.hash).query.track ?? "");
   const run = useJobRun<unknown>();
   const cars = options.data?.cars ?? [];
   const tracks = useMemo(() => (options.data?.tracks ?? []).map((t) => (t.track_config ? `${t.track} - ${t.track_config}` : t.track)), [options.data]);

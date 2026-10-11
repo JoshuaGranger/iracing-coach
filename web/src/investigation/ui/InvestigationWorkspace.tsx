@@ -13,7 +13,8 @@ import { useAsync } from "./hooks";
 import { RaceView, type RaceResult } from "./RaceView";
 import { ResultsSummaryView } from "./ResultsSummaryView";
 import { FieldRaceView } from "./FieldRaceView";
-import { fieldResults } from "./field-results";
+import { RaceComparisonView } from "./RaceComparisonView";
+import { fieldResults, hasFieldProgression } from "./field-results";
 import { RunsView } from "./RunsView";
 import { SectionsView, type SectionsOpenRequest } from "./SectionsView";
 import { PhaseSelector, type PhaseOption } from "./PhaseSelector";
@@ -99,6 +100,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
   const [comparisonId, setComparisonId] = useState<string | null>(props.comparisonId ?? null);
   const [sectionId, setSectionId] = useState<string | null>(props.sectionId ?? null);
   const [focus, setFocus] = useState<TraceFocus | null>(null);
+  const [compare, setCompare] = useState(false);
   const [selectedCar, setSelectedCar] = useState<number | null>(null);
   // Saved layouts: the shell's list when it gives one; otherwise Default plus the shell's active layout, kept for the visit.
   const [localSet, setLocalSet] = useState<LayoutSet>(() => initialSet(props.traceLayout, props.traceLayoutName));
@@ -137,11 +139,15 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
   const inv = overviewValue?.investigation ?? null;
   const field = useMemo(() => fieldResults(asRecord(overviewValue?.race.field_pace).results), [overviewValue]);
   const fieldCar = field.cars.find((car) => car.index === selectedCar) ?? field.cars.find((car) => car.player);
+  const playerCar = field.cars.find((car) => car.player);
+  const competitors = field.cars.filter((car) => !car.player && hasFieldProgression(car));
+  const opponent = fieldCar && !fieldCar.player ? fieldCar : competitors[0];
+  const canCompare = !!playerCar && hasFieldProgression(playerCar) && competitors.length > 0;
   const carPicker = <label class="ri-field-picker">Car
     {field.unavailableReason && <span role="status">{field.unavailableReason}</span>}
     <select aria-label="Race car" value={fieldCar?.index ?? "player"} onChange={(event) => setSelectedCar(event.currentTarget.value === "player" ? null : Number(event.currentTarget.value))}>
       {!field.cars.some((car) => car.player) && <option value="player">You</option>}
-      {field.cars.map((car) => <option key={car.index} value={car.index}>{car.position === null ? "—" : `P${car.position}`} · #{car.number || "—"} {car.name}{car.player ? " · You" : ""}</option>)}
+      {field.cars.filter((car) => car.player || hasFieldProgression(car)).map((car) => <option key={car.index} value={car.index}>{car.position === null ? "—" : `P${car.position}`} · #{car.number || "—"} {car.name}{car.player ? " · You" : ""}</option>)}
     </select>
   </label>;
   const comparison: Comparison | null = inv ? selectedComparison(inv, comparisonId) : null;
@@ -218,8 +224,10 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
     }
   } else if (view === "results") {
     body = <ResultsSummaryView results={field} onSelectCar={(index) => { setSelectedCar(index); select({ view: "race" }); }} />;
+  } else if (view === "race" && compare && canCompare && playerCar && opponent) {
+    body = <RaceComparisonView key={`${props.analysisId}-${opponent.index}`} player={playerCar} competitor={opponent} />;
   } else if (view === "race" && fieldCar && !fieldCar.player) {
-    body = <div class="ri-field-host"><div class="ri-field-toolbar">{carPicker}</div><FieldRaceView car={fieldCar} /></div>;
+    body = <div class="ri-field-host"><FieldRaceView car={fieldCar} /></div>;
   } else if (!inv) {
     body = (
       <Notice
@@ -229,7 +237,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
     );
   } else if (view === "race") {
     body = (
-      <div class="ri-field-host"><div class="ri-field-toolbar">{carPicker}</div><RaceView inv={inv} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)} result={props.raceResult} /></div>
+      <div class="ri-field-host"><RaceView inv={inv} race={overview.state.value.race} runs={overview.state.value.runs.runs as unknown[]} sessionType={sessionTypeOf(overview.state.value.race)} result={props.raceResult} /></div>
     );
   } else if (view === "runs") {
     body = (
@@ -256,6 +264,7 @@ export function InvestigationWorkspace(props: InvestigationWorkspaceProps) {
             <button type="button" role="tab" key={name} class="ri-tab" aria-selected={view === name} data-view-tab={name} onClick={() => select({ view: name })}>{VIEW_LABELS[name]}</button>
           ))}
         </div>
+        {(view === "race" || view === "results") && <div class="ri-race-controls">{carPicker}{view === "race" && canCompare && <button type="button" class="ri-button" aria-pressed={compare} onClick={() => setCompare(!compare)}>Compare</button>}</div>}
         {props.phases && props.phases.length > 1 && props.currentSessionId !== undefined && props.onPhase
           ? <PhaseSelector phases={props.phases} currentSessionId={props.currentSessionId} onSelect={props.onPhase} />
           : props.sessionPicker && <div class="ri-session-picker">{props.sessionPicker}</div>}

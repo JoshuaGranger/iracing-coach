@@ -3,7 +3,7 @@ import { asArray, asRecord, num } from "../types";
 export interface FieldLap { lap: number; time: number | null; timeSource: string | null; position: number | null; flag: string; pit: boolean; eligible: boolean }
 export interface FieldCar {
   index: number; name: string; number: string; player: boolean; position: number | null;
-  completed: number | null; fastest: number | null; pace: number | null; paceCount: number;
+  completed: number | null; fastest: number | null; pace: number | null; paceCount: number | null;
   pits: number | null; tires: string[] | null; fuel: number | null;
   fastestSource: string | null; progressionUnavailableReason: string | null;
   laps: FieldLap[]; pitEvents: { lap: number | null; time: number | null }[];
@@ -28,7 +28,7 @@ export function fieldResults(raw: unknown): FieldResults {
       return [{ index, name: typeof car.driver_name === "string" ? car.driver_name : `Car ${index}`,
         number: typeof car.car_number === "string" ? car.car_number : "", player: car.is_player === true,
         position: num(car.position), completed: num(car.laps_completed), fastest: num(car.fastest_lap_s),
-        pace: num(car.pace_median_s), paceCount: num(car.pace_lap_count) ?? 0,
+        pace: num(car.pace_median_s), paceCount: num(car.pace_lap_count),
         pits: num(car.pit_visits), tires: Array.isArray(car.tires_taken) ? car.tires_taken.filter((item): item is string => ["LF", "RF", "LR", "RR"].includes(String(item))) : null,
         fuel: num(car.fuel_used_l),
         fastestSource: typeof car.fastest_source === "string" ? car.fastest_source : null,
@@ -52,4 +52,13 @@ export function timeSourceLabel(source: string | null, player = false): string {
 }
 export function fieldTime(time: number | null, approximate = false): string {
   return time === null ? "—" : `${approximate ? "≈" : ""}${time.toFixed(approximate ? 1 : 3)}`;
+}
+
+export function hasFieldProgression(car: FieldCar): boolean {
+  return car.laps.some((lap) => (lap.time !== null && lap.time > 0) || (lap.position !== null && lap.position > 0));
+}
+
+/** A roster name and absent/zero lap counts alone do not establish recorded history. */
+export function hasFieldSummary(car: FieldCar): boolean {
+  return hasFieldProgression(car) || [car.position, car.completed, car.fastest, car.pace, car.pits, car.fuel].some((value) => value !== null && value > 0) || (car.tires?.length ?? 0) > 0 || car.pitEvents.length > 0;
 }

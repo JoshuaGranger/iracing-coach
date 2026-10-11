@@ -273,11 +273,19 @@ impl Uploader {
     /// Lists both folders and reconciles the queue with them. False when the gate closed part way:
     /// the scan stays due, nothing is dropped from the queue or the journal on a partial listing.
     fn scan(&mut self, proceed: &dyn Fn() -> bool) -> bool {
+        let field_generation = self
+            .hub
+            .field_generation
+            .load(std::sync::atomic::Ordering::SeqCst);
         let now_unix = self.hub.clock.unix_ms();
         let found = match &self.roots {
             Some(roots) => scan_recordings_below(roots, proceed),
             None => scan_recordings(&self.paths.telemetry_dir(), proceed).and_then(|mut found| {
                 found.extend(scan_setups(&self.paths.setups_dir(), proceed)?);
+                found.extend(crate::scan::scan_fields(
+                    &self.paths.state_dir.join("field"),
+                    proceed,
+                )?);
                 Ok(found)
             }),
         };
@@ -324,6 +332,9 @@ impl Uploader {
         }
         self.scanned_at_ms = Some(self.now());
         self.rescan_requested = false;
+        self.hub
+            .field_scanned_generation
+            .store(field_generation, std::sync::atomic::Ordering::SeqCst);
         self.hub
             .uploads
             .scans_done
@@ -408,6 +419,15 @@ impl Uploader {
         match outcome {
             Outcome::Done => {
                 self.server_trouble = 0;
+                // Collector-owned field segments can be reclaimed only after verified/have.
+                // iRacing recordings and every other source file remain read-only.
+                if cand.kind == Kind::Field
+                    && self.hub.gate.allows_file_work()
+                    && cand.path.parent() == Some(self.paths.state_dir.join("field").as_path())
+                    && let Err(error) = std::fs::remove_file(&cand.path)
+                {
+                    crate::warn!("acknowledged field segment cleanup: {error}");
+                }
                 self.items.remove(idx);
             }
             Outcome::GateClosed => {}

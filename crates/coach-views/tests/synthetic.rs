@@ -387,7 +387,8 @@ fn pit_stops_list_each_service_with_its_lap_tires_and_fuel() {
 
 #[test]
 fn race_runs_and_investigation_pass_backend_subtrees_through_with_unknown_fields() {
-    let doc = analysis_doc("pass", &Options::default());
+    let mut doc = analysis_doc("pass", &Options::default());
+    doc["runs"][0]["observed_trend"] = json!({"slope_s_per_lap": 0.1234, "intercept_s": 29.5, "first_lap": 2, "last_lap": 5, "laps_used": 4, "future_evidence": {"kept": true}});
     let (out, _) = project_doc(&doc);
     let race = view(&out, "race.json");
     assert_eq!(race["identity"], doc["identity"]);
@@ -404,13 +405,8 @@ fn race_runs_and_investigation_pass_backend_subtrees_through_with_unknown_fields
     assert_eq!(lap["pit_in"], false);
     assert_eq!(lap["run_age_laps"], 1.0);
     let runs = view(&out, "runs.json");
-    // Every run gains the projector's observed trend (backlog #90); the rest passes through.
-    let mut passed = runs["runs"].clone();
-    for run in passed.as_array_mut().unwrap() {
-        let trend = run.as_object_mut().unwrap().remove("observed_trend");
-        assert!(trend.is_some(), "every run carries observed_trend");
-    }
-    assert_eq!(passed, doc["runs"]);
+    // The worker owns observed trends; projection copies its subtree unchanged.
+    assert_eq!(runs["runs"], doc["runs"]);
     assert_valid("RunsView", &runs);
     assert_eq!(
         runs["runs"][0]["future_backend_field"],
@@ -694,7 +690,7 @@ fn a_real_backend_document_projects() {
     let dir = scratch("real");
     let out = dir.join("out");
     let summary = project(&input, &out).unwrap();
-    assert_eq!(summary.profile_version, "post-race-foundations-v27");
+    assert_eq!(summary.profile_version, "post-race-foundations-v28");
     assert_eq!(summary.lap_count, 1);
     assert_eq!(summary.bins_per_lap, 640);
     // no geometry and no GPS: no track view, no latitude or longitude channel

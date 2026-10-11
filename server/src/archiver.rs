@@ -41,6 +41,7 @@ impl NasState {
 pub enum ArchiveKind {
     Recording,
     SetupFile,
+    FieldRecording,
 }
 
 #[derive(Debug, Clone)]
@@ -280,6 +281,7 @@ fn object_dir(kind: ArchiveKind) -> &'static str {
     match kind {
         ArchiveKind::Recording => "raw",
         ArchiveKind::SetupFile => "setups",
+        ArchiveKind::FieldRecording => "field",
     }
 }
 
@@ -287,6 +289,7 @@ fn manifest_kind(kind: ArchiveKind) -> &'static str {
     match kind {
         ArchiveKind::Recording => "recording",
         ArchiveKind::SetupFile => "setup_file",
+        ArchiveKind::FieldRecording => "field_recording",
     }
 }
 
@@ -320,7 +323,15 @@ impl Core {
     /// Layout, FORMAT file, leftover temp cleanup (nas-layout.md section 6).
     fn recover(&self) -> Result<()> {
         fs::create_dir_all(&self.root)?;
-        for dir in ["raw", "setups", "backups", ".tmp", ".probe", "quarantine"] {
+        for dir in [
+            "raw",
+            "field",
+            "setups",
+            "backups",
+            ".tmp",
+            ".probe",
+            "quarantine",
+        ] {
             fs::create_dir_all(self.root.join(dir))?;
         }
         let format = self.root.join("FORMAT");
@@ -613,7 +624,7 @@ fn collect_files(base: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) -> s
 /// Reads every `*.manifest.json` under `raw/` and `setups/` (rebuild-index).
 pub fn read_manifests(nas_root: &Path) -> std::io::Result<Vec<Value>> {
     let mut manifests = Vec::new();
-    for top in ["raw", "setups"] {
+    for top in ["raw", "field", "setups"] {
         let dir = nas_root.join(top);
         if !dir.is_dir() {
             continue;

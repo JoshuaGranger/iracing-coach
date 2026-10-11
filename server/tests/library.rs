@@ -276,6 +276,13 @@ async fn the_setup_library_filters_raced_and_never_raced() {
     };
     let all = list("").await.json();
     assert_eq!(all["setups"].as_array().unwrap().len(), 1);
+    let setup = &all["setups"][0];
+    assert_eq!(setup["session_count"], 1);
+    assert_eq!(setup["last_used_at"], "2026-08-01T12:00:00Z");
+    assert_eq!(
+        setup["tracks"],
+        json!([{"track":"Stub Speedway", "session_count":1, "last_used_at":"2026-08-01T12:00:00Z"}])
+    );
     let files = all["unlinked_files"].as_array().unwrap();
     assert_eq!(files.len(), 2);
     let name_of = |folder: &str| {

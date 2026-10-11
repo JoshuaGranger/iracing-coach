@@ -192,7 +192,7 @@ export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile
       raced: g.setups.filter((s) => s.raced).length,
     });
   }
-  return out.sort((a, b) => newest(b) - newest(a) || a.carName.localeCompare(b.carName));
+  return out.sort((a, b) => newestUse(b) - newestUse(a) || newest(b) - newest(a) || a.carName.localeCompare(b.carName));
 }
 
 /** A car the library holds setups for, as the Car dropdown offers it. */
@@ -254,4 +254,42 @@ export interface LibraryFilter {
 /** The raced filter applies to setups; a file with unknown values was never driven as far as the library knows, so it shows under Not raced and All. */
 export function racedMatches(filter: RacedFilter, raced: boolean): boolean {
   return filter === "all" || (filter === "raced" ? raced : !raced);
+}
+
+export type SetupUsage = Setup;
+
+/** Group only by the linked session's track; file names never establish track membership. */
+export function groupTrackLibrary(setups: readonly SetupUsage[], files: readonly SetupFile[], filter: LibraryFilter = {}): { track: string | null; cars: CarGroup[] }[] {
+  const buckets = new Map<string | null, SetupUsage[]>();
+  for (const setup of setups) {
+    const tracks = setup.tracks ?? [];
+    if (!tracks.length) {
+      const bucket = buckets.get(null) ?? [];
+      bucket.push(setup); buckets.set(null, bucket);
+    }
+    for (const usage of tracks) {
+      const bucket = buckets.get(usage.track) ?? [];
+      bucket.push({ ...setup, session_count: usage.session_count, last_used_at: usage.last_used_at });
+      buckets.set(usage.track, bucket);
+    }
+  }
+  if (files.length && !buckets.has(null)) buckets.set(null, []);
+  return [...buckets].map(([track, values]) => ({ track, cars: groupLibrary(values, track === null ? files : [], filter) }))
+    .filter((g) => g.cars.length > 0).sort((a, b) => a.track === null ? 1 : b.track === null ? -1 : a.track.localeCompare(b.track));
+}
+
+/** The row opens its newest version; usage belongs to that exact setup, never a sum across versions. */
+export function entryUsage(e: Exclude<Entry, { kind: "file" }>): { count: number | null; last: string | null } {
+  if (e.kind === "setup") {
+    const setup = e.versions[0]!.setup;
+    return { count: setup.session_count ?? null, last: setup.last_used_at ?? null };
+  }
+  return {
+    count: e.setups.length === 1 ? e.setups[0]!.session_count ?? null : null,
+    last: e.setups.map((s) => s.last_used_at).filter((s): s is string => !!s).sort().at(-1) ?? null,
+  };
+}
+
+function newestUse(g: CarGroup): number {
+  return Math.max(0, ...g.entries.flatMap((e) => e.kind === "file" ? [] : (e.kind === "setup" ? e.versions.map((v) => v.setup) : e.setups).map((s) => time(s.last_used_at ?? ""))));
 }

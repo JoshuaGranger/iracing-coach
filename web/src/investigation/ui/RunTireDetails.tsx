@@ -13,7 +13,7 @@ export function RunTireDetails({ tires }: { tires: RunTires }) {
           {corner.bands.map((band, index) => <div key={index} class="ri-tire-detail-band">
             <small>{bandNames(corner.id)[index]}</small>
             <div class="ri-tire-detail-bar"><i style={{ height: `${band.remaining ?? 0}%`, background: surfaceTempColour(band.surfaceF) }} /></div>
-            <b>{band.remaining === null ? "—" : Math.round(band.remaining)}</b>
+            <b>{band.remaining === null ? "—" : `${Math.round(band.remaining)}%`}</b>
             <small>{band.surfaceF === null ? "—" : Math.round(band.surfaceF)}°</small>
           </div>)}
         </div>

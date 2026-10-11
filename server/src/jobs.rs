@@ -652,6 +652,12 @@ async fn after_finish(app: &AppState, terminal: &TerminalWrite) {
                 .filter_map(|r| r["sha256"].as_str().map(str::to_string)),
         );
     }
+    if let Some(list) = job.subject["field_recordings"].as_array() {
+        shas.extend(
+            list.iter()
+                .filter_map(|r| r["sha256"].as_str().map(str::to_string)),
+        );
+    }
     for sha in shas {
         if let Err(e) = crate::handlers::release_spool(app, &sha).await {
             tracing::warn!(error = %e, "spool release failed");
@@ -830,11 +836,13 @@ pub fn membership_digest(
             ))
         })?
         .collect::<rusqlite::Result<_>>()?;
-    let joined = members
-        .iter()
-        .map(|m| m.0.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let mut hashes = members.iter().map(|m| m.0.clone()).collect::<Vec<_>>();
+    hashes.extend(
+        crate::field::members(conn, session_id)?
+            .into_iter()
+            .map(|m| format!("field:{}", m.0)),
+    );
+    let joined = hashes.join("\n");
     Ok((crate::util::sha256_hex(joined.as_bytes()), members))
 }
 
@@ -882,7 +890,9 @@ pub fn queue_analysis_tx(
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let sizes: Vec<u64> = members.iter().map(|m| m.1).collect();
-    let estimate = analysis_estimate(&sizes, params.native);
+    let field = crate::field::members(conn, session_id)?;
+    let estimate = analysis_estimate(&sizes, params.native)
+        .saturating_add(field.iter().map(|m| m.1.saturating_mul(12)).sum::<u64>());
     let key = format!(
         "analyze:{session_id}:{digest}:{}:{}",
         params.bundle_digest, params.profile
@@ -893,6 +903,7 @@ pub fn queue_analysis_tx(
         "group_key": group_key,
         "local_file": local_file,
         "membership_sha256": digest,
+        "field_recordings": field.iter().map(|m| json!({"sha256":m.0,"size":m.1})).collect::<Vec<_>>(),
         "recordings": members.iter().map(|m| json!({"sha256": m.0, "size": m.1, "name": m.2})).collect::<Vec<_>>(),
         "estimate_bytes": estimate,
     });

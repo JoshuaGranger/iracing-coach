@@ -16,6 +16,7 @@ pub mod db;
 pub mod error;
 pub mod events;
 pub mod faults;
+pub mod field;
 pub mod handlers;
 pub mod hub;
 pub mod import;
