@@ -35,7 +35,7 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 ### 2026-10-11, usable race comparisons and setup organization
 
-`field-recording.md` defines durable 10 Hz opponent capture, kind field uploads, archived field manifests, identity-scoped association and cache invalidation. Python v28 produces observed run trends including repair-context laps while retaining reference-lap safeguards. Projection 8 copies these trends. SetupSummary gains optional tracks, session_count and last_used_at derived from linked sessions. UI omits empty competitor choices and uses missing values rather than zero. Protocol/ingest review: GPT-6.1 Sol required before dependent code lands.
+`field-recording.md` defines durable 10 Hz opponent capture, kind field uploads, archived field manifests, identity-scoped association and cache invalidation. Python v28 produces observed run trends including repair-context laps while retaining reference-lap safeguards. Projection 8 copies these trends. SetupSummary gains optional tracks, session_count and last_used_at derived from linked sessions. UI omits empty competitor choices and uses missing values rather than zero. Protocol review: GPT-6.1 Sol field_capture approved; feedback_ui requested explicit channel types and deduplication keys, now specified. Implementation ingest review remains required.
 
 ### 2026-10-10, race snapshot position numbering correction
 
