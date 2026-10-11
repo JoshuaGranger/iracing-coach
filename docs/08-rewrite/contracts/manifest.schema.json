@@ -8,7 +8,8 @@
   "additionalProperties": true,
   "properties": {
     "manifest_version": { "const": 1 },
-    "kind": { "enum": ["recording", "setup_file", "backup"] },
+    "kind": { "enum": ["recording", "setup_file", "backup", "field_recording"] },
+    "field_recording": { "type": "object", "additionalProperties": true, "required": ["customer_id", "subsession_id", "session_num", "sample_count"], "properties": { "customer_id": { "type": "integer" }, "subsession_id": { "type": ["integer", "null"] }, "session_num": { "type": "integer" }, "sample_count": { "type": "integer", "minimum": 1 } } },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "size": { "type": "integer", "minimum": 0 },
     "archived_at": { "type": "string", "format": "date-time" },

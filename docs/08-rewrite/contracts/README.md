@@ -33,6 +33,10 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 ## Change log
 
+### 2026-10-11, usable race comparisons and setup organization
+
+`field-recording.md` defines durable 10 Hz opponent capture, kind field uploads, archived field manifests, identity-scoped association and cache invalidation. Python v28 produces observed run trends including repair-context laps while retaining reference-lap safeguards. Projection 8 copies these trends. SetupSummary gains optional tracks, session_count and last_used_at derived from linked sessions. UI omits empty competitor choices and uses missing values rather than zero. Protocol/ingest review: GPT-6.1 Sol required before dependent code lands.
+
 ### 2026-10-10, race snapshot position numbering correction
 
 `field_pace.results` preserves the SDK's one-based `ResultsPositions.Position`, including gaps in partial snapshots. Only a snapshot explicitly containing position zero receives a one-position offset for legacy zero-based data. It does not compact or rerank the recorded field. Normal and partial one-based snapshots and explicit zero-based snapshots have regression coverage; live recorded positions still take precedence.

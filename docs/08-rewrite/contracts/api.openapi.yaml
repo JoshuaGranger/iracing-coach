@@ -1614,7 +1614,7 @@ components:
       properties:
         observed_trend:
           description: >-
-            Projector-computed, not a backend field (web round 6, backlog #90): the run's observed pace trend. Set on every
+            Python-computed observed pace trend, copied unchanged by the projector. Set on every
             run of `RunsView.runs[]` with a `run_number`, null under three counted laps; absent on Progressive Tuning's
             `representative_runs`.
           oneOf:
@@ -1626,8 +1626,8 @@ components:
       description: >-
         The straight least-squares line of the backend's `lap_time_s` against the lap number over one run's counted laps:
         the run's `race.json` `laps[]` rows (by `run_number`) that are complete, `flag_state` green, under 1 s on pit road,
-        neither pit-in nor pit-out, timed, carry no `exclusion_reasons` but `close_traffic` (so close traffic is included;
-        caution, partial, pit, not-racing-state, off-track, tow or repair and the `restart` lap after a caution are not), and
+        neither pit-in nor pit-out, timed, carry no `exclusion_reasons` but `close_traffic` or `damage_repair_context` (so close traffic and recorded repair context are included;
+        caution, partial, pit, not-racing-state, off-track, tow and the `restart` lap after a caution are not), and
         are not the `candidate_lap` of a `damage_repair.incident_points` event. An observed trend, distinct from the
         backend's screened pace fit (`race_investigation.runs[].fit`), which leaves traffic laps out; it is drawn only
         between `first_lap` and `last_lap`, never extended.
@@ -2146,6 +2146,17 @@ components:
         sources: { type: array, items: { $ref: "#/components/schemas/SetupSource" } }
         observation_count: { type: integer }
         raced: { type: boolean, description: "Seen in a Race session recording." }
+        session_count: { type: [integer, "null"], minimum: 0, description: "Distinct linked sessions in this library; null when a recording observation has not yet been linked." }
+        last_used_at: { type: [string, "null"], format: date-time, description: "Latest linked session start, not file discovery time." }
+        tracks:
+          type: array
+          items:
+            type: object
+            required: [track, session_count, last_used_at]
+            properties:
+              track: { type: string }
+              session_count: { type: integer, minimum: 0 }
+              last_used_at: { type: [string, "null"], format: date-time }
         raced_count:
           type: [integer, "null"]
           minimum: 0
@@ -2744,7 +2755,7 @@ components:
 
     UploadKind:
       type: string
-      enum: [ibt, sto, htm]
+      enum: [ibt, sto, htm, field]
 
     UploadStateName:
       type: string
