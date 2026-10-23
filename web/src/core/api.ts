@@ -167,6 +167,9 @@ export const paths = {
   /** No `version` reads the current revision. */
   stoFile: (c: number, fileId: string, version?: number | null) => `/api/v1/drivers/${c}/sto-files/${enc(fileId)}${qs({ version })}`,
   stoSaveAs: (c: number, fileId: string) => `/api/v1/drivers/${c}/sto-files/${enc(fileId)}/save-as`,
+  /** Garage-unit writes: their own routes, so a server without them answers 404 rather than ignoring converted values. */
+  stoGarage: (c: number, fileId: string) => `/api/v1/drivers/${c}/sto-files/${enc(fileId)}/garage`,
+  stoGarageSaveAs: (c: number, fileId: string) => `/api/v1/drivers/${c}/sto-files/${enc(fileId)}/garage/save-as`,
   baseline: (c: number) => `/api/v1/drivers/${c}/baseline`,
   tuning: (analysisId: string) => `/api/v1/analyses/${enc(analysisId)}/tuning`,
   tuningRecommend: (analysisId: string) => `/api/v1/analyses/${enc(analysisId)}/tuning/recommendations`,
@@ -215,6 +218,10 @@ export const api = {
     request<Schemas["StoDetail"]>("POST", paths.stoFile(c, fileId), body, { ifMatch, idempotencyKey }),
   saveStoAs: (c: number, fileId: string, body: Schemas["StoWrite"], idempotencyKey: string) =>
     request<Schemas["StoDetail"]>("POST", paths.stoSaveAs(c, fileId), body, { idempotencyKey }),
+  saveStoGarage: (c: number, fileId: string, body: Schemas["StoGarageWrite"], ifMatch: string, idempotencyKey: string) =>
+    request<Schemas["StoDetail"]>("POST", paths.stoGarage(c, fileId), body, { ifMatch, idempotencyKey }),
+  saveStoGarageAs: (c: number, fileId: string, body: Schemas["StoGarageWrite"], idempotencyKey: string) =>
+    request<Schemas["StoDetail"]>("POST", paths.stoGarageSaveAs(c, fileId), body, { idempotencyKey }),
   tuning: (analysisId: string, o?: RequestOptions) => getJson<Schemas["TuningContext"]>(paths.tuning(analysisId), o),
   notes: (c: number, kind: Schemas["NoteSubjectKind"], subject: string, o?: RequestOptions) =>
     getJson<{ notes: Schemas["Note"][] }>(paths.notes(c, kind, subject), o),

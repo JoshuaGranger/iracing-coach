@@ -6,42 +6,58 @@ import { href, navigate, setLeaveGuard } from "../core/router";
 import { uuid4 } from "../core/uuid";
 import { ErrorLine, Loading, Notice } from "../ui/kit";
 import {
+  type Edit,
+  type FieldView,
   MESSAGE_MAX,
   NAME_MAX,
   NOTES_MAX,
   type PendingWrite,
+  type Representation,
   type StoDetail,
   type StoField,
   type StoFile,
+  type StoGarageWrite,
   type StoWrite,
   type WriteFailure,
   type WriteKind,
   baseName,
+  blockedEdits,
   changesOf,
+  choiceLabel,
   clearPending,
   conflictingEdits,
   describeFailure,
+  editFor,
+  editsOfPending,
   fieldDomId,
+  fieldView,
   folderOf,
+  garageWritable,
+  garageWrite,
   groupDomId,
   groupFields,
+  hasGarage,
   historyNewestFirst,
   isAmbiguous,
-  nativeHint,
+  profileChanged,
+  profileKey,
   readPending,
   rejectedField,
   revisionLabel,
+  rowHint,
   sameRequest,
   suggestName,
   viewOf,
   withNewerMetadata,
+  writePath,
   writePending,
 } from "../setups/sto";
 import "../setups/setups.css";
 
 /**
- * One `.sto` file: its native parameters, notes and revisions on one screen. Imported originals are read-only; Save as makes an
- * editable Coach setup; Save appends a revision; an old revision is read-only and can be restored as a new one.
+ * One `.sto` file: its parameters, notes and revisions on one screen. Imported originals are read-only; Save as makes an editable
+ * Coach setup; Save appends a revision; an old revision is read-only and can be restored as a new one. A row Python maps to the
+ * garage shows and edits garage values; the rest show native file values.
  */
 export default function SetupFilePage({ customerId, fileId, version }: { customerId: number; fileId: string; version: number | null }) {
   // A new driver, file or revision is a new editor: nothing typed for one ever lands on another.
@@ -76,10 +92,19 @@ function rememberCurrent(customerId: number, d: StoDetail): void {
  * Sends a write and settles its persisted record: any answer from the server clears it, an unanswered request keeps it for the
  * identical retry. Runs to the end even when the page has gone, so a late answer still clears the record and fills the cache.
  */
+function post(p: PendingWrite) {
+  if (p.representation === "garage") {
+    const body = p.body as StoGarageWrite;
+    return p.kind === "save" ? api.saveStoGarage(p.customerId, p.fileId, body, p.ifMatch ?? "", p.key) : api.saveStoGarageAs(p.customerId, p.fileId, body, p.key);
+  }
+  const body = p.body as StoWrite;
+  return p.kind === "save" ? api.saveSto(p.customerId, p.fileId, body, p.ifMatch ?? "", p.key) : api.saveStoAs(p.customerId, p.fileId, body, p.key);
+}
+
 async function sendWrite(p: PendingWrite): Promise<StoDetail> {
   writePending(p);
   try {
-    const r = p.kind === "save" ? await api.saveSto(p.customerId, p.fileId, p.body, p.ifMatch ?? "", p.key) : await api.saveStoAs(p.customerId, p.fileId, p.body, p.key);
+    const r = await post(p);
     clearPending(p.customerId, p.fileId);
     const d = r.body;
     rememberCurrent(p.customerId, d);
@@ -109,7 +134,7 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
   }, [version, res.loading, res.error]);
   const restored = useMemo(() => readPending(customerId, fileId), [customerId, fileId]);
   const [base, setBase] = useState<StoDetail | null>(null);
-  const [edits, setEdits] = useState<Record<string, string>>(() => (restored ? { ...restored.body.changes } : {}));
+  const [edits, setEdits] = useState<Record<string, Edit>>(() => (restored ? editsOfPending(restored) : {}));
   const [notes, setNotes] = useState<string | null>(() => restored?.body.notes ?? null);
   const [message, setMessage] = useState(() => (restored?.kind === "save" ? restored.body.message ?? "" : ""));
   const [saveAs, setSaveAs] = useState<{ name: string; message: string } | null>(() => (restored?.kind === "save-as" ? { name: restored.body.name ?? "", message: restored.body.message ?? "" } : null));
@@ -125,9 +150,15 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
   const data = res.data;
   const document_ = base?.document ?? null;
   const settings = document_?.settings ?? [];
-  const changes = useMemo(() => changesOf(settings, edits), [settings, edits]);
+  const writable = garageWritable(document_);
+  const profile = profileKey(document_);
+  const split = useMemo(() => changesOf(settings, edits, writable, profile), [settings, edits, writable, profile]);
+  const blocked = useMemo(() => blockedEdits(settings, edits, writable, profile), [settings, edits, writable, profile]);
+  // Every name the server may quote back, in either representation.
+  const changes = useMemo(() => ({ ...split.native, ...split.garage }), [split]);
+  const garageCount = Object.keys(split.garage).length;
   const notesChanged = notes !== null && document_ !== null && notes !== document_.notes;
-  const changeCount = Object.keys(changes).length + (notesChanged ? 1 : 0);
+  const changeCount = Object.keys(changes).length + blocked.length + (notesChanged ? 1 : 0);
   const dirty = changeCount > 0;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -175,13 +206,25 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
     setMessage("");
     setConflicts([]);
     if (failure?.kind !== "unconfirmed") setFailure(null);
+    // A reload held back while editing (a newer revision, a changed garage profile) becomes the base now there is nothing to keep.
+    if (data && data !== d && data.file.id === d.file.id && data.file.current_version >= d.file.current_version) setBase(data);
   }
 
   /** Builds (or, for the identical request, reuses) the persisted write and sends it. */
-  async function run(kind: WriteKind, body: StoWrite, ifMatch: string | null) {
-    const p: PendingWrite = sameRequest(pending, kind, customerId, fileId, ifMatch, body)
-      ? pending
-      : { v: 1, kind, customerId, fileId, key: uuid4(), ifMatch, body, at: new Date().toISOString() };
+  async function run(kind: WriteKind, representation: Representation, body: StoWrite | StoGarageWrite, ifMatch: string | null) {
+    const garage = representation === "garage";
+    const request = {
+      kind,
+      representation,
+      path: writePath(kind, representation, customerId, fileId),
+      customerId,
+      fileId,
+      ifMatch,
+      profile: garage ? (document_?.garage_profile_id ?? null) : null,
+      descriptorVersion: garage ? (document_?.descriptor_version ?? null) : null,
+      body,
+    };
+    const p: PendingWrite = sameRequest(pending, request) ? pending : { v: 2, ...request, key: uuid4(), at: new Date().toISOString() };
     await send(p);
   }
 
@@ -196,38 +239,47 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
       setPending(null);
       setBusy(null);
       setConflicts([]);
+      // A confirmed Save as settles these edits before navigation. A render may
+      // run before hashchange and must not re-arm the unsaved-work guard.
+      setEdits({});
+      setNotes(null);
+      setMessage("");
       if (p.kind === "save-as" || saved.file.id !== fileId || version !== null) {
         navigate({ page: "setupFile", customerId, fileId: saved.file.id });
         return;
       }
       setBase(saved);
-      setEdits({});
-      setNotes(null);
-      setMessage("");
     } catch (e) {
       if (!live.current) return;
       setBusy(null);
-      const f = describeFailure(e, p.kind);
+      const f = describeFailure(e, p.kind, p.representation);
       setPending(f.kind === "unconfirmed" ? p : null);
       setFailure(f);
+      // The current profile is read now; it becomes the base only after Discard, so nothing typed is reinterpreted.
+      if (f.kind === "profile") res.reload();
       if (f.kind === "conflict" && f.current) {
         const cur = f.current;
         rememberCurrent(customerId, cur);
         if (view === "editable") {
-          setConflicts(conflictingEdits(d.document?.settings ?? [], cur.document?.settings ?? [], changes));
+          setConflicts(conflictingEdits(d.document?.settings ?? [], cur.document?.settings ?? [], edits));
           setBase(cur);
         } else setBase({ ...d, file: cur.file, history: cur.history });
       }
     }
   }
 
+  const saveBlocked = blocked.length > 0 || failure?.kind === "profile";
+
   function save() {
-    const body: StoWrite = { base_version: d.version, changes, ...(notesChanged ? { notes: notes! } : {}), ...(message.trim() ? { message: message.trim() } : {}) };
-    void run("save", body, String(file.current_version));
+    if (saveBlocked) return;
+    const extra = { ...(notesChanged ? { notes: notes! } : {}), ...(message.trim() ? { message: message.trim() } : {}) };
+    // Garage routes only when a garage value changed; a native-only Save keeps its route and body.
+    if (garageCount && document_) void run("save", "garage", garageWrite(d.version, document_, split, extra), String(file.current_version));
+    else void run("save", "native", { base_version: d.version, changes: split.native, ...extra }, String(file.current_version));
   }
 
   function restore() {
-    void run("save", { base_version: d.version, changes: {}, message: `Restored ${revisionLabel(d.version).toLowerCase()}` }, String(file.current_version));
+    void run("save", "native", { base_version: d.version, changes: {}, message: `Restored ${revisionLabel(d.version).toLowerCase()}` }, String(file.current_version));
   }
 
   function openSaveAs() {
@@ -238,14 +290,11 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
   function submitSaveAs(e: Event) {
     e.preventDefault();
     if (!saveAs) return;
-    const body: StoWrite = {
-      base_version: d.version,
-      changes: view === "editable" ? changes : {},
-      ...(view === "editable" && notesChanged ? { notes: notes! } : {}),
-      name: saveAs.name,
-      ...(saveAs.message.trim() ? { message: saveAs.message.trim() } : {}),
-    };
-    void run("save-as", body, null);
+    const editing = view === "editable";
+    if (editing && saveBlocked) return;
+    const extra = { ...(editing && notesChanged ? { notes: notes! } : {}), name: saveAs.name, ...(saveAs.message.trim() ? { message: saveAs.message.trim() } : {}) };
+    if (editing && garageCount && document_) void run("save-as", "garage", garageWrite(d.version, document_, split, extra), null);
+    else void run("save-as", "native", { base_version: d.version, changes: editing ? split.native : {}, ...extra }, null);
   }
 
   function dropPending() {
@@ -264,9 +313,21 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
   const editable = view === "editable" && !locked && confirmed;
   const rejected = rejectedField(failure, changes);
   const barShown = view === "editable" && (dirty || busy === "save");
-  const labelOf = (name: string) => settings.find((s) => s.name === name)?.label || name;
+  const labelOf = (name: string) => {
+    const s = settings.find((x) => x.name === name);
+    return s ? fieldView(s, writable).label : name;
+  };
   const crumbsCar = file.car_folder;
   const groups = groupFields(settings);
+  const mixed = hasGarage(settings);
+  const garageRows = settings.filter((s) => s.garage).length;
+  const profileLabel = document_?.garage_profile_label || document_?.garage_profile_id || null;
+  const blockedLine =
+    view === "editable" && blocked.length && failure?.kind !== "profile"
+      ? profileChanged(edits, profile)
+        ? "The garage profile changed after these values were typed. They are kept for review; Discard to continue."
+        : `${blocked.map(labelOf).join(", ")} changed form after you typed. Kept for review; Discard to continue.`
+      : null;
 
   return (
     <div class="setup-file ds" data-view={view}>
@@ -345,7 +406,7 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
         </div>
       ) : null}
       {failure && failure.kind !== "unconfirmed" && failure.kind !== "name" && !(failure.kind === "rejected" && barShown) ? (
-        <Notice tone={failure.kind === "conflict" ? "warn" : "bad"} role="alert">
+        <Notice tone={failure.kind === "conflict" || failure.kind === "profile" || failure.kind === "unavailable" ? "warn" : "bad"} role="alert">
           <span data-testid="sto-error">
             {failure.message}
             {failure.kind === "conflict" && view === "editable"
@@ -388,7 +449,7 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
             <input type="text" value={saveAs.message} maxLength={MESSAGE_MAX} disabled={locked} onInput={(e) => setSaveAs({ ...saveAs, message: e.currentTarget.value })} />
           </label>
           <div class="sf-buttons">
-            <button type="submit" class="pill primary" disabled={locked || !saveAs.name.trim()}>
+            <button type="submit" class="pill primary" disabled={locked || !saveAs.name.trim() || (view === "editable" && saveBlocked)}>
               {busy === "save-as" ? "Creating…" : "Create setup"}
             </button>
             <button type="button" class="pill" disabled={busy !== null} onClick={() => setSaveAs(null)}>
@@ -410,8 +471,13 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
               </p>
             ))
           ) : (
-            <p class="sf-line">Native file values and units.</p>
+            <p class="sf-line">{mixed ? "Garage values where verified; other rows are native file values." : "Native file values and units."}</p>
           )}
+          {mixed ? (
+            <p class="sf-line" data-testid="sto-garage-scope">
+              {plural(garageRows, "row")} in garage units{profileLabel ? ` for ${profileLabel}` : ""}; rows marked native show the file's own value.
+            </p>
+          ) : null}
           {groups.length > 1 ? (
             <nav class="sf-jump" aria-label="Parameter groups">
               {groups.map((g) => (
@@ -426,25 +492,25 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
               <section key={g.group} id={groupDomId(g.group)} tabIndex={-1} class="sf-group" aria-label={g.group}>
                 <h3>{g.group}</h3>
                 <ul>
-                  {g.fields.map((f) => (
-                    <FieldRow
-                      key={f.name}
-                      f={f}
-                      value={edits[f.name] ?? f.raw_value}
-                      editable={editable && f.editable}
-                      showEditable={view === "editable"}
-                      invalid={rejected === f.name ? (failure as Extract<WriteFailure, { kind: "rejected" }>).message : null}
-                      conflict={conflicts.includes(f.name)}
-                      onInput={(v) =>
-                        setEdits((prev) => {
-                          const nextEdits = { ...prev };
-                          if (v === f.raw_value) delete nextEdits[f.name];
-                          else nextEdits[f.name] = v;
-                          return nextEdits;
-                        })
-                      }
-                    />
-                  ))}
+                  {g.fields.map((f) => {
+                    const fv = fieldView(f, writable);
+                    const stuck = view === "editable" && blocked.includes(f.name);
+                    return (
+                      <FieldRow
+                        key={f.name}
+                        f={f}
+                        fv={fv}
+                        hint={rowHint(f, mixed)}
+                        edit={edits[f.name] ?? null}
+                        editable={editable && fv.editable && !stuck && failure?.kind !== "profile"}
+                        showEditable={view === "editable"}
+                        blocked={stuck}
+                        invalid={rejected === f.name ? (failure as Extract<WriteFailure, { kind: "rejected" }>).message : null}
+                        conflict={conflicts.includes(f.name)}
+                        onInput={(v) => setEdits((prev) => editFor(prev, f.name, fv, v, profile))}
+                      />
+                    );
+                  })}
                 </ul>
               </section>
             ))}
@@ -498,6 +564,12 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
               <dd>STO version {document_.sto_version}</dd>
             </div>
           ) : null}
+          {profileLabel ? (
+            <div>
+              <dt>Garage profile</dt>
+              <dd data-testid="sto-garage-profile">{profileLabel}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>{file.locked ? "Imported" : "Saved"}</dt>
             <dd class="date">{formatDateTime(d.history.find((h) => h.version === d.version)?.created_at ?? file.updated_at)}</dd>
@@ -519,10 +591,15 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
               {failure.message}
             </span>
           ) : null}
+          {blockedLine ? (
+            <span class="sf-error" role="alert" data-testid="sto-blocked">
+              {blockedLine}
+            </span>
+          ) : null}
           <button type="button" class="pill" disabled={locked} onClick={discard}>
             Discard
           </button>
-          <button type="button" class="pill primary" disabled={locked} onClick={save}>
+          <button type="button" class="pill primary" disabled={locked || saveBlocked} onClick={save}>
             {busy === "save" ? "Saving…" : `Save ${revisionLabel(next).toLowerCase()}`}
           </button>
         </div>
@@ -531,58 +608,100 @@ function FileView({ customerId, fileId, version }: { customerId: number; fileId:
   );
 }
 
+/**
+ * One parameter in the representation the backend chose: garage label, value, unit and verified limits when supplied, else the
+ * native file value. Values are shown and sent as exact strings; a choice list offers only the backend's choices. A value typed
+ * in a representation the row no longer has stays visible and read-only until Discard.
+ */
 function FieldRow({
   f,
-  value,
+  fv,
+  hint,
+  edit,
   editable,
   showEditable,
+  blocked,
   invalid,
   conflict,
   onInput,
 }: {
   f: StoField;
-  value: string;
+  fv: FieldView;
+  hint: string | null;
+  edit: Edit | null;
   editable: boolean;
   showEditable: boolean;
+  blocked: boolean;
   invalid: string | null;
   conflict: boolean;
   onInput: (v: string) => void;
 }) {
-  const hint = nativeHint(f);
-  const changed = value !== f.raw_value;
+  const value = edit ? edit.value : fv.value;
+  const changed = !!edit && (blocked || edit.rep !== fv.rep || edit.value !== fv.value);
   const id = fieldDomId(f.name);
+  const control = showEditable && (fv.editable || !!edit);
+  // A retained draft belongs to the old representation/profile. Never put a
+  // new unit or constraint beside that old number.
+  const limits = !blocked && (fv.limits || fv.note) ? [fv.limits, fv.note].filter(Boolean).join(" · ") : null;
+  const describedBy = [changed || invalid || blocked ? `${id}-was` : null, limits ? `${id}-limits` : null].filter(Boolean).join(" ") || undefined;
+  const shown = (v: string) => (fv.choices ? choiceLabel(fv, v) : v);
+  const note = invalid ?? (blocked && edit ? `${edit.rep === "garage" ? "Garage" : "Native"} value kept; Discard to edit` : `was ${shown(fv.value)}`);
+  const choices = fv.choices
+    ? [...fv.choices, ...[value, fv.value].filter((v, i, all) => all.indexOf(v) === i && !fv.choices!.some((c) => c.value === v)).map((v) => ({ value: v, label: v }))]
+    : null;
   return (
-    <li class="sf-row" data-name={f.name} data-changed={changed ? "true" : undefined} data-conflict={conflict ? "true" : undefined}>
-      <label class="sf-label" for={showEditable && f.editable ? id : undefined}>
-        <span>{f.label || f.name}</span>
-        {hint ? <small>{hint}</small> : null}
+    <li
+      class="sf-row"
+      data-name={f.name}
+      data-rep={fv.rep}
+      data-changed={changed ? "true" : undefined}
+      data-conflict={conflict ? "true" : undefined}
+      data-blocked={blocked ? "true" : undefined}
+    >
+      <label class="sf-label" for={control ? id : undefined}>
+        <span>{fv.label}</span>
+        {hint ? <small title={fv.rep === "garage" ? "Native key and file value" : undefined}>{hint}</small> : null}
       </label>
       <span class="sf-value">
-        {showEditable && f.editable ? (
+        {control && choices && !blocked ? (
+          <select id={id} value={value} disabled={!editable} aria-invalid={invalid ? true : undefined} aria-describedby={describedBy} onChange={(e) => onInput(e.currentTarget.value)}>
+            {choices.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        ) : control ? (
           <input
             id={id}
             type="text"
             class="num"
+            inputMode={fv.inputMode}
             value={value}
             spellcheck={false}
             autoComplete="off"
             disabled={!editable}
-            aria-invalid={invalid ? true : undefined}
-            aria-describedby={changed || invalid ? `${id}-was` : undefined}
+            aria-invalid={invalid || blocked ? true : undefined}
+            aria-describedby={describedBy}
             onInput={(e) => onInput(e.currentTarget.value)}
           />
         ) : (
-          <span class="num" title={showEditable && !f.editable ? "Not editable in this file" : undefined}>
-            {f.raw_value}
+          <span class="num" title={showEditable && !fv.editable ? "Not editable in this file" : undefined}>
+            {shown(fv.value)}
           </span>
         )}
         {changed || invalid ? (
-          <small id={`${id}-was`} class={invalid ? "sf-error" : "sf-was"}>
-            {invalid ?? `was ${f.raw_value}`}
+          <small id={`${id}-was`} class={invalid || blocked ? "sf-error" : "sf-was"}>
+            {note}
           </small>
         ) : null}
       </span>
-      <span class="sf-unit">{f.unit ?? ""}</span>
+      <span class="sf-unit">{blocked ? "" : fv.unit ?? ""}</span>
+      {limits ? (
+        <small id={`${id}-limits`} class="sf-limit">
+          {limits}
+        </small>
+      ) : null}
     </li>
   );
 }

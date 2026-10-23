@@ -1,7 +1,7 @@
 // Fixture server for web development and the Playwright app project: node mock/server.mjs [--port 4173] [--dist dist]
 // Serves the built SPA and the /api/v1 surface of docs/08-rewrite/contracts/api.openapi.yaml from fixture data,
 // plus the live WebSocket (binary frames from the generated channel table) and SSE.
-// Test control: POST /__mock/state {drivers, live, liveStalled, conflictNext, stoConflictNext, stoDropResponse, failWrites, failChannels, delayMs, reset} and POST /__mock/event {...ServerEvent}.
+// Test control: POST /__mock/state {drivers, live, liveStalled, conflictNext, stoConflictNext, stoDropResponse, stoProfile, stoGarageMissing, failWrites, failChannels, delayMs, reset} and POST /__mock/event {...ServerEvent}.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";

@@ -1,7 +1,8 @@
 // The `.sto` file library of the fixture server (docs/08-rewrite/contracts/sto-editor.md): locked imported originals, Coach
 // working setups with immutable revisions, Save (If-Match), Save As, downloads and permanent idempotency receipts.
-// Test control through POST /__mock/state: `stoConflictNext` (another device saves a revision first) and `stoDropResponse`
-// (the next write commits, then the connection drops before the answer).
+// Test control through POST /__mock/state: `stoConflictNext` (another device saves a revision first), `stoDropResponse`
+// (the next write commits, then the connection drops before the answer), `stoProfile` (the garage profile id the server now
+// serves and requires) and `stoGarageMissing` (an older server without the garage routes: they answer 404).
 import crypto from "node:crypto";
 
 const DRIVER_ID = 1507810;
@@ -18,17 +19,50 @@ const NUMBER = /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$/;
 const CORNERS = [["lf", "Left front"], ["rf", "Right front"], ["lr", "Left rear"], ["rr", "Right rear"]];
 
 /**
+ * SYNTHETIC garage profile for UI tests only; not product evidence. Python authors real descriptors from verified material. This
+ * mock never converts: it looks native tokens up in fixed tables, and anything not listed has no garage view (native fallback).
+ * Brake bias: editable, synthetic 0 to 100 on a 0.5 grid from 0. Cold pressures: display-only psi for three fixed tokens. Gear
+ * stack: an editable choice.
+ */
+export const GARAGE_PROFILE = "synthetic-stockcar.test-1";
+const GARAGE_LABEL = "Synthetic stock car (test)";
+const GARAGE = {
+  fBrakeBias: {
+    label: "Brake bias",
+    unit: "%",
+    editable: true,
+    limits: { min: "0", max: "100", step: "0.5", step_base: "0" },
+    table: [["54.000000", "54.00"], ["54.500000", "54.50"], ["55.000000", "55.00"], ["55.500000", "55.50"], ["56.000000", "56.00"]],
+  },
+  ...Object.fromEntries(
+    CORNERS.map(([p, side]) => [
+      `${p}TireColdPressPa`,
+      { label: `${side} cold pressure`, unit: "psi", editable: false, table: [["158579.000000", "23.0"], ["165474.000000", "24.0"], ["172369.000000", "25.0"]] },
+    ]),
+  ),
+  gearStackId: { label: "Gear stack", unit: null, editable: true, choices: [{ value: "1", label: "Short" }, { value: "2", label: "Tall" }], table: [["1.000000", "1"], ["2.000000", "2"]] },
+};
+
+function garageOf(name, raw_value) {
+  const g = GARAGE[name];
+  const hit = g?.table.find(([native]) => native === raw_value);
+  if (!hit) return undefined;
+  return { label: g.label, value: hit[1], unit: g.unit, editable: g.editable, ...(g.limits ?? {}), ...(g.choices ? { choices: g.choices } : {}) };
+}
+
+/**
  * What `sto_codec._descriptor` reports for a native record: the label is the native name, the group comes from an lf/rf/lr/rr or
  * f/r prefix, the unit only from a Pa, Npm or ToKg suffix (and rad, % for the two named records). Everything else has no unit:
- * the codec never invents a garage unit or range.
+ * the codec never invents a garage unit or range. A garage view is added only for a profiled document and a listed token.
  */
-function descriptor(name, raw_value) {
+function descriptor(name, raw_value, profiled = false) {
   let group = CORNERS.find(([p]) => name.startsWith(p) && name.length > 2 && /[A-Z]/.test(name[2]))?.[1] ?? "General";
   if (group === "General" && /^[fr][A-Z]/.test(name)) group = name[0] === "f" ? "Front" : "Rear";
   let unit = name.endsWith("Pa") ? "Pa" : name.endsWith("Npm") ? "N/m" : name.endsWith("ToKg") ? "kg" : null;
   if (name === "steeringWheelOffset") unit = "rad";
   else if (name === "fBrakeBias") unit = "%";
-  return { name, raw_value, label: name, unit, editable: Math.abs(Number(raw_value)) <= MAX_NATIVE, group };
+  const garage = profiled ? garageOf(name, raw_value) : undefined;
+  return { name, raw_value, label: name, unit, editable: Math.abs(Number(raw_value)) <= MAX_NATIVE, group, ...(garage ? { garage } : {}) };
 }
 
 /** 88 synthetic native records in file order, spelled the way the native writer spells numbers (no source file's values). */
@@ -88,20 +122,22 @@ const RECORDS = [
   ["opaqueBuildToken", "9007199254740993"],
 ];
 
-function settings(overrides = {}) {
-  return RECORDS.map(([name, value]) => descriptor(name, overrides[name] ?? value));
+function settings(overrides = {}, profiled = false) {
+  return RECORDS.map(([name, value]) => descriptor(name, overrides[name] ?? value, profiled));
 }
 
 /** The codec's one actionable garage check (sto_codec.WARNINGS). */
 const WARNINGS = ["Native file values may differ from garage values. After loading, check the garage and run Tech in iRacing."];
 
-function document(overrides = {}, notes = "") {
+/** A decoded document; `profiled: false` is a car or build outside the verified scope, so every row is native. */
+function document(overrides = {}, notes = "", { profiled = true, car = "synthetic\\stockcar" } = {}) {
   const doc = {
     sto_version: 3,
+    ...(profiled ? { descriptor_version: 2, garage_profile_id: GARAGE_PROFILE, garage_profile_label: GARAGE_LABEL } : {}),
     sha256: "",
-    internal_car_path: "synthetic\\stockcar",
+    internal_car_path: car,
     notes,
-    settings: settings(overrides),
+    settings: settings(overrides, profiled),
     warnings: [...WARNINGS],
     trailer_sha256: sha("synthetic trailer"),
     notes_limit_bytes: 16384,
@@ -131,7 +167,7 @@ export function createSto() {
       document: null,
       unavailable_reason: "Unsupported STO build: this file was written by a simulator build whose setup encoding is not verified.",
     }),
-    source(c, "dallara-ir18", "Road base.sto", "7".padStart(64, "d"), BASE - 30 * 86400000, { present: false }),
+    source(c, "dallara-ir18", "Road base.sto", "7".padStart(64, "d"), BASE - 30 * 86400000, { present: false, document: document({}, "", { profiled: false, car: "synthetic\\formula" }) }),
   ];
   const parent = files[0];
   const r1 = document({ lfTireColdPressPa: "162000.000000" }, "Bristol race baseline.\nShort-run balance.");
@@ -158,13 +194,16 @@ function fileView(f) {
   return { id: f.id, name: f.name, car_folder: f.car_folder, locked: f.locked, current_version: last.version, version_count: f.revisions.length, sha256: last.sha256, updated_at: last.created_at, present: f.present, parent_file_id: f.parent_file_id, parent_version: f.parent_version };
 }
 
-function detail(customerId, f, version) {
+/** `profile` is the garage profile the server serves now (`stoProfile`); a native-only document has none. */
+function detailOf(customerId, f, version, profile) {
   const r = f.revisions[version - 1];
+  const doc = r.document ? structuredClone(r.document) : null;
+  if (doc?.garage_profile_id) doc.garage_profile_id = profile;
   return {
     file: fileView(f),
     version,
     sha256: r.sha256,
-    document: r.document ? structuredClone(r.document) : null,
+    document: doc,
     history: f.revisions.map(({ document: _d, ...h }) => h),
     unavailable_reason: r.document ? null : f.unavailable_reason,
     download_url: `/api/v1/drivers/${customerId}/sto-files/${f.id}/download?version=${version}`,
@@ -201,9 +240,48 @@ function changeProblem(doc, changes, notes) {
   return null;
 }
 
+/**
+ * What the garage routes add before the native check: the profile, no overlap, and each garage value looked up in the synthetic
+ * table (out of range, off grid, unknown choice, unmapped). Returns native changes or a 422 with the row's name and representation.
+ */
+function garageEdit(doc, body, profile) {
+  const fail = (status, error, message, details = null) => ({ error: { status, error, message, details } });
+  if ("changes" in body) return fail(400, "invalid_request", "Garage writes take garage_changes and native_changes, not changes.");
+  if (!doc.garage_profile_id || body.garage_profile_id !== profile || (body.descriptor_version !== undefined && body.descriptor_version !== 2)) {
+    return fail(422, "garage_profile_mismatch", "The garage profile for this file changed. Reload before saving garage values.");
+  }
+  const g = body.garage_changes;
+  const n = body.native_changes ?? {};
+  if (!g || typeof g !== "object" || Array.isArray(g) || !n || typeof n !== "object" || Array.isArray(n)) return fail(400, "invalid_request", "garage_changes must be an object of names and strings.");
+  const both = Object.keys(g).find((k) => Object.hasOwn(n, k));
+  if (both) return fail(422, "ambiguous_change", "A parameter is in both garage_changes and native_changes.", { name: both });
+  const native = { ...n };
+  for (const [name, value] of Object.entries(g)) {
+    const row = { name, representation: "garage" };
+    const s = doc.settings.find((x) => x.name === name);
+    const spec = GARAGE[name];
+    if (!s || !spec || !garageOf(name, s.raw_value)?.editable) return fail(422, "garage_unmapped_field", "This parameter has no verified garage mapping for editing.", row);
+    if (typeof value !== "string") return fail(422, "invalid_garage_value", "Use the garage value as text.", row);
+    if (spec.choices) {
+      const hit = spec.table.find(([, shown]) => shown === value);
+      if (!hit) return fail(422, "garage_unknown_choice", "Choose one of the listed garage settings.", row);
+      native[name] = hit[0];
+      continue;
+    }
+    if (!NUMBER.test(value)) return fail(422, "invalid_garage_value", "Use a decimal number in garage units.", row);
+    // A test fixture's comparison of its own synthetic bounds and listed points; Python owns the real checks.
+    const x = Number(value);
+    if (x < Number(spec.limits.min) || x > Number(spec.limits.max)) return fail(422, "garage_out_of_range", `Outside the verified range ${spec.limits.min} to ${spec.limits.max}.`, row);
+    const hit = spec.table.find(([, shown]) => Number(shown) === x);
+    if (!hit) return fail(422, "garage_off_grid", `Not on the verified ${spec.limits.step} step from ${spec.limits.step_base}.`, row);
+    native[name] = hit[0];
+  }
+  return { changes: native };
+}
+
 function applied(doc, changes, notes) {
   const next = structuredClone(doc);
-  for (const s of next.settings) if (changes[s.name] !== undefined) s.raw_value = changes[s.name];
+  next.settings = next.settings.map((s) => descriptor(s.name, changes[s.name] ?? s.raw_value, !!next.garage_profile_id));
   if (notes !== undefined) next.notes = notes;
   next.sha256 = sha(JSON.stringify(next.settings) + next.notes);
   return next;
@@ -211,7 +289,7 @@ function applied(doc, changes, notes) {
 
 /** Handles `/api/v1/drivers/{c}/sto-files…`; returns false for any other path. */
 export async function handleSto(req, res, url, { state, json, err, readBody, sendEvent }) {
-  const m = url.pathname.match(/^\/api\/v1\/drivers\/(\d+)\/sto-files(?:\/([^/]+)(?:\/(save-as|download))?)?$/);
+  const m = url.pathname.match(/^\/api\/v1\/drivers\/(\d+)\/sto-files(?:\/([^/]+)(?:\/(save-as|download|garage|garage\/save-as))?)?$/);
   if (!m) return false;
   const c = Number(m[1]);
   const lib = state.sto[c];
@@ -219,6 +297,11 @@ export async function handleSto(req, res, url, { state, json, err, readBody, sen
   const id = m[2] === undefined ? null : decodeURIComponent(m[2]);
   const action = m[3] ?? null;
   const method = req.method;
+  const garage = action === "garage" || action === "garage/save-as";
+  const profile = state.config.stoProfile ?? GARAGE_PROFILE;
+  const detail = (customerId, f, v) => detailOf(customerId, f, v, profile);
+  // An older server has no garage routes at all.
+  if (garage && state.config.stoGarageMissing) return err(res, 404, "not_found", "Not found"), true;
   if (id === null) {
     if (method !== "GET") return err(res, 405, "method_not_allowed", "GET only"), true;
     return json(res, 200, { files: lib.files.map(fileView) }), true;
@@ -252,8 +335,9 @@ export async function handleSto(req, res, url, { state, json, err, readBody, sen
   if (!key) return err(res, 400, "invalid_request", "Idempotency-Key is required for Save"), true;
   const body = await readBody(req);
   const ifMatch = req.headers["if-match"] ?? null;
-  const kind = action === "save-as" ? "save-as" : "save";
-  const requestSha = sha(JSON.stringify([c, id, kind, body ?? null, ifMatch]));
+  const kind = action === "save-as" || action === "garage/save-as" ? "save-as" : "save";
+  // Garage receipts carry their own operation; native receipt hashes are unchanged, so earlier native retries still replay.
+  const requestSha = sha(JSON.stringify([c, id, garage ? `garage-${kind}` : kind, body ?? null, ifMatch]));
   const receipt = state.sto.receipts.get(key);
   state.writes.push({ path: url.pathname, body, key, ifMatch });
   if (receipt) {
@@ -262,6 +346,14 @@ export async function handleSto(req, res, url, { state, json, err, readBody, sen
   }
   if (!file) return err(res, 404, "not_found", "no such setup file"), true;
   if (!body || typeof body !== "object" || !Number.isInteger(body.base_version) || body.base_version < 1) return err(res, 400, "invalid_request", "base_version required"), true;
+
+  /** The native changes a write makes, or its error: garage routes look values up first, both then pass the codec's native check. */
+  const editOf = (doc, b) => {
+    const g = garage ? garageEdit(doc, b, profile) : { changes: b.changes };
+    if (g.error) return g;
+    const problem = changeProblem(doc, g.changes, b.notes);
+    return problem ? { error: { status: 422, error: "invalid_edit", message: problem, details: null } } : g;
+  };
 
   const settle = (status, result) => {
     state.sto.receipts.set(key, { requestSha, status, body: result });
@@ -290,10 +382,10 @@ export async function handleSto(req, res, url, { state, json, err, readBody, sen
     if (expected !== current) return json(res, 412, { error: "version_conflict", message: "the resource changed; reload and retry", current: detail(c, file, current) }), true;
     const base = file.revisions[body.base_version - 1];
     if (!base) return err(res, 404, "not_found", "no such revision"), true;
-    const problem = changeProblem(base.document, body.changes, body.notes);
-    if (problem) return err(res, 422, "invalid_edit", problem), true;
-    const doc = applied(base.document, body.changes, body.notes);
-    const restoring = Object.keys(body.changes).length === 0 && body.notes === undefined && body.base_version !== current;
+    const edit = editOf(base.document, body);
+    if (edit.error) return json(res, edit.error.status, { error: edit.error.error, message: edit.error.message, details: edit.error.details }), true;
+    const doc = applied(base.document, edit.changes, body.notes);
+    const restoring = !garage && Object.keys(edit.changes).length === 0 && body.notes === undefined && body.base_version !== current;
     file.revisions.push({ version: current + 1, sha256: sha(`${file.id}/${current + 1}${JSON.stringify(doc)}`), created_at: new Date().toISOString(), message: body.message ?? (restoring ? `Restored revision ${body.base_version}` : "Saved"), based_on_version: body.base_version, document: doc });
     return settle(200, detail(c, file, current + 1));
   }
@@ -307,9 +399,9 @@ export async function handleSto(req, res, url, { state, json, err, readBody, sen
   if (lib.files.some((f) => !f.locked && f.car_folder.toLowerCase() === file.car_folder.toLowerCase() && f.name.toLowerCase() === name.toLowerCase())) {
     return err(res, 409, "duplicate_name", "A working setup already has that filename for this car"), true;
   }
-  const problem = changeProblem(base.document, body.changes, body.notes);
-  if (problem) return err(res, 422, "invalid_edit", problem), true;
-  const doc = applied(base.document, body.changes, body.notes);
+  const edit = editOf(base.document, body);
+  if (edit.error) return json(res, edit.error.status, { error: edit.error.error, message: edit.error.message, details: edit.error.details }), true;
+  const doc = applied(base.document, edit.changes, body.notes);
   const newId = `coach:${lib.nextOwned++}`;
   const created = {
     id: newId,
