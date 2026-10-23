@@ -2560,6 +2560,191 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/drivers/{customer_id}/sto-files/{file_id}/garage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: components["parameters"]["CustomerId"];
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save garage-unit edits as an immutable revision; Python verifies the profile, converts and checks supported constraints. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Current `version`; required to update or delete an existing resource. */
+                    "If-Match"?: components["parameters"]["IfMatch"];
+                };
+                path: {
+                    customer_id: components["parameters"]["CustomerId"];
+                    file_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StoGarageWrite"];
+                };
+            };
+            responses: {
+                /** @description New revision; 412 for concurrent edits, 409 for locked sources. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoDetail"];
+                    };
+                };
+                /** @description Invalid query, body or filename. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description No such driver-scoped file or immutable revision. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Locked source or duplicate working filename. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description version_conflict; current is the whole current StoDetail. */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoVersionConflict"];
+                    };
+                };
+                /** @description Rejected Python edit, unsupported material or changed idempotency request. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/drivers/{customer_id}/sto-files/{file_id}/garage/save-as": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: components["parameters"]["CustomerId"];
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fork a source or revision with verified garage-unit edits. Imported originals stay locked. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    customer_id: components["parameters"]["CustomerId"];
+                    file_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StoGarageWrite"];
+                };
+            };
+            responses: {
+                /** @description Working setup created with its first immutable revision. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoDetail"];
+                    };
+                };
+                /** @description Invalid query, body or filename. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description No such driver-scoped file or immutable revision. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Locked source or duplicate working filename. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description version_conflict; current is the whole current StoDetail. */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoVersionConflict"];
+                    };
+                };
+                /** @description Rejected Python edit, unsupported material or changed idempotency request. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/drivers/{customer_id}/sto-files/{file_id}/download": {
         parameters: {
             query?: never;
@@ -2685,11 +2870,39 @@ export interface components {
             unit: string | null;
             editable: boolean;
             group: string;
+            garage?: components["schemas"]["StoGarageField"];
+        } & {
+            [key: string]: unknown;
+        };
+        StoGarageChoice: {
+            value: string;
+            label: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description Python-authored garage representation, supplied only for an evidence-scoped mapping. Unknown constraints are omitted. All numeric quantities are exact decimal strings. */
+        StoGarageField: {
+            label: string;
+            value: string;
+            unit: string | null;
+            /** @description True only when the inverse mapping is verified. */
+            editable: boolean;
+            min?: string;
+            max?: string;
+            step?: string;
+            /** @description Required whenever step is supplied; origin of the verified adjustment grid. */
+            step_base?: string;
+            choices?: components["schemas"]["StoGarageChoice"][];
+            constraint_note?: string;
         } & {
             [key: string]: unknown;
         };
         StoDocument: {
             sto_version: number;
+            descriptor_version?: number;
+            /** @description Content-versioned Python registry profile */
+            garage_profile_id?: string | null;
+            garage_profile_label?: string;
             sha256: string;
             internal_car_path: string;
             notes: string;
@@ -2725,6 +2938,24 @@ export interface components {
             };
             notes?: string;
             /** @description Required for Save As; a safe .sto basename */
+            name?: string;
+            message?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description Garage-only endpoint payload. Legacy changes is reserved and rejected. Native edits accompany garage edits without frontend conversion. An old server returns404 for this endpoint. */
+        StoGarageWrite: {
+            base_version: number;
+            /** @constant */
+            descriptor_version?: 2;
+            garage_profile_id: string;
+            garage_changes: {
+                [key: string]: string;
+            };
+            native_changes?: {
+                [key: string]: string;
+            };
+            notes?: string;
             name?: string;
             message?: string;
         } & {

@@ -1131,6 +1131,95 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/v1/drivers/{customer_id}/sto-files/{file_id}/garage:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: file_id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [setups]
+      summary: Save garage-unit edits as an immutable revision; Python verifies the profile, converts and checks supported constraints.
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoGarageWrite" }
+      responses:
+        "200":
+          description: New revision; 412 for concurrent edits, 409 for locked sources.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoDetail" }
+        "400":
+          description: Invalid query, body or filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such driver-scoped file or immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Locked source or duplicate working filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "412":
+          description: version_conflict; current is the whole current StoDetail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoVersionConflict" }
+        "422":
+          description: Rejected Python edit, unsupported material or changed idempotency request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/drivers/{customer_id}/sto-files/{file_id}/garage/save-as:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: file_id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [setups]
+      summary: Fork a source or revision with verified garage-unit edits. Imported originals stay locked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoGarageWrite" }
+      responses:
+        "201":
+          description: Working setup created with its first immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoDetail" }
+        "400":
+          description: Invalid query, body or filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such driver-scoped file or immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Locked source or duplicate working filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "412":
+          description: version_conflict; current is the whole current StoDetail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoVersionConflict" }
+        "422":
+          description: Rejected Python edit, unsupported material or changed idempotency request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /api/v1/drivers/{customer_id}/sto-files/{file_id}/download:
     parameters:
       - { $ref: "#/components/parameters/CustomerId" }
@@ -1264,14 +1353,41 @@ components:
         unit: { type: [string, "null"] }
         editable: { type: boolean }
         group: { type: string }
+        garage: { $ref: "#/components/schemas/StoGarageField" }
+    StoGarageChoice:
+      type: object
+      additionalProperties: true
+      required: [value, label]
+      properties:
+        value: { type: string }
+        label: { type: string }
+    StoGarageField:
+      type: object
+      additionalProperties: true
+      description: Python-authored garage representation, supplied only for an evidence-scoped mapping. Unknown constraints are omitted. All numeric quantities are exact decimal strings.
+      required: [label, value, unit, editable]
+      properties:
+        label: { type: string }
+        value: { type: string }
+        unit: { type: [string, "null"] }
+        editable: { type: boolean, description: True only when the inverse mapping is verified. }
+        min: { type: string }
+        max: { type: string }
+        step: { type: string }
+        step_base: { type: string, description: Required whenever step is supplied; origin of the verified adjustment grid. }
+        choices: { type: array, items: { $ref: "#/components/schemas/StoGarageChoice" } }
+        constraint_note: { type: string }
     StoDocument:
       type: object
       additionalProperties: true
       x-source: Python sto_codec.py; native quantities remain distinct from garage captures.
-      x-consumed-fields: [sto_version, sha256, internal_car_path, notes, "settings[]", "settings[].name", "settings[].raw_value", "settings[].label", "settings[].unit", "settings[].editable", "settings[].group", "warnings[]"]
+      x-consumed-fields: [sto_version, sha256, internal_car_path, notes, "settings[]", "settings[].name", "settings[].raw_value", "settings[].label", "settings[].unit", "settings[].editable", "settings[].group", "settings[].garage", garage_profile_id, garage_profile_label, descriptor_version, "warnings[]"]
       required: [sto_version, sha256, internal_car_path, notes, settings, warnings]
       properties:
         sto_version: { type: integer }
+        descriptor_version: { type: integer }
+        garage_profile_id: { type: [string, "null"], description: Content-versioned Python registry profile, scoped to the verified native identity and simulator build. Never inferred from a folder name. }
+        garage_profile_label: { type: string }
         sha256: { type: string }
         internal_car_path: { type: string }
         notes: { type: string }
@@ -1308,6 +1424,21 @@ components:
         changes: { type: object, additionalProperties: { type: string } }
         notes: { type: string, maxLength: 8191 }
         name: { type: string, maxLength: 120, description: Required for Save As; a safe .sto basename, unique per driver and car, case-insensitive. }
+        message: { type: string, maxLength: 500 }
+    StoGarageWrite:
+      type: object
+      additionalProperties: true
+      description: Garage-only endpoint payload. Legacy changes is reserved and rejected. Native edits accompany garage edits without frontend conversion. An old server returns404 for this endpoint.
+      required: [base_version, garage_profile_id, garage_changes]
+      not: { required: [changes] }
+      properties:
+        base_version: { type: integer, minimum: 1 }
+        descriptor_version: { type: integer, const: 2 }
+        garage_profile_id: { type: string, minLength: 1 }
+        garage_changes: { type: object, additionalProperties: { type: string } }
+        native_changes: { type: object, additionalProperties: { type: string } }
+        notes: { type: string, maxLength: 8191 }
+        name: { type: string, maxLength: 120 }
         message: { type: string, maxLength: 500 }
     Error:
       type: object

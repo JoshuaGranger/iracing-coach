@@ -126,6 +126,76 @@
         },
         "group": {
           "type": "string"
+        },
+        "garage": {
+          "$ref": "#/$defs/StoGarageField"
+        }
+      }
+    },
+    "StoGarageChoice": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "value",
+        "label"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      }
+    },
+    "StoGarageField": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Python-authored garage representation, supplied only for an evidence-scoped mapping. Unknown constraints are omitted. All numeric quantities are exact decimal strings.",
+      "required": [
+        "label",
+        "value",
+        "unit",
+        "editable"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "editable": {
+          "type": "boolean",
+          "description": "True only when the inverse mapping is verified."
+        },
+        "min": {
+          "type": "string"
+        },
+        "max": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "step_base": {
+          "type": "string",
+          "description": "Required whenever step is supplied; origin of the verified adjustment grid."
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StoGarageChoice"
+          }
+        },
+        "constraint_note": {
+          "type": "string"
         }
       }
     },
@@ -145,6 +215,10 @@
         "settings[].unit",
         "settings[].editable",
         "settings[].group",
+        "settings[].garage",
+        "garage_profile_id",
+        "garage_profile_label",
+        "descriptor_version",
         "warnings[]"
       ],
       "required": [
@@ -158,6 +232,20 @@
       "properties": {
         "sto_version": {
           "type": "integer"
+        },
+        "descriptor_version": {
+          "type": "integer"
+        },
+        "garage_profile_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Content-versioned Python registry profile",
+          "scoped to the verified native identity and simulator build. Never inferred from a folder name.": null
+        },
+        "garage_profile_label": {
+          "type": "string"
         },
         "sha256": {
           "type": "string"
@@ -289,6 +377,59 @@
           "description": "Required for Save As; a safe .sto basename",
           "unique per driver and car": null,
           "case-insensitive.": null
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    },
+    "StoGarageWrite": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Garage-only endpoint payload. Legacy changes is reserved and rejected. Native edits accompany garage edits without frontend conversion. An old server returns404 for this endpoint.",
+      "required": [
+        "base_version",
+        "garage_profile_id",
+        "garage_changes"
+      ],
+      "not": {
+        "required": [
+          "changes"
+        ]
+      },
+      "properties": {
+        "base_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "descriptor_version": {
+          "type": "integer",
+          "const": 2
+        },
+        "garage_profile_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "garage_changes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "native_changes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 8191
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
         },
         "message": {
           "type": "string",
