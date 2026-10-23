@@ -13,6 +13,8 @@ export type Route =
   | { page: "investigation"; customerId: number; sessionId: number; view: InvestigationView }
   | { page: "setups"; customerId: number }
   | { page: "setup"; customerId: number; setupId: number }
+  /** A `.sto` file of the library (`source:<sha256>` or `coach:<id>`); `?version=n` selects a revision. */
+  | { page: "setupFile"; customerId: number; fileId: string }
   | { page: "baseline"; customerId: number }
   | { page: "tuning"; customerId: number; analysisId: string | null }
   | { page: "live"; customerId: number }
@@ -52,6 +54,7 @@ export function parseHash(hash: string): ParsedRoute {
     case "setups": {
       if (seg.length === 3) return done({ page: "setups", customerId });
       if (seg[3] === "baseline" && seg.length === 4) return done({ page: "baseline", customerId });
+      if (seg[3] === "files") return seg.length === 5 && seg[4] ? done({ page: "setupFile", customerId, fileId: seg[4] }) : done({ page: "notfound" });
       const setupId = int(seg[3]);
       return setupId !== null && seg.length === 4 ? done({ page: "setup", customerId, setupId }) : done({ page: "notfound" });
     }
@@ -84,6 +87,9 @@ export function formatRoute(route: Route, query?: Record<string, string | null |
       break;
     case "setup":
       path = `/d/${route.customerId}/setups/${route.setupId}`;
+      break;
+    case "setupFile":
+      path = `/d/${route.customerId}/setups/files/${e(route.fileId)}`;
       break;
     case "baseline":
       path = `/d/${route.customerId}/setups/baseline`;
@@ -137,13 +143,67 @@ export function currentRoute(): ParsedRoute {
   return parseHash(typeof location === "undefined" ? "" : location.hash);
 }
 
+/**
+ * A page with unsaved work names it here: given the route the hash is about to show, the guard returns the question to ask, or
+ * null to let it go. A declined question puts the previous hash back (no reload, the page keeps its state).
+ */
+export type LeaveGuard = (next: ParsedRoute) => string | null;
+let leaveGuard: LeaveGuard | null = null;
+let confirmLeave: (message: string) => boolean = (message) => (typeof window === "undefined" ? true : window.confirm(message));
+
+/** Install (or with null remove) the guard; returns the remover, which only removes this guard. */
+export function setLeaveGuard(guard: LeaveGuard | null): () => void {
+  leaveGuard = guard;
+  return () => {
+    if (leaveGuard === guard) leaveGuard = null;
+  };
+}
+
+/** Tests replace the browser's confirmation dialog. */
+export function setConfirmLeave(fn: (message: string) => boolean): void {
+  confirmLeave = fn;
+}
+
+/**
+ * One hashchange listener for the whole app decides whether the new hash is taken; readers of the route follow its decision, so
+ * several readers never ask twice.
+ */
+let shown: string | null = null;
+const readers = new Set<() => void>();
+
+export function onHashChange(): void {
+  const next = location.hash;
+  if (shown !== null && next === shown) return;
+  const question = shown !== null ? leaveGuard?.(parseHash(next)) ?? null : null;
+  if (question && !confirmLeave(question)) {
+    history.replaceState(history.state, "", `${location.pathname}${location.search}${shown}`);
+    return;
+  }
+  shown = next;
+  for (const r of [...readers]) r();
+}
+
+/** Calls `fn` after every hash change the guard lets through; returns the unsubscriber. The first reader starts the listener. */
+export function subscribeRoute(fn: () => void): () => void {
+  if (readers.size === 0) window.addEventListener("hashchange", onHashChange);
+  readers.add(fn);
+  if (shown === null) shown = location.hash;
+  return () => {
+    readers.delete(fn);
+    if (readers.size === 0) {
+      window.removeEventListener("hashchange", onHashChange);
+      shown = null;
+    }
+  };
+}
+
 export function useRoute(): ParsedRoute {
   const [route, setRoute] = useState<ParsedRoute>(currentRoute);
   useEffect(() => {
-    const on = () => setRoute(currentRoute());
-    window.addEventListener("hashchange", on);
+    const on = () => setRoute(parseHash(shown ?? location.hash));
+    const off = subscribeRoute(on);
     on();
-    return () => window.removeEventListener("hashchange", on);
+    return off;
   }, []);
   return route;
 }

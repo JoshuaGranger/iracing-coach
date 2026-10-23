@@ -1,6 +1,8 @@
 // Fixture data for the mock server. Shapes follow docs/08-rewrite/contracts/api.openapi.yaml.
 // Deterministic: the same process start gives the same ids and values.
 
+import { createSto } from "./sto.mjs";
+
 export const DRIVER_ID = 1507810;
 export const SECOND_DRIVER_ID = 2000001;
 
@@ -399,6 +401,7 @@ export function createState() {
     setups: { [DRIVER_ID]: buildSetups(DRIVER_ID), [SECOND_DRIVER_ID]: [] },
     lab: { sessions: { [DRIVER_ID]: buildLabSessions(DRIVER_ID), [SECOND_DRIVER_ID]: [] }, setups: { [DRIVER_ID]: buildLabSetups(DRIVER_ID), [SECOND_DRIVER_ID]: [] } },
     unlinked: { [DRIVER_ID]: UNLINKED_FILES, [SECOND_DRIVER_ID]: [] },
+    sto: createSto(),
     notes: [],
     nextNote: 1,
     drafts: new Map(),

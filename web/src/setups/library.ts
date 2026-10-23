@@ -135,6 +135,32 @@ function entryFor(group: Setup[]): Extract<Entry, { kind: "setup" }> {
 
 const stem = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
+/** Lowercased car folder to the car path the setup library files it under (the folder is not always the path). */
+export function folderCars(setups: readonly Setup[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const s of setups) {
+    out.set(lower(s.car_path), s.car_path);
+    for (const f of s.sto_files ?? []) out.set(lower(f.car_folder), s.car_path);
+  }
+  return out;
+}
+
+/** A car's screen name by lowercased car path or folder: from its setups, else from the unlinked files' recordings. */
+export function carNames(setups: readonly Setup[], files: readonly SetupFile[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const f of files) {
+    const n = screenName(f.car_name);
+    if (n) out.set(lower(f.car_folder), n);
+  }
+  for (const s of setups) {
+    const n = screenName(s.car_name);
+    if (!n) continue;
+    out.set(lower(s.car_path), n);
+    for (const f of s.sto_files ?? []) out.set(lower(f.car_folder), n);
+  }
+  return out;
+}
+
 /**
  * The library by car: named setups with their versions, one stack of unnamed garage captures, and the files whose
  * values are unknown. `fileCar` maps a file's car folder to a car path (the folder is not always the path).
@@ -142,11 +168,7 @@ const stem = (path: string) => path.split(/[\\/]/).pop() ?? path;
 export function groupLibrary(setups: readonly Setup[], files: readonly SetupFile[], filter: LibraryFilter = {}): CarGroup[] {
   const cars = filter.cars && filter.cars.size > 0 ? new Set([...filter.cars].map(lower)) : null;
   const raced = filter.raced ?? "all";
-  const folderToCar = new Map<string, string>();
-  for (const s of setups) {
-    folderToCar.set(lower(s.car_path), s.car_path);
-    for (const f of s.sto_files ?? []) folderToCar.set(lower(f.car_folder), s.car_path);
-  }
+  const folderToCar = folderCars(setups);
   const groups = new Map<string, { carPath: string; carName: string; setups: Setup[]; files: SetupFile[] }>();
   const get = (carPath: string, carName: string) => {
     const k = lower(carPath);

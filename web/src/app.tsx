@@ -17,6 +17,7 @@ import { OutboxBar } from "./ui/outbox-bar";
 
 const loadSetups = () => import("./pages/setups");
 const loadSetupDetail = () => import("./pages/setup-detail");
+const loadSetupFile = () => import("./pages/setup-file");
 const loadBaseline = () => import("./pages/baseline");
 const loadTuning = () => import("./pages/tuning");
 const loadLive = () => import("./pages/live");
@@ -49,6 +50,7 @@ function useShellEvents(): void {
           soon("/api/v1/sessions/");
         } else if (e.scope === "setups") {
           soon(`${base}/setups`);
+          soon(`${base}/sto-files`);
           soon("/api/v1/setups/");
         } else if (e.scope === "layouts") {
           soon(`${base}/live-layouts`);
@@ -106,7 +108,7 @@ function useCurrentDriver(route: ParsedRoute) {
 
 function TopBar({ route, who }: { route: ParsedRoute; who: CurrentDriver }) {
   const { list, current, driver } = who;
-  const page = route.page === "investigation" ? "sessions" : route.page === "setup" || route.page === "baseline" || route.page === "tuning" ? "setups" : route.page;
+  const page = route.page === "investigation" ? "sessions" : route.page === "setup" || route.page === "setupFile" || route.page === "baseline" || route.page === "tuning" ? "setups" : route.page;
   const link = (name: "sessions" | "setups" | "live", label: string) =>
     current === null ? null : (
       <a class={page === name ? "nav-link active" : "nav-link"} href={href({ page: name, customerId: current })} aria-current={page === name ? "page" : undefined}>
@@ -187,6 +189,12 @@ function ThemeBinding({ route }: { route: ParsedRoute }) {
   return null;
 }
 
+/** `?version=n` of a setup file; anything else reads the current revision. */
+function versionOf(query: Record<string, string>): number | null {
+  const v = query.version;
+  return v && /^[1-9]\d{0,8}$/.test(v) ? Number(v) : null;
+}
+
 function renderPage(route: ParsedRoute) {
     switch (route.page) {
       case "drivers":
@@ -199,6 +207,8 @@ function renderPage(route: ParsedRoute) {
         return <Lazy load={loadSetups} props={{ customerId: route.customerId }} what="setups" />;
       case "setup":
         return <Lazy load={loadSetupDetail} props={{ customerId: route.customerId, setupId: route.setupId }} what="setup" />;
+      case "setupFile":
+        return <Lazy load={loadSetupFile} props={{ customerId: route.customerId, fileId: route.fileId, version: versionOf(route.query) }} what="setup file" />;
       case "baseline":
         return <Lazy load={loadBaseline} props={{ customerId: route.customerId }} what="baseline finder" />;
       case "tuning":

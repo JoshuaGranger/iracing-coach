@@ -57,7 +57,7 @@ for (const device of DEVICES) appTest(device, () => {
 
     await expect(page.getByLabel("2 sessions", { exact: true })).toBeVisible();
     await expect(page.getByRole("searchbox", { name: "Search setups" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Not raced", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Recorded setups" }).getByRole("button", { name: "Not raced", exact: true })).toBeVisible();
     await expectNoHorizontalScroll(page);
     if (device.touch) await expectTouchTargets(page);
     await page.screenshot({ path: `test-results/setups-redesign-${device.viewport.width}.png`, fullPage: true });
@@ -71,9 +71,11 @@ for (const device of DEVICES) appTest(device, () => {
     await page.reload();
     await expect(page.getByRole("heading", { name: "Summit Point", exact: true })).toBeVisible();
     await expect(page.getByRole("searchbox", { name: "Search setups" })).toHaveValue("Practice");
-    await page.getByRole("button", { name: "Raced", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "No setups match" })).toBeVisible();
-    await page.getByRole("button", { name: "All", exact: true }).click();
+    // Raced sits on the recorded setups it filters; emptied, the board keeps the control and says so.
+    const recorded = page.getByRole("region", { name: "Recorded setups" });
+    await recorded.getByRole("button", { name: "Raced", exact: true }).click();
+    await expect(recorded.getByTestId("recorded-none")).toHaveText("No raced recorded setups match.");
+    await recorded.getByRole("button", { name: "All", exact: true }).click();
     await page.getByRole("link", { name: "Baseline for Summit Point" }).click();
     await expect(page.locator('.b-form input').nth(1)).toHaveValue("mx5");
     await expect(page.locator('.b-form input').nth(2)).toHaveValue("Summit Point");

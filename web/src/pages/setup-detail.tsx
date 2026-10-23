@@ -11,6 +11,7 @@ import { carAccent } from "../core/palette";
 import { racedCountOf } from "../setups/library";
 import { RacedMark } from "../setups/glyphs";
 import { VersionBoard } from "../setups/version-board";
+import { type StoFile, stoFileFor } from "../setups/sto";
 import { SOURCE_LABEL, type Setup, classifyCompare, comparePicks, groupSetupValues, sameNameAs, seenSpan, setupTitle, tuneTarget } from "../setups/model";
 import "../setups/setups.css";
 
@@ -91,11 +92,17 @@ function CompareTable({ result, left, right }: { result: Result; left: Setup; ri
   );
 }
 
-/** The file this setup came from, where it identifies the artifact: the stored path, or the name when no path is known. */
-function fileLabels(s: Setup): string[] {
-  const paths = (s.sto_files ?? []).map((f) => f.relative_path);
-  const stems = new Set(paths.map((p) => (p.split(/[\\/]/).pop() ?? p).toLowerCase()));
-  return [...paths, ...s.names.filter((n) => !stems.has(n.toLowerCase()))];
+/**
+ * The file this setup came from, where it identifies the artifact: the stored path, or the name when no path is known. A path the
+ * `.sto` library holds opens that file.
+ */
+function fileLabels(s: Setup, library: readonly StoFile[]): { label: string; file: StoFile | null }[] {
+  const entries = s.sto_files ?? [];
+  const stems = new Set(entries.map((f) => (f.relative_path.split(/[\\/]/).pop() ?? f.relative_path).toLowerCase()));
+  return [
+    ...entries.map((f) => ({ label: f.relative_path, file: f.format === "sto" ? stoFileFor(f, library) : null })),
+    ...s.names.filter((n) => !stems.has(n.toLowerCase())).map((label) => ({ label, file: null })),
+  ];
 }
 
 export default function SetupDetailPage({ customerId, setupId }: { customerId: number; setupId: number }) {
@@ -107,6 +114,7 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   const compare = useJobRun<Result>();
   const [tuneError, setTuneError] = useState<string | null>(null);
   const [allSightings, setAllSightings] = useState(false);
+  const stoLibrary = useResource(paths.stoFiles(customerId), (signal) => api.stoFiles(customerId, { signal }));
 
   if (!detail) return res.error ? <ErrorLine error={res.error} /> : <Loading what="setup" />;
   const s = detail.setup;
@@ -131,7 +139,7 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
   }
 
   const linked = detail.observations.some((o) => o.session_id != null);
-  const files = fileLabels(s);
+  const files = fileLabels(s, stoLibrary.data?.files ?? []);
   const sightings = allSightings ? detail.observations : detail.observations.slice(0, SIGHTINGS_SHOWN);
   const optionLabel = (o: Setup) => `${setupTitle(o)} · ${seenSpan(o)}`;
   return (
@@ -233,9 +241,9 @@ export default function SetupDetailPage({ customerId, setupId }: { customerId: n
           <h2>File</h2>
           <dl>
             {files.map((f) => (
-              <div key={f}>
+              <div key={f.label}>
                 <dt>File</dt>
-                <dd>{f}</dd>
+                <dd>{f.file ? <a href={href({ page: "setupFile", customerId, fileId: f.file.id })}>{f.label}</a> : f.label}</dd>
               </div>
             ))}
           </dl>

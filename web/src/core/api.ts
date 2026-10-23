@@ -42,6 +42,9 @@ export function setBaseUrl(url: string): void {
   baseUrl = url.replace(/\/$/, "");
 }
 
+/** A server path as a link target (downloads the browser fetches itself). */
+export const apiUrl = (path: string): string => (path.startsWith("/") ? baseUrl + path : path);
+
 export interface RequestOptions {
   signal?: AbortSignal;
   headers?: Record<string, string>;
@@ -83,7 +86,14 @@ export async function request<T>(
     throw new NetworkError();
   }
   reachable.set(true);
-  const text = res.status === 204 ? "" : await res.text();
+  let text = "";
+  try {
+    text = res.status === 204 ? "" : await res.text();
+  } catch (e) {
+    // The connection broke inside the answer: the request may have been applied, so this is as unknown as no answer at all.
+    if (isAbort(e)) throw e;
+    throw new NetworkError("The connection broke before the server's answer arrived");
+  }
   let parsed: unknown = undefined;
   if (text) {
     try {
@@ -153,6 +163,10 @@ export const paths = {
     `/api/v1/drivers/${c}/setups${qs({ ...q, library: libraryQuery(library) })}`,
   setup: (id: number) => `/api/v1/setups/${id}`,
   setupCompare: "/api/v1/setups/compare",
+  stoFiles: (c: number) => `/api/v1/drivers/${c}/sto-files`,
+  /** No `version` reads the current revision. */
+  stoFile: (c: number, fileId: string, version?: number | null) => `/api/v1/drivers/${c}/sto-files/${enc(fileId)}${qs({ version })}`,
+  stoSaveAs: (c: number, fileId: string) => `/api/v1/drivers/${c}/sto-files/${enc(fileId)}/save-as`,
   baseline: (c: number) => `/api/v1/drivers/${c}/baseline`,
   tuning: (analysisId: string) => `/api/v1/analyses/${enc(analysisId)}/tuning`,
   tuningRecommend: (analysisId: string) => `/api/v1/analyses/${enc(analysisId)}/tuning/recommendations`,
@@ -191,6 +205,16 @@ export const api = {
   setups: (c: number, q?: Parameters<typeof paths.setups>[1], o?: RequestOptions) =>
     getJson<Schemas["SetupPage"]>(paths.setups(c, q), o),
   setup: (id: number, o?: RequestOptions) => getJson<Schemas["SetupDetail"]>(paths.setup(id), o),
+  stoFiles: (c: number, o?: RequestOptions) => getJson<Schemas["StoLibrary"]>(paths.stoFiles(c), o),
+  stoFile: (c: number, fileId: string, version?: number | null, o?: RequestOptions) => getJson<Schemas["StoDetail"]>(paths.stoFile(c, fileId, version), o),
+  /**
+   * STO writes are direct requests, never outbox entries: a stale If-Match is never replayed unseen. The caller persists the
+   * Idempotency-Key with the body and reuses both on a retry, so an unanswered save is never applied twice.
+   */
+  saveSto: (c: number, fileId: string, body: Schemas["StoWrite"], ifMatch: string, idempotencyKey: string) =>
+    request<Schemas["StoDetail"]>("POST", paths.stoFile(c, fileId), body, { ifMatch, idempotencyKey }),
+  saveStoAs: (c: number, fileId: string, body: Schemas["StoWrite"], idempotencyKey: string) =>
+    request<Schemas["StoDetail"]>("POST", paths.stoSaveAs(c, fileId), body, { idempotencyKey }),
   tuning: (analysisId: string, o?: RequestOptions) => getJson<Schemas["TuningContext"]>(paths.tuning(analysisId), o),
   notes: (c: number, kind: Schemas["NoteSubjectKind"], subject: string, o?: RequestOptions) =>
     getJson<{ notes: Schemas["Note"][] }>(paths.notes(c, kind, subject), o),

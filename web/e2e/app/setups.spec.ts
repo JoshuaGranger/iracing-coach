@@ -6,7 +6,8 @@ const CAR = "NASCAR Xfinity Toyota Supra";
 /** Screenshots of round 5, task U2: web/target/round5/U2/<name>-<viewport width>.png. */
 const SHOTS = "target/round5/U2";
 
-const section = (page: Page, car: string) => page.getByRole("region", { name: car, exact: true });
+// The selected car's track board. Since the shared track table (ffd4862) its sections are tracks, so the car is the selected choice.
+const section = (page: Page, car: string) => page.locator(".s-workspace").filter({ has: page.locator("select[aria-label=Car] option:checked", { hasText: car }) }).locator(".s-board");
 
 for (const device of ROUND2_DEVICES) {
   appTest(device, (d) => {

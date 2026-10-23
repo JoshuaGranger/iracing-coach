@@ -8,7 +8,9 @@ import { href } from "../core/router";
 import { readJson, writeJson } from "../core/store";
 import { Chip, Empty, ErrorLine, Loading, Notice } from "../ui/kit";
 import { Segmented } from "../ui/segmented";
-import { type CarGroup, type Entry, type RacedFilter, carsFilesOnly, carsWithSetups, carsWithValues, fileNames, groupLibrary, groupTrackLibrary, entryUsage } from "../setups/library";
+import { type CarGroup, type Entry, type RacedFilter, carNames, carsFilesOnly, carsWithSetups, carsWithValues, fileNames, folderCars, groupLibrary, groupTrackLibrary, entryUsage } from "../setups/library";
+import { type StoFile, baseName, filesByCar, folderOf, matchesText } from "../setups/sto";
+import { carAccent } from "../core/palette";
 import { Chevron } from "../setups/glyphs";
 import {
   type SetupSelection,
@@ -108,52 +110,103 @@ function FileEntry({ e }: { e: Extract<Entry, { kind: "file" }> }) {
 function CarSection({ g, customerId, track }: { g: CarGroup; customerId: number; track: string | null }) {
   return <section class="s-track" aria-label={track ?? "Track not recorded"}>
     <div class="s-track-head">
-      <h2>{track ?? "Track not recorded"}</h2>
+      <h3>{track ?? "Track not recorded"}</h3>
       {track ? <a class="s-track-baseline" aria-label={`Baseline for ${track}`} href={href({ page: "baseline", customerId }, { car: g.carPath, track })}>Baseline<Chevron /></a> : null}
     </div>
     <ul class="s-list">{g.entries.map((e) => e.kind === "setup" ? <SetupEntry key={e.key} e={e} customerId={customerId} /> : e.kind === "captures" ? <Captures key={e.key} e={e} customerId={customerId} /> : <FileEntry key={e.key} e={e} />)}</ul>
   </section>;
 }
 
-/** One car whose files have no decoded values: its screen name, the file count (never a setup count), the file names on demand. */
-function FilesCar({ g }: { g: CarGroup }) {
-  const [open, setOpen] = useState(false);
-  const names = fileNames(g);
-  const id = `files-${g.carPath.replace(/[^A-Za-z0-9]+/g, "-")}`;
+/** One `.sto` file of the library: a locked original or a Coach setup with its revisions; the row opens the file. */
+function StoRow({ f, customerId }: { f: StoFile; customerId: number }) {
+  const folder = folderOf(f);
   return (
-    <li class="s-fcar" data-car-files={g.carPath} style={`--car:${g.color}`}>
+    <li class="s-entry" data-sto={f.id}>
+      <div class="s-row s-grid">
+        <a class="s-name" href={href({ page: "setupFile", customerId, fileId: f.id })}>
+          <span class="s-title">{baseName(f.name)}</span>
+          {folder ? <small>{folder}/</small> : null}
+          {f.locked ? <span class="tag" title="Imported file; Coach never changes it">Locked</span> : null}
+          {!f.present ? <span class="tag dashed" title="The latest scan did not find this file in the car's setups folder; Coach keeps its copy.">Not in folder</span> : null}
+        </a>
+        {f.locked ? <span /> : <span class="num" aria-label={`${f.version_count} ${f.version_count === 1 ? "revision" : "revisions"}`}>{f.version_count}</span>}
+        <span class="date">{formatDate(f.updated_at)}</span>
+      </div>
+    </li>
+  );
+}
+
+/** The selected car's `.sto` files: Coach setups first, then the locked originals. */
+function StoBoard({ files, customerId }: { files: StoFile[]; customerId: number }) {
+  return (
+    <section class="s-sto" aria-label="Setup files">
+      <div class="s-track-head">
+        <h2>
+          Setup files <span class="count">{files.length}</span>
+        </h2>
+      </div>
+      <div class="s-cols s-grid" aria-hidden="true"><span>File</span><span>Revisions</span><span>Updated</span></div>
+      <ul class="s-list">{files.map((f) => <StoRow key={f.id} f={f} customerId={customerId} />)}</ul>
+    </section>
+  );
+}
+
+interface OtherCar {
+  key: string;
+  name: string;
+  files: StoFile[];
+  /** Imported files the codec does not read (not `.sto`): listed by name. */
+  other: string[];
+}
+
+/** One car without recorded setups: its screen name, the file count (never a setup count), the files on demand. */
+function OtherCarFiles({ g, customerId }: { g: OtherCar; customerId: number }) {
+  const [open, setOpen] = useState(false);
+  const n = g.files.length + g.other.length;
+  const id = `files-${g.key.replace(/[^A-Za-z0-9]+/g, "-")}`;
+  return (
+    <li class="s-fcar" data-car-files={g.key} style={`--car:${carAccent(g.key)}`}>
       <button type="button" class="s-fcar-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
         <Chevron down={open} />
-        <span class="s-fcar-name">{g.carName}</span>
+        <span class="s-fcar-name">{g.name}</span>
         <span class="n">
-          <strong>{names.length}</strong> {names.length === 1 ? "file" : "files"}
+          <strong>{n}</strong> {n === 1 ? "file" : "files"}
         </span>
       </button>
-      <ul id={id} class="s-fcar-files" hidden={!open} aria-label={`${g.carName} files`}>
-        {names.map((n, i) => (
-          <li key={`${n}-${i}`}>{n}</li>
+      <ul id={id} class="s-fcar-files" hidden={!open} aria-label={`${g.name} files`}>
+        {g.files.map((f) => (
+          <li key={f.id}>
+            <a href={href({ page: "setupFile", customerId, fileId: f.id })}>{baseName(f.name)}</a>
+            {folderOf(f) ? <small> {folderOf(f)}/</small> : null}
+            {f.locked ? null : <small> · {f.version_count} {f.version_count === 1 ? "revision" : "revisions"}</small>}
+          </li>
+        ))}
+        {g.other.map((name, i) => (
+          <li key={`${name}-${i}`}>
+            {name} <Chip variant="constraint">No values</Chip>
+          </li>
         ))}
       </ul>
     </li>
   );
 }
 
-/** Cars with files and no decoded setup, below the sections under a quiet divider, collapsed until asked for (#74). */
-function FilesWithoutValues({ cars }: { cars: CarGroup[] }) {
-  const [open, setOpen] = useState(false);
+/** Cars with files and no recorded setup, below the sections under a quiet divider, collapsed until asked for (#74). */
+function OtherCarsFiles({ cars, customerId, initiallyOpen }: { cars: OtherCar[]; customerId: number; initiallyOpen: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen);
   return (
-    <section class="s-files" aria-label="Files without values" data-open={open ? "true" : "false"}>
+    <section class="s-files" aria-label="Files of other cars" data-open={open ? "true" : "false"}>
       <button type="button" class="s-files-toggle" aria-expanded={open} aria-controls="s-files-list" onClick={() => setOpen(!open)}>
         <span class="s-files-rule" aria-hidden="true" />
         <Chevron down={open} />
         <span class="s-files-label">
-          Files without values · {cars.length} {cars.length === 1 ? "car" : "cars"}
+          Files of other cars · {cars.length} {cars.length === 1 ? "car" : "cars"}
         </span>
         <span class="s-files-rule" aria-hidden="true" />
       </button>
       <ul id="s-files-list" class="s-fcars" hidden={!open}>
         {cars.map((g) => (
-          <FilesCar key={g.carPath} g={g} />
+          <OtherCarFiles key={g.key} g={g} customerId={customerId} />
         ))}
       </ul>
     </section>
@@ -223,7 +276,11 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
   }, [cursor, key, customerId]);
 
   const setups = useMemo(() => [...(first.data?.setups ?? []), ...(more?.setups ?? [])], [first.data, more]);
-  const files = useMemo(() => (first.data?.unlinked_files ?? []).filter((f) => !q || f.relative_path.toLowerCase().includes(q.toLowerCase())), [first.data, q]);
+  // Every `.sto` occurrence comes from the file library and opens there; the setups response's unlinked `.sto` rows would repeat
+  // them as "No values". Only when the library cannot be read do those rows stay, so no file ever disappears from the page.
+  const sto = useResource(paths.stoFiles(customerId), (signal) => api.stoFiles(customerId, { signal }));
+  const unlinked = useMemo(() => first.data?.unlinked_files ?? [], [first.data]);
+  const files = useMemo(() => unlinked.filter((f) => (!sto.data || f.format !== "sto") && (!q || f.relative_path.toLowerCase().includes(q.toLowerCase()))), [unlinked, sto.data, q]);
 
   const all = useMemo(() => groupLibrary(setups, files), [setups, files]);
   // The Car dropdown offers the cars the setup library holds (the setups response, never the sessions' cars), and a name search
@@ -244,7 +301,28 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
   const everything = useMemo(() => groupLibrary(setups, files, { cars: new Set(selectedCars), raced }), [setups, files, selectedCars, raced]);
   const groups = useMemo(() => groupTrackLibrary(setups, files, { cars: new Set(selectedCars), raced }).flatMap((g) => carsWithValues(g.cars).map((car) => ({ track: g.track, car }))), [setups, files, selectedCars, raced]);
   const withoutValues = useMemo(() => carsFilesOnly(everything), [everything]);
+  // A file carries no usage, so the Raced filter never hides one: every imported occurrence and Coach setup stays listed.
+  const stoByCar = useMemo(() => filesByCar((sto.data?.files ?? []).filter((f) => matchesText(f, q)), folderCars(setups)), [sto.data, setups, q]);
+  const selectedFiles = (selectedCars[0] && stoByCar.get(selectedCars[0].toLowerCase())) || [];
+  const otherCars = useMemo((): OtherCar[] => {
+    const known = new Set(offered.map((c) => c.carPath.toLowerCase()));
+    const names = carNames(setups, unlinked);
+    const out = new Map<string, OtherCar>();
+    for (const [key, list] of stoByCar) {
+      if (known.has(key)) continue;
+      out.set(key, { key, name: names.get(key) ?? list[0]!.car_folder, files: list, other: [] });
+    }
+    for (const g of withoutValues) {
+      const key = g.carPath.toLowerCase();
+      const entry = out.get(key) ?? { key, name: names.get(key) ?? g.carName, files: [], other: [] };
+      entry.other.push(...fileNames(g));
+      out.set(key, entry);
+    }
+    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.key.localeCompare(b.key));
+  }, [stoByCar, withoutValues, offered, setups, unlinked]);
   const filtering = !isEmptySelection(effective);
+  // Raced belongs to the recorded setups (files carry no usage), so its control stays in their board even when it empties it.
+  const recordedShown = groups.length > 0 || raced !== "all";
 
   return (
     <div class="setups-page ds">
@@ -260,17 +338,24 @@ export default function SetupsPage({ customerId }: { customerId: number }) {
         <div class="s-results">
           <div class="s-list-tools">
             <label class="s-search"><span class="visually-hidden">Search setups</span><input type="search" placeholder="Search setups" value={text} onInput={(e) => setSel({ ...sel, text: e.currentTarget.value })} /></label>
-            <Segmented label="Raced" options={RACED_FILTERS} value={raced} onChange={(next) => setSel({ ...sel, raced: next })} />
           </div>
       {first.error && !first.data ? <ErrorLine error={first.error} /> : null}
       {first.error && first.data ? <Notice tone="warn">Could not refresh: {first.error.message}</Notice> : null}
       {!first.data && !first.error ? <Loading what="setups" /> : null}
-      {first.data && groups.length === 0 && withoutValues.length === 0 ? <Empty title={filtering ? "No setups match" : "No setups yet"} /> : null}
-      {groups.length > 0 && <div class="s-board" aria-label="Setups">
-        <div class="s-cols s-grid" aria-hidden="true"><span>Setup</span><span>Sessions</span><span>Last used</span></div>
-        {groups.map(({ track, car }) => <CarSection key={`${car.carPath}|${track}`} g={car} track={track} customerId={customerId} />)}
-      </div>}
-      {first.data && withoutValues.length > 0 ? <FilesWithoutValues cars={withoutValues} /> : null}
+      {first.data && !recordedShown && selectedFiles.length === 0 && otherCars.length === 0 ? <Empty title={filtering ? "No setups match" : "No setups yet"} /> : null}
+      {selectedFiles.length > 0 ? <StoBoard files={selectedFiles} customerId={customerId} /> : null}
+      {sto.error && !sto.data ? <Notice tone="warn">Setup files could not be read: {sto.error.message}</Notice> : null}
+      {first.data && recordedShown ? <section class="s-board" aria-label="Recorded setups">
+        <div class="s-board-head">
+          <h2>Recorded setups</h2>
+          <Segmented label="Raced" options={RACED_FILTERS} value={raced} onChange={(next) => setSel({ ...sel, raced: next })} />
+        </div>
+        {groups.length > 0 ? <>
+          <div class="s-cols s-grid" aria-hidden="true"><span>Setup</span><span>Sessions</span><span>Last used</span></div>
+          {groups.map(({ track, car }) => <CarSection key={`${car.carPath}|${track}`} g={car} track={track} customerId={customerId} />)}
+        </> : <p class="s-none" data-testid="recorded-none">No {raced === "raced" ? "raced" : "unraced"} recorded setups{q ? " match" : ""}.</p>}
+      </section> : null}
+      {first.data && otherCars.length > 0 ? <OtherCarsFiles cars={otherCars} customerId={customerId} initiallyOpen={offered.length === 0} /> : null}
         </div>
       </div>
     </div>
