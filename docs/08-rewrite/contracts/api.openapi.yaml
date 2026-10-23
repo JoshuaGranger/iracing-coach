@@ -996,6 +996,181 @@ paths:
               schema: { $ref: "#/components/schemas/LibraryClassifyReport" }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/drivers/{customer_id}/sto-files:
+    parameters: [{ $ref: "#/components/parameters/CustomerId" }]
+    get:
+      tags: [setups]
+      summary: All imported STO occurrences and Coach working setups, independent of observed setup values.
+      responses:
+        "200":
+          description: Imported sources are always locked; Coach files carry immutable revision counts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoLibrary" }
+        "400":
+          description: Invalid query, body or filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such driver-scoped file or immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Locked source or duplicate working filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "412":
+          description: version_conflict; current is the whole current StoDetail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoVersionConflict" }
+        "422":
+          description: Rejected Python edit, unsupported material or changed idempotency request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/drivers/{customer_id}/sto-files/{file_id}:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: file_id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [setups]
+      parameters: [{ name: version, in: query, schema: { type: integer, minimum: 1 } }]
+      responses:
+        "200":
+          description: Selected revision, native parameters and immutable history; unavailable_reason explains an unsupported or inaccessible source.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoDetail" }
+    post:
+      tags: [setups]
+      summary: Save a new immutable version of a Coach working setup. Imported sources cannot be saved.
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoWrite" }
+      responses:
+        "200":
+          description: New revision; 412 for concurrent edits, 409 for locked sources.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoDetail" }
+        "400":
+          description: Invalid query, body or filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such driver-scoped file or immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Locked source or duplicate working filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "412":
+          description: version_conflict; current is the whole current StoDetail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoVersionConflict" }
+        "422":
+          description: Rejected Python edit, unsupported material or changed idempotency request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/drivers/{customer_id}/sto-files/{file_id}/save-as:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: file_id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [setups]
+      summary: Fork a selected source or old revision into a named editable Coach setup. Never replaces an existing file.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StoWrite" }
+      responses:
+        "201":
+          description: Working setup created with its first immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoDetail" }
+        "400":
+          description: Invalid query, body or filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such driver-scoped file or immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Locked source or duplicate working filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "412":
+          description: version_conflict; current is the whole current StoDetail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoVersionConflict" }
+        "422":
+          description: Rejected Python edit, unsupported material or changed idempotency request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/drivers/{customer_id}/sto-files/{file_id}/download:
+    parameters:
+      - { $ref: "#/components/parameters/CustomerId" }
+      - { name: file_id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [setups]
+      parameters: [{ name: version, in: query, schema: { type: integer, minimum: 1 } }]
+      responses:
+        "200":
+          description: Original bytes for a locked source, or selected Coach revision, with a collision-resistant revision filename. Browser download only; collector never writes to iRacing folders.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400":
+          description: Invalid query, body or filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: No such driver-scoped file or immutable revision.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Locked source or duplicate working filename.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "412":
+          description: version_conflict; current is the whole current StoDetail.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoVersionConflict" }
+        "422":
+          description: Rejected Python edit, unsupported material or changed idempotency request.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+
 components:
   parameters:
     CustomerId: { name: customer_id, in: path, required: true, schema: { type: integer } }
@@ -1049,6 +1224,91 @@ components:
               current: { type: object, additionalProperties: true }
 
   schemas:
+    StoVersionConflict:
+      type: object
+      required: [error, message, current]
+      properties:
+        error: { type: string, const: version_conflict }
+        message: { type: string }
+        current: { $ref: "#/components/schemas/StoDetail" }
+    StoFile:
+      type: object
+      additionalProperties: true
+      required: [id, name, car_folder, locked, current_version, version_count, sha256, updated_at, present]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        car_folder: { type: string }
+        locked: { type: boolean }
+        current_version: { type: integer }
+        version_count: { type: integer }
+        sha256: { type: string }
+        updated_at: { type: string }
+        present: { type: boolean }
+        parent_file_id: { type: [string, "null"] }
+        parent_version: { type: [integer, "null"] }
+    StoLibrary:
+      type: object
+      additionalProperties: true
+      required: [files]
+      properties:
+        files: { type: array, items: { $ref: "#/components/schemas/StoFile" } }
+    StoField:
+      type: object
+      additionalProperties: true
+      required: [name, raw_value, label, unit, editable, group]
+      properties:
+        name: { type: string }
+        raw_value: { type: string }
+        label: { type: string }
+        unit: { type: [string, "null"] }
+        editable: { type: boolean }
+        group: { type: string }
+    StoDocument:
+      type: object
+      additionalProperties: true
+      x-source: Python sto_codec.py; native quantities remain distinct from garage captures.
+      x-consumed-fields: [sto_version, sha256, internal_car_path, notes, "settings[]", "settings[].name", "settings[].raw_value", "settings[].label", "settings[].unit", "settings[].editable", "settings[].group", "warnings[]"]
+      required: [sto_version, sha256, internal_car_path, notes, settings, warnings]
+      properties:
+        sto_version: { type: integer }
+        sha256: { type: string }
+        internal_car_path: { type: string }
+        notes: { type: string }
+        settings: { type: array, items: { $ref: "#/components/schemas/StoField" } }
+        warnings: { type: array, items: { type: string } }
+    StoRevision:
+      type: object
+      additionalProperties: true
+      required: [version, sha256, created_at, message]
+      properties:
+        version: { type: integer }
+        sha256: { type: string }
+        created_at: { type: string }
+        message: { type: string }
+        based_on_version: { type: [integer, "null"] }
+    StoDetail:
+      type: object
+      additionalProperties: true
+      required: [file, version, sha256, document, history, unavailable_reason, download_url]
+      properties:
+        file: { $ref: "#/components/schemas/StoFile" }
+        version: { type: integer }
+        sha256: { type: string }
+        document: { oneOf: [{ $ref: "#/components/schemas/StoDocument" }, { type: "null" }] }
+        history: { type: array, items: { $ref: "#/components/schemas/StoRevision" } }
+        unavailable_reason: { type: [string, "null"] }
+        download_url: { type: string }
+    StoWrite:
+      type: object
+      additionalProperties: true
+      required: [base_version, changes]
+      properties:
+        base_version: { type: integer, minimum: 1 }
+        changes: { type: object, additionalProperties: { type: string } }
+        notes: { type: string, maxLength: 8191 }
+        name: { type: string, maxLength: 120, description: Required for Save As; a safe .sto basename, unique per driver and car, case-insensitive. }
+        message: { type: string, maxLength: 500 }
     Error:
       type: object
       required: [error, message]

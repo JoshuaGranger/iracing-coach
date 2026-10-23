@@ -1,0 +1,26 @@
+# Versioned STO files
+
+Owner request, 2026-10-23: browse/open/edit/save/save-as in Setups, preserve purchased originals, keep every saved version, validate in offline solo iRacing.
+
+Imported `setup_files` occurrences are always locked, even when they are not purchased. They use version 1. ID `source:<sha256>` is SHA-256 of UTF-8 compact JSON `[customer_id,car_folder,relative_path,blob_sha256]`, in this order, no whitespace, Unicode unescaped, stored strings unnormalized. Lookups first scope rows to the driver. `coach:<positive file_id>` names a user-owned working lineage. StoFile.name contains the full relative_path for sources, distinguishing equal basenames in different folders. Native file values do not become observed garage/telemetry setup identity.
+
+Save As forks the selected immutable `base_version`, applies edits, and creates version 1 under a safe unique .sto basename. Save requires If-Match equal to the working lineage's CURRENT version; its `base_version` may be older to restore history as a new version. Concurrent stale writes return 412; locked source Save returns 409. Nothing overwrites an existing revision or a source file. Exact duplicate name (Unicode lowercased key per driver/car), Windows reserved basename, path, control character and traversal names are rejected. Downloads add Coach identity and version to the filename; iRacing folder writes remain outside the collector.
+
+Every successful write commits bytes, unchanged Python document, lineage pointer, an increment of user_data_generation, and a permanent idempotency receipt in one SQLite transaction. An Idempotency-Key is required. Receipt request SHA covers driver, source ID, action, parsed request JSON and If-Match. Reuse with changed content returns 422; identical retries replay the original result, even after a process restart. STO writes bypass generic request_log middleware replay so it cannot skip receipt validation. Receipts are retained with immutable history and are included in snapshots.
+
+The small Python codec subprocess is serial, bounded to 16 MiB per source and 30 s, and kept inside the server's reserved memory; no analysis/light job is enqueued. This is an explicit exception to long Python-backed 202 jobs: no analysis or telemetry math runs. Source decode errors return StoDetail with document null and unavailable_reason; source download remains available. Generated versions retain Python document JSON and source bytes in SQLite, so old versions open when the codec material is temporarily unavailable; writes still require the pinned material. `/data/sto-profile.json` is private, never shipped or committed, and extracted from the verified offline simulator executable. Unsupported material fails closed. Runtime has no iRacing-utility dependency.
+
+The editor shows native parameter units from Python. Geometry and enum names retain their native names unless car-specific garage mapping is established. It does not claim iRacing legality or setup effectiveness. Notes obey the native 0x4000-byte UTF-16LE bound including terminator. Unknown records, comments, decimal spelling, car identity and opaque trailing bytes are preserved. Server verifies generated SHA and exact bytes before committing.
+
+`changes` is an exact native parameter name to raw decimal string map. Python rejects unknown or uneditable keys and invalid/nonfinite/range-invalid values; Rust and UI never convert native values or infer garage legality. Save As requires exactly one final .sto extension (case-insensitive); the server normalizes it to .sto, rejects repeated .sto suffixes, trailing dot/space, separators, control characters and reserved Windows basenames.
+
+All imported occurrences remain visible even when their bytes equal an owned revision. Hash equality cannot distinguish a purchased source from its unchanged Save As copy.
+
+
+## Acceptance, 2026-10-23
+
+All 945 distinct imported STO blobs in the current private library decoded with the pinned build profile. Synthetic tests cover malformed containers and exact roundtrips; HTTP tests cover source locks, immutable history, restart-safe retries, conflicts, archive restaging and snapshots.
+
+In a solo offline simulator session, the generated baseline and an API-downloaded brake-bias edit loaded, passed Tech, and survived native Save As and reload. That sample retained all 88 raw parameters, notes and footer through the native resave. A second sample retained its 148-byte opaque trailer and intended edit, while iRacing changed five other numeric parameters during load/save; the cause is unproven. Its Tech failures also occurred with the unchanged original at that test track. File roundtrip fidelity therefore does not establish car/track compatibility or garage legality. After loading, check the garage and run Tech in iRacing.
+
+Purchased source hashes were unchanged. The prior setup was restored and the test simulator exited. Private source data, crypto material, screenshots and detailed receipts remain outside Git.

@@ -2266,10 +2266,470 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/drivers/{customer_id}/sto-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: components["parameters"]["CustomerId"];
+            };
+            cookie?: never;
+        };
+        /** All imported STO occurrences and Coach working setups, independent of observed setup values. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    customer_id: components["parameters"]["CustomerId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Imported sources are always locked; Coach files carry immutable revision counts. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoLibrary"];
+                    };
+                };
+                /** @description Invalid query, body or filename. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description No such driver-scoped file or immutable revision. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Locked source or duplicate working filename. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description version_conflict; current is the whole current StoDetail. */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoVersionConflict"];
+                    };
+                };
+                /** @description Rejected Python edit, unsupported material or changed idempotency request. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/drivers/{customer_id}/sto-files/{file_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: components["parameters"]["CustomerId"];
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    version?: number;
+                };
+                header?: never;
+                path: {
+                    customer_id: components["parameters"]["CustomerId"];
+                    file_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Selected revision, native parameters and immutable history; unavailable_reason explains an unsupported or inaccessible source. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoDetail"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Save a new immutable version of a Coach working setup. Imported sources cannot be saved. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Current `version`; required to update or delete an existing resource. */
+                    "If-Match"?: components["parameters"]["IfMatch"];
+                };
+                path: {
+                    customer_id: components["parameters"]["CustomerId"];
+                    file_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StoWrite"];
+                };
+            };
+            responses: {
+                /** @description New revision; 412 for concurrent edits, 409 for locked sources. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoDetail"];
+                    };
+                };
+                /** @description Invalid query, body or filename. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description No such driver-scoped file or immutable revision. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Locked source or duplicate working filename. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description version_conflict; current is the whole current StoDetail. */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoVersionConflict"];
+                    };
+                };
+                /** @description Rejected Python edit, unsupported material or changed idempotency request. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/drivers/{customer_id}/sto-files/{file_id}/save-as": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: components["parameters"]["CustomerId"];
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fork a selected source or old revision into a named editable Coach setup. Never replaces an existing file. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    customer_id: components["parameters"]["CustomerId"];
+                    file_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["StoWrite"];
+                };
+            };
+            responses: {
+                /** @description Working setup created with its first immutable revision. */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoDetail"];
+                    };
+                };
+                /** @description Invalid query, body or filename. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description No such driver-scoped file or immutable revision. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Locked source or duplicate working filename. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description version_conflict; current is the whole current StoDetail. */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoVersionConflict"];
+                    };
+                };
+                /** @description Rejected Python edit, unsupported material or changed idempotency request. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/drivers/{customer_id}/sto-files/{file_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                customer_id: components["parameters"]["CustomerId"];
+                file_id: string;
+            };
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    version?: number;
+                };
+                header?: never;
+                path: {
+                    customer_id: components["parameters"]["CustomerId"];
+                    file_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Original bytes for a locked source, or selected Coach revision, with a collision-resistant revision filename. Browser download only; collector never writes to iRacing folders. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": string;
+                    };
+                };
+                /** @description Invalid query, body or filename. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description No such driver-scoped file or immutable revision. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Locked source or duplicate working filename. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description version_conflict; current is the whole current StoDetail. */
+                412: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StoVersionConflict"];
+                    };
+                };
+                /** @description Rejected Python edit, unsupported material or changed idempotency request. */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        StoVersionConflict: {
+            /** @constant */
+            error: "version_conflict";
+            message: string;
+            current: components["schemas"]["StoDetail"];
+        };
+        StoFile: {
+            id: string;
+            name: string;
+            car_folder: string;
+            locked: boolean;
+            current_version: number;
+            version_count: number;
+            sha256: string;
+            updated_at: string;
+            present: boolean;
+            parent_file_id?: string | null;
+            parent_version?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        StoLibrary: {
+            files: components["schemas"]["StoFile"][];
+        } & {
+            [key: string]: unknown;
+        };
+        StoField: {
+            name: string;
+            raw_value: string;
+            label: string;
+            unit: string | null;
+            editable: boolean;
+            group: string;
+        } & {
+            [key: string]: unknown;
+        };
+        StoDocument: {
+            sto_version: number;
+            sha256: string;
+            internal_car_path: string;
+            notes: string;
+            settings: components["schemas"]["StoField"][];
+            warnings: string[];
+        } & {
+            [key: string]: unknown;
+        };
+        StoRevision: {
+            version: number;
+            sha256: string;
+            created_at: string;
+            message: string;
+            based_on_version?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        StoDetail: {
+            file: components["schemas"]["StoFile"];
+            version: number;
+            sha256: string;
+            document: components["schemas"]["StoDocument"] | null;
+            history: components["schemas"]["StoRevision"][];
+            unavailable_reason: string | null;
+            download_url: string;
+        } & {
+            [key: string]: unknown;
+        };
+        StoWrite: {
+            base_version: number;
+            changes: {
+                [key: string]: string;
+            };
+            notes?: string;
+            /** @description Required for Save As; a safe .sto basename */
+            name?: string;
+            message?: string;
+        } & {
+            [key: string]: unknown;
+        };
         Error: {
             /** @description Stable code, e.g. not_found, invalid_request, hash_mismatch, projection_pending, exceeds_memory_budget */
             error: string;
