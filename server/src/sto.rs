@@ -367,10 +367,10 @@ async fn current_document(
     match codec(app, bytes, None).await {
         Ok(result) => (result["document"].clone(), None),
         Err(error) => {
-            if matches!(&error, Error::Api(e) if e.code == "material_unavailable") {
-                if let Some(document) = cached {
-                    return (native_cached(document), None);
-                }
+            if matches!(&error, Error::Api(e) if e.code == "material_unavailable")
+                && let Some(document) = cached
+            {
+                return (native_cached(document), None);
             }
             (Value::Null, Some(error.to_string()))
         }
