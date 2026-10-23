@@ -18,11 +18,13 @@ from typing import Any
 
 
 DESCRIPTOR_VERSION = 2
-REGISTRY_VERSION = 6  # Increment when any production mapping/evidence changes.
+REGISTRY_VERSION = 7  # Increment when any production mapping/evidence changes.
 VERIFIED_BINARY = "6581dd68f7fa4367ae874fd41b459597029058ddcba9829c90d8b710170e6362"
 XFINITY_LAYOUT = "fad6f45bbadb29c91b99ab28114beb0eec8deb0d85609a001981271c6daeab05"
 NATIVE_PA_PER_PSI = Decimal("6891.16015625")
 NUMBER = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", re.ASCII)
+NATIVE_FLOAT = re.compile(r"[-+]?\d+\.\d+", re.ASCII)
+NATIVE_SYNTAX_WARNING = "Unsupported numeric notation may load iRacing defaults. Check those native fields in the sim."
 
 
 class GarageError(ValueError):
@@ -169,12 +171,14 @@ class Profile:
     fields: tuple[Field, ...]
     evidence: tuple[str, ...]
     binary_sha256: str = VERIFIED_BINARY
+    native_float_syntax_required: bool = False
 
     @property
     def profile_id(self) -> str:
         manifest = {"key": self.key, "version": self.version, "label": self.label,
                     "native_cars": self.native_cars, "layout_sha256": self.layout_sha256,
                     "binary_sha256": self.binary_sha256,
+                    "native_float_syntax_required": self.native_float_syntax_required,
                     "fields": [field.manifest() for field in self.fields], "evidence": self.evidence}
         digest = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         return f"{self.key}:v{self.version}:{digest[:20]}"
@@ -208,7 +212,9 @@ PROFILES = (Profile(
      "2026-10-23 native steering ratio and LF LS compression clicks; LF tooltip minimum 1 maximum 10",
      "2026-10-23 separate RF/LR/RR pressure clicks reproduce the same exact native inverse",
      "Verified native parameter loader requires floating tokens; changed values use exact fixed decimal spelling with at least six fractional places",
-     "Camaro-header source and Supra-header native resave were verified in Supra; no separate Camaro garage session")),)
+     "Camaro-header source and Supra-header native resave were verified in Supra; no separate Camaro garage session",
+     "Integer-spelled native parameters loaded defaults in the verified Supra session; only fixed floating original tokens receive garage descriptors"),
+    native_float_syntax_required=True),)
 
 
 def select_profile(car: str, names: list[str], material_verified: bool,
@@ -230,6 +236,12 @@ def decorate(document: dict[str, Any], profile: Profile | None) -> dict[str, Any
     fields = {field.name: field for field in profile.fields}
     for setting in document["settings"]:
         field = fields.get(setting["name"])
+        if profile.native_float_syntax_required and NATIVE_FLOAT.fullmatch(setting["raw_value"]) is None:
+            setting.pop("garage", None)
+            warnings = document.setdefault("warnings", [])
+            if NATIVE_SYNTAX_WARNING not in warnings:
+                warnings.append(NATIVE_SYNTAX_WARNING)
+            continue
         if field:
             try:
                 _number(setting["raw_value"], setting["name"], "native")

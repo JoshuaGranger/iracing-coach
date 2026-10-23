@@ -53,6 +53,7 @@ class StoGarageTests(unittest.TestCase):
 
     def test_profile_id_changes_with_mapping_version_constraints_and_evidence(self):
         for profile in (replace(PROFILE, version=2), replace(PROFILE, evidence=("new evidence",)),
+                        replace(PROFILE, native_float_syntax_required=True),
                         replace(PROFILE, fields=(replace(FIELDS[0], maximum=Decimal(90)),))):
             self.assertNotEqual(PROFILE.profile_id, profile.profile_id)
 
@@ -74,6 +75,42 @@ class StoGarageTests(unittest.TestCase):
         result = garage.decorate({"settings": [{"name": "unknown", "raw_value": "1"}]}, None)
         self.assertIsNone(result["garage_profile_id"])
         self.assertNotIn("garage", result["settings"][0])
+
+    def test_float_syntax_requirement_is_profile_scoped_and_warning_is_emitted_once(self):
+        profile = replace(PROFILE, native_float_syntax_required=True)
+        settings = [{"name": name, "raw_value": value, "unit": "native", "editable": True}
+                    for name, value in VALUES.items()]
+        document = garage.decorate({"settings": settings, "warnings": ["Existing warning"]}, profile)
+        self.assertIn("garage", settings[0])  # Fixed floating source token.
+        for setting in settings[2:]:
+            self.assertNotIn("garage", setting)
+            self.assertTrue(setting["editable"])
+            self.assertEqual(setting["raw_value"], VALUES[setting["name"]])
+        self.assertEqual(document["warnings"], ["Existing warning", garage.NATIVE_SYNTAX_WARNING])
+        garage.decorate(document, profile)
+        self.assertEqual(document["warnings"].count(garage.NATIVE_SYNTAX_WARNING), 1)
+        generic = garage.decorate({"settings": [{"name": "gear", "raw_value": "0", "editable": True}]}, PROFILE)
+        self.assertIn("garage", generic["settings"][0])
+        self.assertNotIn("warnings", generic)
+
+    def test_production_fixed_float_tokens_keep_all_seven_garage_mappings(self):
+        profile = garage.PROFILES[0]
+        self.assertTrue(profile.native_float_syntax_required)
+        # Invented values only, unrelated to the purchased/acceptance setup files.
+        values = {"fBrakeBias": "55.000000", "steeringBoxRatio": "20.000000",
+                  "lfLowSpeedCompDampSetting": "4.000000"}
+        values.update({f"{corner}TireColdPressPa": "100000.000000" for corner in ("lf", "rf", "lr", "rr")})
+        settings = [{"name": field.name, "raw_value": values[field.name], "editable": True}
+                    for field in profile.fields]
+        document = garage.decorate({"settings": settings}, profile)
+        self.assertEqual(sum("garage" in setting for setting in settings), 7)
+        self.assertNotIn("warnings", document)
+        settings[0]["raw_value"] = "55"
+        settings[-2]["raw_value"] = "2e1"
+        settings[-1]["raw_value"] = "4"
+        garage.decorate(document, profile)
+        self.assertEqual(sum("garage" in setting for setting in settings), 4)
+        self.assertEqual(document["warnings"], [garage.NATIVE_SYNTAX_WARNING])
 
     def test_identity_and_affine_inverse_are_backend_authored(self):
         result = self.merge(changes={"bias": "55.5", "pressure": "5.25"})

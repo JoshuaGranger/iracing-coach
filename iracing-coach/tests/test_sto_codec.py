@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 from decimal import Decimal
 import io
 import json
@@ -192,6 +193,19 @@ class StoCodecTests(unittest.TestCase):
         self.assertEqual(codec.encode(source, MATERIAL, {"fBrakeBias": "55.0",
                                                        "unknownFutureParameter": "100.000000",
                                                        "fuelFillToKg": "12.5"}), source)
+
+    def test_unsupported_original_notation_has_native_fallback_warning_and_exact_noop(self) -> None:
+        profile = replace(self.garage_profile(), native_float_syntax_required=True)
+        for token in ("55", "5.5e1"):
+            source = container(TEXT.replace("55.000000", token))
+            with self.subTest(token=token), mock.patch.object(codec, "_garage_profile", return_value=profile):
+                document = codec.decode(source, MATERIAL)
+                setting = document["settings"][1]
+                self.assertNotIn("garage", setting)
+                self.assertEqual(setting["raw_value"], token)
+                self.assertTrue(setting["editable"])
+                self.assertEqual(document["warnings"].count(codec.sto_garage.NATIVE_SYNTAX_WARNING), 1)
+                self.assertEqual(codec.encode(source, MATERIAL, {"fBrakeBias": "55.000000"}), source)
 
     def test_garage_and_legacy_integer_routes_have_identical_native_float_output(self) -> None:
         source, profile = container(), self.garage_profile()
