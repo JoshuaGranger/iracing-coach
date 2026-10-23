@@ -34,6 +34,10 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 ## Change log
 
+### 2026-10-23, native floating-literal serialization for STO edits
+
+A controlled solo-garage load exposed that integer-spelled values can be skipped by the native parameter loader. The native writer emits floating literals and the verified loader requires its floating-token type. Python therefore serializes changed native and garage values as exact, bounded fixed decimals with at least six fractional digits, without rounding; numeric no-ops preserve the original bytes. Request types, routes, request hashes and committed retry receipts are unchanged. Codex Sol 6.1 approved the protocol review before dependent implementation landed. No generated schema changes are needed.
+
 ### 2026-10-23, verified garage units for STO editing
 
 Python may add scoped garage descriptors to native STO fields and accept dedicated garage-unit write endpoints. Native values/routes remain unchanged; display conversions and verified constraints stay in Python. Exact profile identity, decimal grids, native fallback, immutable revisions and durable retries are specified in sto-editor.md. Codex Sol 6.1 approved the protocol review before implementation (D15).
