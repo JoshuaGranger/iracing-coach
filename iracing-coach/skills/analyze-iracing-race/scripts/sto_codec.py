@@ -21,6 +21,8 @@ import struct
 import sys
 from typing import Any
 
+import sto_garage
+
 
 SCHEMA_VERSION = 1
 MAX_STO_BYTES = 16 * 1024 * 1024
@@ -46,9 +48,12 @@ WARNINGS = [
 class StoError(ValueError):
     """A safe error with a stable machine code and no private data in its message."""
 
-    def __init__(self, message: str, code: str = "invalid_sto") -> None:
+    def __init__(self, message: str, code: str = "invalid_sto", field: str | None = None,
+                 representation: str | None = None) -> None:
         super().__init__(message)
         self.code = code
+        self.field = field
+        self.representation = representation
 
 
 @dataclass(frozen=True)
@@ -289,17 +294,23 @@ def _descriptor(name: str, value: str) -> dict[str, Any]:
             "editable": number.copy_abs() <= MAX_NATIVE_MAGNITUDE, "group": group}
 
 
-def _document(container: _Container) -> dict[str, Any]:
-    return {"sto_version": 3, "sha256": _sha(container.original),
+def _garage_profile(container: _Container, material: Material) -> sto_garage.Profile | None:
+    material_verified = _sha(material.outer_key + material.translation + material.encoding) == MATERIAL_SHA256
+    return sto_garage.select_profile(container.car, [name for name, _, _, _ in container.records], material_verified)
+
+
+def _document(container: _Container, material: Material) -> dict[str, Any]:
+    document = {"sto_version": 3, "sha256": _sha(container.original),
             "internal_car_path": container.car, "notes": container.notes,
             "settings": [_descriptor(name, value) for name, value, _, _ in container.records],
             "warnings": list(WARNINGS), "trailer_sha256": _sha(container.trailer),
             "notes_limit_bytes": MAX_NOTES_BYTES, "native_values": True}
+    return sto_garage.decorate(document, _garage_profile(container, material))
 
 
 def decode(data: bytes, material: Material) -> dict[str, Any]:
     """Return all original values with backend-authored native labels and units."""
-    return _document(_unpack(data, material))
+    return _document(_unpack(data, material), material)
 
 
 def _validated_changes(changes: Any, records: tuple[tuple[str, str, int, int], ...]) -> dict[str, str]:
@@ -309,24 +320,27 @@ def _validated_changes(changes: Any, records: tuple[tuple[str, str, int, int], .
     result: dict[str, str] = {}
     for name, raw in changes.items():
         if name not in originals:
-            raise StoError("A changed native parameter is absent from this file.", "invalid_edit")
+            raise StoError("A changed native parameter is absent from this file.", "invalid_edit", name, "native")
         if not isinstance(raw, str) or len(raw) > MAX_NUMBER_CHARS or NUMBER.fullmatch(raw) is None:
-            raise StoError("Use a finite decimal string for each changed native value.", "invalid_edit")
+            raise StoError("Use a finite decimal string for each changed native value.", "invalid_edit", name, "native")
         try:
             number = Decimal(raw)
+            if number == Decimal(originals[name]):
+                continue
             if not number.is_finite() or number.copy_abs() > MAX_NATIVE_MAGNITUDE:
-                raise StoError("Changed native number exceeds the codec safety bound.", "invalid_edit")
+                raise StoError("Changed native number exceeds the codec safety bound.", "invalid_edit", name, "native")
             if Decimal(originals[name]).copy_abs() > MAX_NATIVE_MAGNITUDE:
-                raise StoError("This native value is outside the supported editing bound.", "invalid_edit")
+                raise StoError("This native value is outside the supported editing bound.", "invalid_edit", name, "native")
         except InvalidOperation as exc:
-            raise StoError("Invalid native numeric edit.", "invalid_edit") from exc
+            raise StoError("Invalid native numeric edit.", "invalid_edit", name, "native") from exc
         if raw != originals[name]:
             result[name] = raw
     return result
 
 
 def encode(data: bytes, material: Material, changes: dict[str, str] | None = None,
-           notes: str | None = None) -> bytes:
+           notes: str | None = None, *, garage_changes: dict[str, str] | None = None,
+           garage_profile_id: str | None = None, descriptor_version: int | None = None) -> bytes:
     """Patch present number tokens and optional notes; preserve all other content.
 
     Native encoding randomly chooses among equivalent bytes. The verified native
@@ -334,7 +348,15 @@ def encode(data: bytes, material: Material, changes: dict[str, str] | None = Non
     decoder equivalence is checked before use. The NUL is the native raw zero.
     """
     container = _unpack(data, material)
-    edits = _validated_changes(changes if changes is not None else {}, container.records)
+    native_changes = changes if changes is not None else {}
+    _validated_changes(native_changes, container.records)
+    try:
+        edits = sto_garage.merge_changes(_garage_profile(container, material),
+                                        {name: raw for name, raw, _, _ in container.records},
+                                        native_changes, garage_changes, garage_profile_id, descriptor_version)
+    except sto_garage.GarageError as exc:
+        raise StoError(str(exc), exc.code, exc.field, exc.representation) from exc
+    edits = _validated_changes(edits, container.records)
     note_bytes = container.note_bytes
     if notes is not None:
         if not isinstance(notes, str) or "\0" in notes:
@@ -380,6 +402,9 @@ def process_request(request: Any) -> dict[str, Any]:
         raise StoError("Unsupported STO request schema.", "invalid_request")
     if request.get("operation") not in ("decode", "encode"):
         raise StoError("Unsupported STO operation.", "invalid_request")
+    descriptor_version = request.get("descriptor_version")
+    if descriptor_version is not None and (type(descriptor_version) is not int or descriptor_version != sto_garage.DESCRIPTOR_VERSION):
+        raise StoError("Garage descriptors changed. Reopen the setup before saving.", "garage_profile_mismatch", representation="garage")
     profile = request.get("profile_path") or os.environ.get("COACH_STO_MATERIAL")
     if not isinstance(profile, str) or not profile:
         raise StoError("STO decoding material is not installed.", "material_unavailable")
@@ -393,7 +418,9 @@ def process_request(request: Any) -> dict[str, Any]:
         raise StoError("STO bytes are not valid base64.", "invalid_request") from exc
     if request["operation"] == "decode":
         return {"schema": SCHEMA_VERSION, "ok": True, "document": decode(data, material)}
-    result = encode(data, material, request.get("changes", {}), request.get("notes"))
+    result = encode(data, material, request.get("changes", {}), request.get("notes"),
+                    garage_changes=request.get("garage_changes"),
+                    garage_profile_id=request.get("garage_profile_id"), descriptor_version=descriptor_version)
     return {"schema": SCHEMA_VERSION, "ok": True, "document": decode(result, material),
             "data_base64": base64.b64encode(result).decode("ascii")}
 
@@ -428,6 +455,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except StoError as exc:
         result = {"schema": SCHEMA_VERSION, "ok": False, "error": {"code": exc.code, "message": str(exc)}}
+        if exc.field is not None:
+            result["error"]["field"] = exc.field
+        if exc.representation is not None:
+            result["error"]["representation"] = exc.representation
     except (OSError, UnicodeError) as exc:
         result = {"schema": SCHEMA_VERSION, "ok": False,
                   "error": {"code": "io_error", "message": "STO input or private profile could not be read or created."}}

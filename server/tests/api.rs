@@ -538,6 +538,31 @@ async fn every_endpoint_answers_as_the_contract_says() {
         "/api/v1/drivers/{customer_id}/sto-files/{file_id}/save-as",
         &r,
     );
+    // Garage endpoints are distinct operations: locked sources still refuse Save, while
+    // unsupported bytes cannot be silently saved by ignoring their garage representation.
+    for (suffix, template, status, key) in [
+        (
+            "garage",
+            "/api/v1/drivers/{customer_id}/sto-files/{file_id}/garage",
+            StatusCode::CONFLICT,
+            "contract-locked-garage-save",
+        ),
+        (
+            "garage/save-as",
+            "/api/v1/drivers/{customer_id}/sto-files/{file_id}/garage/save-as",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "contract-unreadable-garage-save-as",
+        ),
+    ] {
+        let r = env.call(
+            Method::POST,
+            &format!("{file_path}/{suffix}"),
+            Some(axum::body::Bytes::from(json!({"name":"Garage baseline.sto","base_version":1,"garage_profile_id":"synthetic-garage-v1","garage_changes":{}}).to_string())),
+            &[("content-type","application/json"),("idempotency-key",key),("if-match","1")],
+        ).await;
+        assert_eq!(r.status, status, "{}", String::from_utf8_lossy(&r.body));
+        check(c, "POST", template, &r);
+    }
 
     // nothing runs jobs yet: the comparison does not finish inside the wait and answers 202
     let r = env

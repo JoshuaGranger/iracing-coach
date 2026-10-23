@@ -11,6 +11,7 @@ use support::*;
 
 const ROOT: &str = "/api/v1/drivers/1001/sto-files";
 const CAR: &str = "synthetic car";
+const GARAGE_PROFILE: &str = "synthetic-garage-v1";
 
 async fn environment() -> Option<Env> {
     let env = Env::with(Opts {
@@ -869,5 +870,369 @@ async fn overflowing_codec_output_is_stopped_without_a_revision_and_releases_adm
     );
     let saved = fork(&env, &normal, "After overflow.sto").await;
     assert_eq!(saved["version"], 1);
+    assert_eq!(generation(&env), 1);
+}
+
+#[tokio::test]
+async fn garage_routes_save_both_representations_and_replay_exactly_after_restart() {
+    let Some(env) = environment().await else {
+        return;
+    };
+    let bytes = source_bytes();
+    let source = seed(&env, CUSTOMER, CAR, "Purchased.sto", &bytes, true).await;
+    let fork_path = format!("{ROOT}/{source}/garage/save-as");
+    let body = json!({"name":"Garage.sto","base_version":1,"garage_profile_id":GARAGE_PROFILE,"garage_changes":{"fBrakeBias":"55.5"},"native_changes":{"unmappedGeometry":"-0.000200"},"notes":"Mixed garage and native changes"});
+    let created = expect(
+        &write(&env, &fork_path, body.clone(), "garage-create", None).await,
+        StatusCode::CREATED,
+    );
+    Contract::load().check(
+        "POST",
+        "/api/v1/drivers/{customer_id}/sto-files/{file_id}/garage/save-as",
+        201,
+        "application/json",
+        &created,
+    );
+    assert_eq!(created["file"]["locked"], false);
+    assert_eq!(created["document"]["descriptor_version"], 2);
+    assert_eq!(created["document"]["garage_profile_id"], GARAGE_PROFILE);
+    assert_eq!(value(&created["document"], "fBrakeBias"), "55.5");
+    assert_eq!(value(&created["document"], "unmappedGeometry"), "-0.000200");
+    assert_eq!(
+        created["document"]["notes"],
+        "Mixed garage and native changes"
+    );
+    let geometry = created["document"]["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "unmappedGeometry")
+        .unwrap();
+    assert!(geometry.get("garage").is_none());
+    let env = env.restart().await;
+    assert_eq!(
+        expect(
+            &write(&env, &fork_path, body, "garage-create", None).await,
+            StatusCode::CREATED
+        ),
+        created
+    );
+    let path = format!("{ROOT}/{}", created["file"]["id"].as_str().unwrap());
+    let garage_path = format!("{path}/garage");
+    let edit = json!({"base_version":1,"garage_profile_id":GARAGE_PROFILE,"garage_changes":{"fBrakeBias":"56.0"},"native_changes":{"fuelFillToKg":"12.5000"}});
+    let saved = expect(
+        &write(&env, &garage_path, edit.clone(), "garage-save", Some(1)).await,
+        StatusCode::OK,
+    );
+    Contract::load().check(
+        "POST",
+        "/api/v1/drivers/{customer_id}/sto-files/{file_id}/garage",
+        200,
+        "application/json",
+        &saved,
+    );
+    assert_eq!(saved["version"], 2);
+    assert_eq!(value(&saved["document"], "fBrakeBias"), "56.0");
+    assert_eq!(value(&saved["document"], "fuelFillToKg"), "12.5000");
+    assert_eq!(value(&saved["document"], "unmappedGeometry"), "-0.000200");
+    let env = env.restart().await;
+    assert_eq!(
+        expect(
+            &write(&env, &garage_path, edit.clone(), "garage-save", Some(1)).await,
+            StatusCode::OK
+        ),
+        saved
+    );
+    let mut changed_profile = edit.clone();
+    changed_profile["garage_profile_id"] = json!("a-different-profile");
+    assert_eq!(
+        expect(
+            &write(&env, &garage_path, changed_profile, "garage-save", Some(1)).await,
+            StatusCode::UNPROCESSABLE_ENTITY
+        )["error"],
+        "idempotency_key_reused"
+    );
+    assert_eq!(
+        expect(
+            &write(&env, &garage_path, edit, "garage-stale", Some(1)).await,
+            StatusCode::PRECONDITION_FAILED
+        )["current"],
+        saved
+    );
+    let history = expect(&env.get(&format!("{path}?version=1")).await, StatusCode::OK);
+    assert_eq!(history["sha256"], created["sha256"]);
+    assert_eq!(history["document"], created["document"]);
+    let original = env.get(&format!("{ROOT}/{source}/download")).await;
+    assert_eq!(original.body.as_ref(), bytes);
+    assert_eq!(generation(&env), 2);
+}
+
+#[tokio::test]
+async fn garage_validation_rejects_profile_mismatch_unmapped_fields_and_invalid_grids_with_field_details()
+ {
+    let Some(env) = environment().await else {
+        return;
+    };
+    let source = seed(&env, CUSTOMER, CAR, "Source.sto", &source_bytes(), true).await;
+    let path = format!("{ROOT}/{source}/garage/save-as");
+    let common = json!({"name":"Invalid.sto","base_version":1,"garage_profile_id":GARAGE_PROFILE,"garage_changes":{}});
+    let mut mismatch = common.clone();
+    mismatch["garage_profile_id"] = json!("obsolete-profile");
+    assert_eq!(
+        expect(
+            &write(&env, &path, mismatch, "garage-wrong-profile", None).await,
+            StatusCode::UNPROCESSABLE_ENTITY
+        )["error"],
+        "garage_profile_mismatch"
+    );
+    let cases = [
+        (
+            json!({"unmappedGeometry":"1"}),
+            json!({}),
+            "garage_unmapped_field",
+            "unmappedGeometry",
+        ),
+        (
+            json!({"fBrakeBias":"100.5"}),
+            json!({}),
+            "garage_out_of_range",
+            "fBrakeBias",
+        ),
+        (
+            json!({"fBrakeBias":"55.25"}),
+            json!({}),
+            "garage_off_grid",
+            "fBrakeBias",
+        ),
+        (
+            json!({"fBrakeBias":"NaN"}),
+            json!({}),
+            "invalid_garage_value",
+            "fBrakeBias",
+        ),
+        (
+            json!({}),
+            json!({"fBrakeBias":"55.25"}),
+            "garage_off_grid",
+            "fBrakeBias",
+        ),
+        (json!({}), json!({"missing":"1"}), "invalid_edit", "missing"),
+        (
+            json!({"fBrakeBias":"56"}),
+            json!({"fBrakeBias":"56"}),
+            "ambiguous_change",
+            "fBrakeBias",
+        ),
+    ];
+    for (index, (garage, native, code, name)) in cases.into_iter().enumerate() {
+        let mut body = common.clone();
+        body["garage_changes"] = garage;
+        body["native_changes"] = native;
+        let error = expect(
+            &write(&env, &path, body, &format!("garage-invalid-{index}"), None).await,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
+        assert_eq!(error["error"], code);
+        assert_eq!(error["details"]["name"], name);
+    }
+    let mut legacy = common;
+    legacy["changes"] = json!({});
+    expect(
+        &write(&env, &path, legacy, "garage-reject-legacy-map", None).await,
+        StatusCode::BAD_REQUEST,
+    );
+    let native_path = format!("{ROOT}/{source}/save-as");
+    let error = expect(
+        &write(
+            &env,
+            &native_path,
+            json!({"name":"Raw bypass.sto","base_version":1,"changes":{"fBrakeBias":"55.25"}}),
+            "garage-raw-bypass",
+            None,
+        )
+        .await,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    );
+    assert_eq!(error["error"], "garage_off_grid");
+    assert_eq!(error["details"]["name"], "fBrakeBias");
+    assert_eq!(generation(&env), 0);
+    assert_eq!(
+        env.query(
+            |c| c.query_row("SELECT COUNT(*) FROM sto_revisions", [], |r| r
+                .get::<_, i64>(0))
+        ),
+        0
+    );
+}
+
+#[tokio::test]
+async fn native_pending_receipts_keep_the_original_hash_formula_when_garage_routes_are_added() {
+    let Some(env) = environment().await else {
+        return;
+    };
+    let source = seed(&env, CUSTOMER, CAR, "Source.sto", &source_bytes(), true).await;
+    let created = fork(&env, &source, "Existing.sto").await;
+    let body = json!({"name":"Existing.sto","base_version":1,"changes":{}});
+    let legacy_hash = sha256_hex(
+        json!([CUSTOMER, source, true, body, Value::Null])
+            .to_string()
+            .as_bytes(),
+    );
+    let response = created.to_string();
+    env.app.store.write(move |c| {
+        c.execute("INSERT INTO sto_write_receipts(operation_id,request_sha256,response_json) VALUES('old-native-pending',?1,?2)", params![legacy_hash,response])?;
+        Ok(())
+    }).await.unwrap();
+    let env = env.restart().await;
+    let replayed = expect(
+        &write(
+            &env,
+            &format!("{ROOT}/{source}/save-as"),
+            body,
+            "old-native-pending",
+            None,
+        )
+        .await,
+        StatusCode::CREATED,
+    );
+    assert_eq!(replayed, created);
+    let garage = json!({"name":"Existing.sto","base_version":1,"garage_profile_id":GARAGE_PROFILE,"garage_changes":{}});
+    assert_eq!(
+        expect(
+            &write(
+                &env,
+                &format!("{ROOT}/{source}/garage/save-as"),
+                garage,
+                "old-native-pending",
+                None
+            )
+            .await,
+            StatusCode::UNPROCESSABLE_ENTITY
+        )["error"],
+        "idempotency_key_reused"
+    );
+    assert_eq!(generation(&env), 1);
+    assert_eq!(
+        env.query(
+            |c| c.query_row("SELECT COUNT(*) FROM sto_revisions", [], |r| r
+                .get::<_, i64>(0))
+        ),
+        1
+    );
+}
+
+#[tokio::test]
+async fn opening_owned_bytes_enriches_legacy_cache_and_strips_stale_garage_data_when_material_is_unavailable()
+ {
+    let Some(env) = environment().await else {
+        return;
+    };
+    let source = seed(&env, CUSTOMER, CAR, "Source.sto", &source_bytes(), true).await;
+    let created = fork(&env, &source, "Cache.sto").await;
+    let id = created["file"]["id"].as_str().unwrap();
+    let numeric_id = id.strip_prefix("coach:").unwrap().parse::<i64>().unwrap();
+    let mut legacy = created["document"].clone();
+    for key in [
+        "garage_profile_id",
+        "garage_profile_label",
+        "descriptor_version",
+    ] {
+        legacy.as_object_mut().unwrap().remove(key);
+    }
+    for field in legacy["settings"].as_array_mut().unwrap() {
+        field.as_object_mut().unwrap().remove("garage");
+    }
+    let legacy_text = legacy.to_string();
+    let stored = legacy_text.clone();
+    env.app
+        .store
+        .write(move |c| {
+            c.execute(
+                "UPDATE sto_revisions SET document_json=?2 WHERE file_id=?1 AND version=1",
+                params![numeric_id, stored],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let path = format!("{ROOT}/{id}");
+    let enriched = expect(&env.get(&path).await, StatusCode::OK);
+    assert_eq!(enriched["document"]["descriptor_version"], 2);
+    assert_eq!(enriched["document"]["garage_profile_id"], GARAGE_PROFILE);
+    assert!(
+        enriched["document"]["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field["name"] == "fBrakeBias"
+                && field["garage"]["label"] == "Front brake bias")
+    );
+    assert_eq!(enriched["sha256"], created["sha256"]);
+    assert_eq!(enriched["history"], created["history"]);
+    assert_eq!(
+        env.query(move |c| c.query_row(
+            "SELECT document_json FROM sto_revisions WHERE file_id=?1 AND version=1",
+            [numeric_id],
+            |r| r.get::<_, String>(0)
+        )),
+        legacy_text
+    );
+    let mut stale = enriched["document"].clone();
+    stale["garage_profile_id"] = json!("obsolete-garage-profile");
+    for field in stale["settings"].as_array_mut().unwrap() {
+        if field["name"] == "fBrakeBias" {
+            field["garage"]["value"] = json!("99");
+        }
+    }
+    let stale_text = stale.to_string();
+    let stored = stale_text.clone();
+    env.app
+        .store
+        .write(move |c| {
+            c.execute(
+                "UPDATE sto_revisions SET document_json=?2 WHERE file_id=?1 AND version=1",
+                params![numeric_id, stored],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let marker = env.data().join("codec-unavailable");
+    std::fs::write(&marker, b"test codec unavailable").unwrap();
+    let fallback = expect(&env.get(&path).await, StatusCode::OK);
+    assert!(fallback["document"]["garage_profile_id"].is_null());
+    assert!(fallback["document"].get("garage_profile_label").is_none());
+    assert!(
+        fallback["document"]["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|field| field.get("garage").is_none())
+    );
+    assert_eq!(value(&fallback["document"], "fBrakeBias"), "55.0");
+    assert!(
+        fallback["document"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w
+                .as_str()
+                .unwrap_or_default()
+                .to_lowercase()
+                .contains("unavailable"))
+    );
+    assert_eq!(fallback["sha256"], created["sha256"]);
+    assert_eq!(fallback["history"], created["history"]);
+    assert_eq!(
+        env.query(move |c| c.query_row(
+            "SELECT document_json FROM sto_revisions WHERE file_id=?1 AND version=1",
+            [numeric_id],
+            |r| r.get::<_, String>(0)
+        )),
+        stale_text
+    );
+    std::fs::remove_file(marker).unwrap();
+    let fresh = expect(&env.get(&path).await, StatusCode::OK);
+    assert_eq!(fresh["document"]["garage_profile_id"], GARAGE_PROFILE);
     assert_eq!(generation(&env), 1);
 }

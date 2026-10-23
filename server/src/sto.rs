@@ -203,7 +203,16 @@ async fn codec(app: &AppState, bytes: &[u8], write: Option<&Value>) -> Result<Va
         .ok_or_else(|| Error::internal("worker scripts directory missing"))?;
     let mut request = json!({"schema":1,"operation":if write.is_some(){"encode"}else{"decode"},"profile_path":app.cfg.data_dir.join("sto-profile.json"),"data_base64":STANDARD.encode(bytes)});
     if let Some(body) = write {
-        request["changes"] = body["changes"].clone();
+        request["changes"] = body
+            .get("native_changes")
+            .or_else(|| body.get("changes"))
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+        for key in ["garage_changes", "garage_profile_id", "descriptor_version"] {
+            if let Some(value) = body.get(key) {
+                request[key] = value.clone();
+            }
+        }
         if let Some(notes) = body.get("notes") {
             request["notes"] = notes.clone();
         }
@@ -284,14 +293,40 @@ async fn codec(app: &AppState, bytes: &[u8], write: Option<&Value>) -> Result<Va
             Some("invalid_edit") => "invalid_edit",
             Some("unsupported_version") => "unsupported_version",
             Some("material_unavailable") => "material_unavailable",
+            Some("garage_profile_required") => "garage_profile_required",
+            Some("garage_profile_mismatch") => "garage_profile_mismatch",
+            Some("garage_off_grid") => "garage_off_grid",
+            Some("garage_out_of_range") => "garage_out_of_range",
+            Some("garage_unknown_choice") => "garage_unknown_choice",
+            Some("garage_unmapped_field") => "garage_unmapped_field",
+            Some("invalid_garage_value") => "invalid_garage_value",
+            Some("ambiguous_change") => "ambiguous_change",
             _ => "invalid_sto",
         };
-        return Err(Error::unprocessable(
+        let mut error = crate::error::ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
             code,
             result["error"]["message"]
                 .as_str()
                 .unwrap_or("The setup could not be decoded"),
-        ));
+        );
+        let mut details = result["error"]["details"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        if let Some(name) = result["error"]["field"]
+            .as_str()
+            .or_else(|| result["error"]["name"].as_str())
+        {
+            details.insert("name".into(), json!(name));
+        }
+        if let Some(representation) = result["error"]["representation"].as_str() {
+            details.insert("representation".into(), json!(representation));
+        }
+        if !details.is_empty() {
+            error.details = Some(Value::Object(details));
+        }
+        return Err(error.into());
     }
     if !status.success() {
         return Err(Error::internal("setup codec exited unsuccessfully"));
@@ -300,6 +335,46 @@ async fn codec(app: &AppState, bytes: &[u8], write: Option<&Value>) -> Result<Va
         .check("StoDocument", &result["document"])?
         .map_err(|_| Error::internal("setup codec document incompatible"))?;
     Ok(result)
+}
+
+/// A cached descriptor is a fallback for native inspection, never authority for a stale garage profile.
+fn native_cached(mut document: Value) -> Value {
+    if let Some(fields) = document.get_mut("settings").and_then(Value::as_array_mut) {
+        for field in fields {
+            if let Some(field) = field.as_object_mut() {
+                field.remove("garage");
+            }
+        }
+    }
+    if let Some(object) = document.as_object_mut() {
+        object.insert("garage_profile_id".into(), Value::Null);
+        object.remove("garage_profile_label");
+    }
+    if let Some(warnings) = document.get_mut("warnings").and_then(Value::as_array_mut) {
+        let warning = json!("Garage mapping is unavailable; showing saved native file values.");
+        if !warnings.contains(&warning) {
+            warnings.push(warning);
+        }
+    }
+    document
+}
+
+async fn current_document(
+    app: &AppState,
+    bytes: &[u8],
+    cached: Option<Value>,
+) -> (Value, Option<String>) {
+    match codec(app, bytes, None).await {
+        Ok(result) => (result["document"].clone(), None),
+        Err(error) => {
+            if matches!(&error, Error::Api(e) if e.code == "material_unavailable") {
+                if let Some(document) = cached {
+                    return (native_cached(document), None);
+                }
+            }
+            (Value::Null, Some(error.to_string()))
+        }
+    }
 }
 
 pub async fn open(
@@ -355,13 +430,7 @@ pub async fn open(
         }
     };
     let sha = sha256_hex(&bytes);
-    let (doc, reason) = match doc {
-        Some(doc) => (doc, None),
-        None => match codec(&app, &bytes, None).await {
-            Ok(r) => (r["document"].clone(), None),
-            Err(e) => (Value::Null, Some(e.to_string())),
-        },
-    };
+    let (doc, reason) = current_document(&app, &bytes, doc).await;
     Ok(crate::api::json_ok(detail(
         f, v, &sha, doc, h, reason, customer,
     )))
@@ -429,8 +498,15 @@ async fn write(
     headers: HeaderMap,
     body: Bytes,
     fork: bool,
+    garage: bool,
 ) -> Result<Response> {
-    let body = crate::schema::parse_request("StoWrite", &body)?;
+    let body =
+        crate::schema::parse_request(if garage { "StoGarageWrite" } else { "StoWrite" }, &body)?;
+    if !garage && (body.get("garage_changes").is_some() || body.get("native_changes").is_some()) {
+        return Err(Error::invalid(
+            "Garage edits require the garage save endpoint",
+        ));
+    }
     let key = headers
         .get("idempotency-key")
         .and_then(|v| v.to_str().ok())
@@ -438,17 +514,14 @@ async fn write(
         .ok_or_else(|| Error::invalid("Idempotency-Key is required for Save"))?
         .to_string();
     let current = crate::userdata::if_match(&headers);
-    let hash = sha256_hex(
-        json!([
-            customer,
-            id,
-            fork,
-            body,
-            headers.get("if-match").and_then(|v| v.to_str().ok())
-        ])
-        .to_string()
-        .as_bytes(),
-    );
+    let version_header = headers.get("if-match").and_then(|v| v.to_str().ok());
+    // Keep the native receipt digest identical to released versions: pending v1 writes must still replay.
+    let identity = if garage {
+        json!([customer, id, fork, "garage", body, version_header])
+    } else {
+        json!([customer, id, fork, body, version_header])
+    };
+    let hash = sha256_hex(identity.to_string().as_bytes());
     let _lock = app.idem_locks.lock(&format!("sto:{key}")).await;
     let (k, rh) = (key.clone(), hash.clone());
     if let Some(r) = app.store.read(move |c| replay(c, &k, &rh)).await? {
@@ -474,13 +547,14 @@ async fn write(
     }
     if !fork && current != f["current_version"].as_i64() {
         let (cf, cv, cb, cd, ch) = content(&app, customer, &id, None).await?;
+        let (document, reason) = current_document(&app, &cb, cd).await;
         return Err(crate::userdata::version_conflict(detail(
             cf,
             cv,
             &sha256_hex(&cb),
-            cd.unwrap_or(Value::Null),
+            document,
             ch,
-            None,
+            reason,
             customer,
         )));
     }
@@ -523,7 +597,7 @@ async fn write(
                 let n=actual["current_version"].as_i64().unwrap_or(1);
                 let (s,d):(String,String)=tx.query_row("SELECT sha256,document_json FROM sto_revisions WHERE file_id=?1 AND version=?2",params![fid,n],|r|Ok((r.get(0)?,r.get(1)?)))?;
                 let h=history(&tx,&id,&actual)?;
-                return Err(crate::userdata::version_conflict(detail(actual,n,&s,serde_json::from_str(&d).map_err(|_|Error::internal("stored document invalid"))?,h,None,customer)));
+                return Err(crate::userdata::version_conflict(detail(actual,n,&s,native_cached(serde_json::from_str(&d).map_err(|_|Error::internal("stored document invalid"))?),h,None,customer)));
             }
             actual["current_version"].as_i64().unwrap_or(0)+1
         };
@@ -555,7 +629,7 @@ pub async fn save(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response> {
-    write(app, c, id, headers, body, false).await
+    write(app, c, id, headers, body, false, false).await
 }
 pub async fn save_as(
     State(app): State<AppState>,
@@ -563,7 +637,25 @@ pub async fn save_as(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response> {
-    write(app, c, id, headers, body, true).await
+    write(app, c, id, headers, body, true, false).await
+}
+
+pub async fn save_garage(
+    State(app): State<AppState>,
+    Path((c, id)): Path<(i64, String)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response> {
+    write(app, c, id, headers, body, false, true).await
+}
+
+pub async fn save_garage_as(
+    State(app): State<AppState>,
+    Path((c, id)): Path<(i64, String)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response> {
+    write(app, c, id, headers, body, true, true).await
 }
 
 pub async fn download(

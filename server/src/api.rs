@@ -83,6 +83,14 @@ pub fn router(app: AppState) -> Router {
             post(crate::sto::save_as),
         )
         .route(
+            "/drivers/{customer_id}/sto-files/{file_id}/garage",
+            post(crate::sto::save_garage),
+        )
+        .route(
+            "/drivers/{customer_id}/sto-files/{file_id}/garage/save-as",
+            post(crate::sto::save_garage_as),
+        )
+        .route(
             "/drivers/{customer_id}/sto-files/{file_id}/download",
             get(crate::sto::download),
         )

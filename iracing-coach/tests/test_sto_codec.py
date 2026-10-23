@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from decimal import Decimal
 import io
 import json
 from pathlib import Path
@@ -47,6 +48,65 @@ def container(text: str = TEXT, notes: str = "Synthetic notes 🏁", trailer: by
 
 @unittest.skipIf(AES is None, "STO codec tests require pycryptodome")
 class StoCodecTests(unittest.TestCase):
+    def garage_profile(self):
+        garage = codec.sto_garage
+        names = ["fuelFillToKg", "fBrakeBias", "unknownFutureParameter", "lfTireColdPressPa"]
+        return garage.Profile("synthetic-codec", 1, "Synthetic codec profile", ("synthetic\\testcar",),
+                              garage.layout_signature(names),
+                              (garage.Field("fBrakeBias", "Synthetic bias", "%", minimum=Decimal(0),
+                                            maximum=Decimal(100), step=Decimal("0.5"), step_base=Decimal(0)),),
+                              ("Synthetic test evidence",))
+
+    def test_garage_noop_preserves_original_container_and_decimal_spelling(self) -> None:
+        source, profile = container(), self.garage_profile()
+        with mock.patch.object(codec, "_garage_profile", return_value=profile):
+            self.assertEqual(codec.encode(source, MATERIAL, garage_changes={"fBrakeBias": "55.00"},
+                                          garage_profile_id=profile.profile_id), source)
+
+    def test_garage_edits_convert_in_python_and_preserve_other_native_tokens(self) -> None:
+        source, profile = container(), self.garage_profile()
+        with mock.patch.object(codec, "_garage_profile", return_value=profile):
+            result = codec.encode(source, MATERIAL, garage_changes={"fBrakeBias": "55.5"},
+                                  garage_profile_id=profile.profile_id, descriptor_version=2)
+        self.assertEqual(codec._unpack(result, MATERIAL).text, TEXT.replace("55.000000", "55.5"))
+
+    def test_legacy_native_route_cannot_bypass_verified_constraints(self) -> None:
+        profile = self.garage_profile()
+        with mock.patch.object(codec, "_garage_profile", return_value=profile), self.assertRaises(codec.StoError) as raised:
+            codec.encode(container(), MATERIAL, {"fBrakeBias": "55.1"})
+        self.assertEqual(raised.exception.code, "garage_off_grid")
+        self.assertEqual(raised.exception.field, "fBrakeBias")
+        self.assertEqual(raised.exception.representation, "native")
+
+    def test_native_and_garage_overlap_cannot_hide_in_unchanged_native_values(self) -> None:
+        profile = self.garage_profile()
+        with mock.patch.object(codec, "_garage_profile", return_value=profile), self.assertRaises(codec.StoError) as raised:
+            codec.encode(container(), MATERIAL, {"fBrakeBias": "55.000000"},
+                         garage_changes={"fBrakeBias": "55.5"}, garage_profile_id=profile.profile_id)
+        self.assertEqual(raised.exception.code, "ambiguous_change")
+
+    def test_unknown_native_car_and_unverified_material_have_native_fallback(self) -> None:
+        document = codec.decode(container(), MATERIAL)
+        self.assertEqual(document["descriptor_version"], 2)
+        self.assertIsNone(document["garage_profile_id"])
+        self.assertTrue(all("garage" not in setting for setting in document["settings"]))
+        with self.assertRaises(codec.StoError) as raised:
+            codec.encode(container(), MATERIAL, garage_changes={"fBrakeBias": "55.5"}, garage_profile_id="unknown")
+        self.assertEqual(raised.exception.code, "garage_profile_mismatch")
+
+    def test_cli_propagates_garage_profile_error_and_field_details(self) -> None:
+        profile = self.garage_profile()
+        request = {"operation": "encode", "profile_path": "private-profile.json",
+                   "data_base64": base64.b64encode(container()).decode(), "descriptor_version": 2,
+                   "garage_profile_id": profile.profile_id, "garage_changes": {"fBrakeBias": "55.1"}}
+        stdin, stdout = mock.Mock(buffer=io.BytesIO(json.dumps(request).encode())), io.StringIO()
+        with mock.patch.object(codec, "material_from_profile", return_value=MATERIAL), mock.patch.object(codec, "_garage_profile", return_value=profile), mock.patch.object(sys, "stdin", stdin), mock.patch.object(sys, "stdout", stdout):
+            self.assertEqual(codec.main([]), 2)
+        error = json.loads(stdout.getvalue())["error"]
+        self.assertEqual(error["code"], "garage_off_grid")
+        self.assertEqual(error["field"], "fBrakeBias")
+        self.assertEqual(error["representation"], "garage")
+
     def test_all_native_records_are_displayed_without_garage_renaming(self) -> None:
         doc = codec.decode(container(), MATERIAL)
         self.assertEqual(doc["internal_car_path"], "synthetic\\testcar")
