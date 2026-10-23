@@ -68,7 +68,7 @@ class StoCodecTests(unittest.TestCase):
         with mock.patch.object(codec, "_garage_profile", return_value=profile):
             result = codec.encode(source, MATERIAL, garage_changes={"fBrakeBias": "55.5"},
                                   garage_profile_id=profile.profile_id, descriptor_version=2)
-        self.assertEqual(codec._unpack(result, MATERIAL).text, TEXT.replace("55.000000", "55.5"))
+        self.assertEqual(codec._unpack(result, MATERIAL).text, TEXT.replace("55.000000", "55.500000"))
 
     def test_legacy_native_route_cannot_bypass_verified_constraints(self) -> None:
         profile = self.garage_profile()
@@ -128,7 +128,7 @@ class StoCodecTests(unittest.TestCase):
         source = container()
         updated = codec.encode(source, MATERIAL, {"fuelFillToKg": "+13.75"})
         original, edited = codec._unpack(source, MATERIAL), codec._unpack(updated, MATERIAL)
-        self.assertEqual(edited.text, TEXT.replace("+12.500000", "+13.75"))
+        self.assertEqual(edited.text, TEXT.replace("+12.500000", "13.750000"))
         self.assertEqual(edited.file_key, original.file_key)
         self.assertEqual(edited.trailer, original.trailer)
         self.assertEqual(edited.note_bytes, original.note_bytes)
@@ -138,7 +138,7 @@ class StoCodecTests(unittest.TestCase):
         source = container()
         updated = codec.encode(source, MATERIAL, {"fuelFillToKg": "1", "fBrakeBias": "55.123456789"})
         result = codec._unpack(updated, MATERIAL)
-        self.assertEqual(result.text, TEXT.replace("+12.500000", "1").replace("55.000000", "55.123456789"))
+        self.assertEqual(result.text, TEXT.replace("+12.500000", "1.000000").replace("55.000000", "55.123456789"))
         self.assertIn("1e+2 unknownFutureParameter", result.text)
         _, main_length, encrypted_length, notes_length = struct.unpack_from("<4I", updated)
         self.assertEqual(main_length, encrypted_length + notes_length + 40)
@@ -159,7 +159,48 @@ class StoCodecTests(unittest.TestCase):
 
     def test_unknown_present_parameter_can_be_preserved_or_explicitly_edited(self) -> None:
         result = codec.encode(container(), MATERIAL, {"unknownFutureParameter": "101"})
-        self.assertEqual(codec.decode(result, MATERIAL)["settings"][2]["raw_value"], "101")
+        self.assertEqual(codec.decode(result, MATERIAL)["settings"][2]["raw_value"], "101.000000")
+
+    def test_changed_integers_and_exponents_use_native_float_grammar_without_rounding(self) -> None:
+        # Native assignment starts only for a floating token. Bare integer tokens
+        # leave parameters at their native defaults; this oracle tests that grammar.
+        cases = (("4", "4.000000"), ("-4", "-4.000000"), ("+4e1", "40.000000"),
+                 ("1e-7", "0.0000001"), ("4.123456789", "4.123456789"),
+                 ("0e-9999999", "0.000000"))
+        for requested, expected in cases:
+            with self.subTest(requested=requested):
+                result = codec.encode(container(), MATERIAL, {"fuelFillToKg": requested})
+                unpacked = codec._unpack(result, MATERIAL)
+                raw = unpacked.records[0][1]
+                self.assertEqual(raw, expected)
+                self.assertRegex(raw, r"^-?\d+\.\d+$")
+                self.assertEqual(Decimal(raw), Decimal(requested))
+                self.assertEqual(unpacked.text, TEXT.replace("+12.500000", expected))
+
+    def test_native_float_expansion_is_bounded_before_serialization(self) -> None:
+        for value in ("1e-9999999", "1e9999999", "1e-100", "-1e-100"):
+            with self.subTest(value=value), self.assertRaises(codec.StoError) as raised:
+                codec.encode(container(), MATERIAL, {"fuelFillToKg": value})
+            self.assertEqual(raised.exception.code, "invalid_edit")
+            self.assertEqual(raised.exception.field, "fuelFillToKg")
+        precise = "0." + "0" * 59 + "1"
+        result = codec.encode(container(), MATERIAL, {"fuelFillToKg": precise})
+        self.assertEqual(codec._unpack(result, MATERIAL).records[0][1], precise)
+
+    def test_numeric_noops_preserve_original_integer_exponent_and_float_tokens(self) -> None:
+        source = container(TEXT.replace("55.000000", "55"))
+        self.assertEqual(codec.encode(source, MATERIAL, {"fBrakeBias": "55.0",
+                                                       "unknownFutureParameter": "100.000000",
+                                                       "fuelFillToKg": "12.5"}), source)
+
+    def test_garage_and_legacy_integer_routes_have_identical_native_float_output(self) -> None:
+        source, profile = container(), self.garage_profile()
+        with mock.patch.object(codec, "_garage_profile", return_value=profile):
+            garage_result = codec.encode(source, MATERIAL, garage_changes={"fBrakeBias": "56"},
+                                         garage_profile_id=profile.profile_id)
+            native_result = codec.encode(source, MATERIAL, {"fBrakeBias": "56"})
+        self.assertEqual(garage_result, native_result)
+        self.assertEqual(codec._unpack(native_result, MATERIAL).records[1][1], "56.000000")
 
     def test_absent_parameter_is_not_injected(self) -> None:
         with self.assertRaises(codec.StoError) as raised:
@@ -277,7 +318,7 @@ class StoCodecTests(unittest.TestCase):
         self.assertEqual(response["schema"], 1)
         updated = base64.b64decode(response["data_base64"])
         self.assertNotEqual(updated, data)
-        self.assertEqual(response["document"]["settings"][1]["raw_value"], "56")
+        self.assertEqual(response["document"]["settings"][1]["raw_value"], "56.000000")
         self.assertEqual(response["document"]["notes"], "Revision")
 
     def test_cli_rejects_invalid_request_or_base64(self) -> None:

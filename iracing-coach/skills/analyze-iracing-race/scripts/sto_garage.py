@@ -18,7 +18,7 @@ from typing import Any
 
 
 DESCRIPTOR_VERSION = 2
-REGISTRY_VERSION = 5  # Increment when any production mapping/evidence changes.
+REGISTRY_VERSION = 6  # Increment when any production mapping/evidence changes.
 VERIFIED_BINARY = "6581dd68f7fa4367ae874fd41b459597029058ddcba9829c90d8b710170e6362"
 XFINITY_LAYOUT = "fad6f45bbadb29c91b99ab28114beb0eec8deb0d85609a001981271c6daeab05"
 NATIVE_PA_PER_PSI = Decimal("6891.16015625")
@@ -207,6 +207,7 @@ PROFILES = (Profile(
      "2026-10-23 native one-click pressure and bias save: exact float32 pressure inverse and 0.5 grids",
      "2026-10-23 native steering ratio and LF LS compression clicks; LF tooltip minimum 1 maximum 10",
      "2026-10-23 separate RF/LR/RR pressure clicks reproduce the same exact native inverse",
+     "Verified native parameter loader requires floating tokens; changed values use exact fixed decimal spelling with at least six fractional places",
      "Camaro-header source and Supra-header native resave were verified in Supra; no separate Camaro garage session")),)
 
 

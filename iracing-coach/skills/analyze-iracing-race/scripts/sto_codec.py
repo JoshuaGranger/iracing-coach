@@ -30,6 +30,7 @@ MAX_REQUEST_BYTES = 24 * 1024 * 1024
 MAX_NOTES_BYTES = 0x4000  # Native v3 writer's limit, including the UTF-16 terminator.
 MAX_FIELDS = 8192
 MAX_NUMBER_CHARS = 64
+MAX_NATIVE_TOKEN_CHARS = 63  # Verified loader requests a 64-byte token buffer.
 MAX_NATIVE_MAGNITUDE = Decimal("1e12")  # Codec abuse bound; not a car adjustment limit.
 BINARY_SHA256 = "6581dd68f7fa4367ae874fd41b459597029058ddcba9829c90d8b710170e6362"
 MATERIAL_SHA256 = "233027744ac572091fa862faa36d5813d67680a57bf0a8018906d1a513bd2999"
@@ -313,6 +314,30 @@ def decode(data: bytes, material: Material) -> dict[str, Any]:
     return _document(_unpack(data, material), material)
 
 
+def _native_float_token(number: Decimal, name: str) -> str:
+    """Use native floating-token grammar without rounding the requested value.
+
+    The verified loader (0x1413042a0) starts a parameter assignment only for
+    lexer type 2, not integer type 1. Its writer uses "%f %s !\n". Six decimal
+    places match that writer; additional significant places remain exact.
+    Untouched values never pass through this serialization.
+    """
+    if not number:
+        return "0.000000"
+    sign, digits, exponent = number.as_tuple()
+    digits = list(digits)
+    while len(digits) > 1 and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    places = max(6, -exponent)
+    integral_places = max(1, len(digits) + exponent)
+    if sign + integral_places + 1 + places > MAX_NATIVE_TOKEN_CHARS:
+        raise StoError("Changed native number exceeds the supported token precision.", "invalid_edit", name, "native")
+    # Guard expansion before format: a short exponent input may request millions
+    # of zeroes. At this point fixed notation is bounded and cannot lose digits.
+    return format(Decimal((sign, tuple(digits), exponent)), f".{places}f")
+
+
 def _validated_changes(changes: Any, records: tuple[tuple[str, str, int, int], ...]) -> dict[str, str]:
     if not isinstance(changes, dict) or len(changes) > MAX_FIELDS:
         raise StoError("Changes must be an object of native names and decimal strings.", "invalid_edit")
@@ -333,8 +358,7 @@ def _validated_changes(changes: Any, records: tuple[tuple[str, str, int, int], .
                 raise StoError("This native value is outside the supported editing bound.", "invalid_edit", name, "native")
         except InvalidOperation as exc:
             raise StoError("Invalid native numeric edit.", "invalid_edit", name, "native") from exc
-        if raw != originals[name]:
-            result[name] = raw
+        result[name] = _native_float_token(number, name)
     return result
 
 
