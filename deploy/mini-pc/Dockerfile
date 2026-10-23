@@ -31,7 +31,8 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 COPY web web
 RUN pnpm -C web build
 
-# Stage 3: runtime. Python 3.12 (stdlib only, no PyYAML) runs the analysis worker.
+# Stage 3: runtime. Python 3.12 runs the stdlib analysis worker and the STO codec.
+# PyCryptodome is used only by the native setup codec; its material stays in /data.
 # The native stages need no setting here: with /usr/local/bin/coach-analysis present the
 # server's COACH_NATIVE_STAGES default is decode,kernels,writer, which it passes to every worker
 # with the executable's path, and which selects the native admission model
@@ -53,6 +54,7 @@ COPY iracing-coach /app/iracing-coach
 COPY contracts /app/contracts
 COPY deploy/mini-pc/nas_probe.py /app/deploy/nas_probe.py
 # Precompiled once here: the root filesystem is read-only at run time.
+RUN pip install --no-cache-dir -r /app/iracing-coach/requirements.txt
 RUN python3.12 -m compileall -q /app/iracing-coach /app/deploy \
     && "$COACH_PYTHON" -c "import sys; assert sys.version_info[:2] == (3, 12), sys.version" \
     && /usr/local/bin/coach-analysis --version

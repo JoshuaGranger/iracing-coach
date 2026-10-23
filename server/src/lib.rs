@@ -30,6 +30,7 @@ pub mod scheduler;
 pub mod schema;
 pub mod setup_identity;
 pub mod setups;
+pub mod sto;
 pub mod sys;
 pub mod tuning;
 pub mod userdata;

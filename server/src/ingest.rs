@@ -1279,12 +1279,17 @@ pub async fn restage_recording(app: &AppState, sha: &str) -> Result<()> {
     app.archiver
         .restage(
             sha,
-            if kind == "field" {
-                crate::archiver::ArchiveKind::FieldRecording
-            } else {
-                crate::archiver::ArchiveKind::Recording
+            match kind.as_str() {
+                "sto" | "htm" => crate::archiver::ArchiveKind::SetupFile,
+                "field" => crate::archiver::ArchiveKind::FieldRecording,
+                _ => crate::archiver::ArchiveKind::Recording,
             },
-            if kind == "field" { "field" } else { "ibt" },
+            match kind.as_str() {
+                "sto" => "sto",
+                "htm" => "htm",
+                "field" => "field",
+                _ => "ibt",
+            },
             ready_path(app, sha),
             app.cfg.spool_incoming(),
             Some(mtime),

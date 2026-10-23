@@ -16,6 +16,7 @@ name = "coach-server"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.22.1"
 coach-wire.workspace = true
 coach-ibt.workspace = true
 coach-live.workspace = true

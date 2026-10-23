@@ -37,9 +37,14 @@ pub const MIGRATIONS: &[(i64, &str, &str)] = &[
         "durable field recordings",
         include_str!("../migrations/0004_field_recordings.sql"),
     ),
+    (
+        5,
+        "immutable STO working versions",
+        include_str!("../migrations/0005_sto_versions.sql"),
+    ),
 ];
 
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 pub struct Store {
     writer: Mutex<Option<mpsc::Sender<WriteJob>>>,

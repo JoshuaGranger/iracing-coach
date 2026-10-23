@@ -461,6 +461,84 @@ async fn every_endpoint_answers_as_the_contract_says() {
         &env.get("/api/v1/setups/999999").await,
     );
 
+    // The file editor is separate from observed garage values. These deliberately opaque
+    // fixture bytes remain listed, locked and downloadable even when the codec refuses them.
+    let r = env.get("/api/v1/drivers/1001/sto-files").await;
+    assert_eq!(r.status, StatusCode::OK);
+    check(c, "GET", "/api/v1/drivers/{customer_id}/sto-files", &r);
+    let files = r.json();
+    let source = files["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["name"] == "baseline.sto")
+        .expect("the imported baseline is a separate locked source");
+    assert_eq!(source["locked"], true);
+    let file_path = format!(
+        "/api/v1/drivers/1001/sto-files/{}",
+        source["id"].as_str().unwrap()
+    );
+    let r = env.get(&file_path).await;
+    assert_eq!(r.status, StatusCode::OK);
+    check(
+        c,
+        "GET",
+        "/api/v1/drivers/{customer_id}/sto-files/{file_id}",
+        &r,
+    );
+    assert_eq!(r.json()["document"], Value::Null);
+    assert!(r.json()["unavailable_reason"].is_string());
+    let r = env.get(&format!("{file_path}/download?version=1")).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body.as_ref(), b"sto bytes");
+    check(
+        c,
+        "GET",
+        "/api/v1/drivers/{customer_id}/sto-files/{file_id}/download",
+        &r,
+    );
+    let edit = json!({"base_version": 1, "changes": {}}).to_string();
+    let r = env
+        .call(
+            Method::POST,
+            &file_path,
+            Some(axum::body::Bytes::from(edit)),
+            &[
+                ("content-type", "application/json"),
+                ("idempotency-key", "contract-locked-sto-save"),
+                ("if-match", "1"),
+            ],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    assert_eq!(r.json()["error"], "locked_source");
+    check(
+        c,
+        "POST",
+        "/api/v1/drivers/{customer_id}/sto-files/{file_id}",
+        &r,
+    );
+    let r = env
+        .call(
+            Method::POST,
+            &format!("{file_path}/save-as"),
+            Some(axum::body::Bytes::from(
+                json!({"name": "My baseline.sto", "base_version": 1, "changes": {}}).to_string(),
+            )),
+            &[
+                ("content-type", "application/json"),
+                ("idempotency-key", "contract-unreadable-sto-save-as"),
+            ],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    check(
+        c,
+        "POST",
+        "/api/v1/drivers/{customer_id}/sto-files/{file_id}/save-as",
+        &r,
+    );
+
     // nothing runs jobs yet: the comparison does not finish inside the wait and answers 202
     let r = env
         .post(

@@ -73,6 +73,19 @@ pub fn router(app: AppState) -> Router {
         .route("/analyses/{analysis_id}/traces", get(view_traces))
         .route("/analyses/{analysis_id}/track", get(view_track))
         .route("/drivers/{customer_id}/setups", get(setup_library))
+        .route("/drivers/{customer_id}/sto-files", get(crate::sto::list))
+        .route(
+            "/drivers/{customer_id}/sto-files/{file_id}",
+            get(crate::sto::open).post(crate::sto::save),
+        )
+        .route(
+            "/drivers/{customer_id}/sto-files/{file_id}/save-as",
+            post(crate::sto::save_as),
+        )
+        .route(
+            "/drivers/{customer_id}/sto-files/{file_id}/download",
+            get(crate::sto::download),
+        )
         .route("/setups/compare", post(setup_compare))
         .route("/setups/{setup_id}", get(setup_detail))
         .route(
@@ -224,7 +237,8 @@ async fn idempotency(State(app): State<AppState>, request: Request, next: Next) 
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
     let relevant = matches!(method, Method::POST | Method::PUT | Method::DELETE)
-        && !path.starts_with("/api/v1/uploads");
+        && !path.starts_with("/api/v1/uploads")
+        && !path.split('/').any(|part| part == "sto-files");
     let Some(key) = key.filter(|_| relevant) else {
         return next.run(request).await;
     };
