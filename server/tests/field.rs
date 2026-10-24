@@ -24,54 +24,63 @@ fn segment(subsession: i64, phase: i64) -> Vec<u8> {
 
 #[test]
 fn field_upgrade_preserves_existing_blobs_references_and_open_uploads() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("coach.sqlite3");
-    let mut conn = Connection::open(&path).unwrap();
-    conn.pragma_update(None, "foreign_keys", true).unwrap();
-    db::migrate_with(&mut conn, &path, "old", &db::MIGRATIONS[..3]).unwrap();
-    db::upsert_driver(&conn, 1001, Some("Fixture"), None).unwrap();
-    let sha = "a".repeat(64);
-    conn.execute("INSERT INTO blobs(sha256,size,kind,first_name,received_at) VALUES(?1,100,'ibt','old.ibt','2026-10-01T00:00:00Z')", [&sha]).unwrap();
-    conn.execute(
-        "INSERT INTO recordings(sha256,customer_id,ingest_state) VALUES(?1,1001,'parsed')",
-        [&sha],
-    )
-    .unwrap();
-    conn.execute("INSERT INTO sessions(session_id,customer_id,group_key,discovered_at) VALUES(1,1001,'old','2026-10-01T00:00:00Z')", []).unwrap();
-    conn.execute("INSERT INTO session_recordings VALUES(1,?1)", [&sha])
+    // Exercise both the original pre-field upgrade and the deployed STO-version schema
+    // immediately before the NAS migration rebuilds these referenced tables again.
+    for previous in [3, 5] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("coach.sqlite3");
+        let mut conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        db::migrate_with(&mut conn, &path, "old", &db::MIGRATIONS[..previous]).unwrap();
+        db::upsert_driver(&conn, 1001, Some("Fixture"), None).unwrap();
+        let sha = "a".repeat(64);
+        conn.execute("INSERT INTO blobs(sha256,size,kind,first_name,received_at) VALUES(?1,100,'ibt','old.ibt','2026-10-01T00:00:00Z')", [&sha]).unwrap();
+        conn.execute(
+            "INSERT INTO recordings(sha256,customer_id,ingest_state) VALUES(?1,1001,'parsed')",
+            [&sha],
+        )
         .unwrap();
-    conn.execute("INSERT INTO blob_occurrences(sha256,kind,file_name,customer_id,seen_at) VALUES(?1,'ibt','old.ibt',1001,'2026-10-01T00:00:00Z')", [&sha]).unwrap();
-    conn.execute("INSERT INTO uploads(sha256,size,kind,file_name,durable_offset,state,created_at,updated_at) VALUES(?1,100,'ibt','open.ibt',42,'open','a','b')", ["b".repeat(64)]).unwrap();
-    db::migrate(&mut conn, &path, "new").unwrap();
-    assert!(dir.path().join("pre-migrate-v3.sqlite3").exists());
-    let saved: (i64, String) = conn.query_row("SELECT b.size,r.ingest_state FROM blobs b JOIN recordings r ON r.sha256=b.sha256 JOIN session_recordings sr ON sr.recording_sha256=b.sha256 WHERE sr.session_id=1", [], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
-    assert_eq!(saved, (100, "parsed".into()));
-    assert_eq!(
-        conn.query_row("SELECT durable_offset FROM uploads", [], |r| r
-            .get::<_, i64>(0))
+        conn.execute("INSERT INTO sessions(session_id,customer_id,group_key,discovered_at) VALUES(1,1001,'old','2026-10-01T00:00:00Z')", []).unwrap();
+        conn.execute("INSERT INTO session_recordings VALUES(1,?1)", [&sha])
+            .unwrap();
+        conn.execute("INSERT INTO blob_occurrences(sha256,kind,file_name,customer_id,seen_at) VALUES(?1,'ibt','old.ibt',1001,'2026-10-01T00:00:00Z')", [&sha]).unwrap();
+        conn.execute("INSERT INTO uploads(sha256,size,kind,file_name,durable_offset,state,created_at,updated_at) VALUES(?1,100,'ibt','open.ibt',42,'open','a','b')", ["b".repeat(64)]).unwrap();
+        db::migrate(&mut conn, &path, "new").unwrap();
+        assert!(
+            dir.path()
+                .join(format!("pre-migrate-v{previous}.sqlite3"))
+                .exists()
+        );
+        let saved: (i64, String) = conn.query_row("SELECT b.size,r.ingest_state FROM blobs b JOIN recordings r ON r.sha256=b.sha256 JOIN session_recordings sr ON sr.recording_sha256=b.sha256 WHERE sr.session_id=1", [], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
+        assert_eq!(saved, (100, "parsed".into()));
+        assert_eq!(
+            conn.query_row("SELECT durable_offset FROM uploads", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            42
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM blob_occurrences", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r
+                .get::<_, i64>(
+                0
+            ))
             .unwrap(),
-        42
-    );
-    assert_eq!(
-        conn.query_row("SELECT COUNT(*) FROM blob_occurrences", [], |r| r
-            .get::<_, i64>(0))
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r
-            .get::<_, i64>(
             0
-        ))
-        .unwrap(),
-        0
-    );
-    assert_eq!(
-        conn.query_row("PRAGMA foreign_keys", [], |r| r.get::<_, i64>(0))
-            .unwrap(),
-        1
-    );
-    conn.execute("INSERT INTO blobs(sha256,size,kind,first_name,received_at) VALUES(?1,20,'field','fresh.field','now')", ["c".repeat(64)]).unwrap();
+        );
+        assert_eq!(
+            conn.query_row("PRAGMA foreign_keys", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        conn.execute("INSERT INTO blobs(sha256,size,kind,first_name,received_at) VALUES(?1,20,'field','fresh.field','now')", ["c".repeat(64)]).unwrap();
+        conn.execute("INSERT INTO blobs(sha256,size,kind,first_name,received_at) VALUES(?1,20,'rpy','fresh.rpy','now')", ["d".repeat(64)]).unwrap();
+    }
 }
 
 #[test]

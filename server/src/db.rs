@@ -106,7 +106,10 @@ pub fn migrate_with(
         }
     }
     for (version, description, sql) in pending {
-        if *version == 4 {
+        // Both migrations rebuild the content tables to extend their CHECK constraints.
+        // Disable enforcement outside the transaction, then validate the complete result.
+        let rebuilds_content_tables = matches!(*version, 4 | 6);
+        if rebuilds_content_tables {
             conn.pragma_update(None, "foreign_keys", false)?;
         }
         let migrated = (|| -> Result<()> {
@@ -118,21 +121,21 @@ pub fn migrate_with(
                 rusqlite::params![version, crate::util::iso_now(), description, app_version],
             )?;
             }
-            if *version == 4 {
+            if rebuilds_content_tables {
                 let violations: i64 =
                     tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
                         r.get(0)
                     })?;
                 if violations != 0 {
-                    return Err(Error::internal(
-                        "field migration failed foreign key validation",
-                    ));
+                    return Err(Error::internal(format!(
+                        "migration {version} failed foreign key validation"
+                    )));
                 }
             }
             tx.commit()?;
             Ok(())
         })();
-        if *version == 4 {
+        if rebuilds_content_tables {
             conn.pragma_update(None, "foreign_keys", true)?;
         }
         migrated?;
