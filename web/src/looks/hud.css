@@ -91,7 +91,7 @@
   }
 
   /* ---- frames: four corner brackets over a hairline, no rounding, no shadow ---- */
-  & :is(.panel, .card, .bc-card, .sx-event, .ri-card, .ri-panel, .ri-sl-map, .ri-sl-laps, .ri-sl-open, .tile, .notice, .ds .s-car, .ds .d-head, .ds .d-card, .ds .value-group, .ds .b-cand:not(.none), .setups-page .s-board, .setups-page .s-sto, .tuning-page .t-recs, .tuning-page .result-card, .outbox) {
+  & :is(.panel, .card, .bc-card, .sx-event, .ri-card, .ri-panel, .ri-sl-map, .ri-sl-laps, .ri-sl-open, .ri-results-summary, .ri-field-race, .tile, .notice, .ds .s-car, .ds .d-head, .ds .d-card, .ds .value-group, .ds .b-cand:not(.none), .setups-page .s-board, .setups-page .s-sto, .tuning-page .t-recs, .tuning-page .result-card, .outbox) {
     border: 1px solid var(--hud-line);
     border-radius: 0;
     box-shadow: none;
@@ -225,7 +225,7 @@
     letter-spacing: 0.12em;
     clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
   }
-  & :is(.btn, button:not([class]), button:is(.on, .danger, .btn-accent, .icon-btn, .kit-tab-on, .kit-tab-off), .ds .s-baseline, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-sl-tab):hover:not(:disabled) {
+  & :is(.btn, button:not([class]), button:is(.on, .danger, .btn-accent, .icon-btn, .kit-tab-on, .kit-tab-off), .ds .s-baseline, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-sl-tab):hover:not(:disabled, .btn-accent, .ri-pill-button.primary, .kit-tab-on, [aria-selected="true"], [aria-pressed="true"]) {
     background: rgb(216 251 255 / 0.12);
   }
   & :is(.btn, button:not([class]), button:is(.on, .danger, .btn-accent, .icon-btn, .kit-tab-on, .kit-tab-off), .ds .s-baseline, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-sl-tab):focus-visible {
@@ -525,6 +525,11 @@
   & :is(.ri-card-title, .ri-rail-title) {
     font-weight: 600;
     letter-spacing: 0.18em;
+    white-space: nowrap;
+  }
+  /* Trace row names: Oxanium runs wider than the display face, so the names keep tight tracking. */
+  & .ri-row-copy strong {
+    letter-spacing: 0.03em;
   }
   /* A lamp before every board title. */
   & :is(.ri-card-title, .ri-rail-title)::before {
@@ -536,6 +541,25 @@
     vertical-align: middle;
     background: var(--color-interaction);
     box-shadow: var(--hud-glow);
+  }
+  & .ri-results-summary .ri-chart-head strong {
+    font: 600 1rem / 1.2 var(--font-display);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  & .ri-results-summary .ri-chart-head strong::before {
+    content: "";
+    display: inline-block;
+    width: 0.375rem;
+    height: 0.375rem;
+    margin: 0 0.625rem 0.15em 0;
+    vertical-align: middle;
+    background: var(--color-interaction);
+    box-shadow: var(--hud-glow);
+  }
+  & .ri-results-table th {
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
   }
   & .ri-card-label .ri-card-title {
     font-size: 1rem;
@@ -616,10 +640,10 @@
   & :is(.setups-page .s-car-choice, .ds .s-files-toggle, .ds .s-fcar-toggle, .ds .s-car-toggle) {
     border-radius: 0;
   }
-  & .ds h1,
+  /* A setup's own name keeps its case: it is a file name. */
   & .ds .d-head h1 {
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-transform: none;
   }
   & .tile-value,
   & .tile-primary {
