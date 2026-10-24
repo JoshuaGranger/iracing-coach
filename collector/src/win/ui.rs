@@ -6,15 +6,15 @@
 //! a second per changing tile, not a full 540 x 360 repaint with a new bitmap each time).
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateBitmap, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC,
     DeleteObject, EndPaint, GetMonitorInfoW, HGDIOBJ, InvalidateRect, MONITOR_DEFAULTTONEAREST,
-    MONITORINFO, MonitorFromPoint, PAINTSTRUCT, SRCCOPY, SelectObject,
+    MONITORINFO, MonitorFromPoint, PAINTSTRUCT, SRCCOPY, SelectObject, SetViewportOrgEx,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -27,23 +27,23 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
     DestroyMenu, DestroyWindow, DispatchMessageW, GWLP_USERDATA, GetCursorPos, GetMessageW,
-    GetWindowLongPtrW, GetWindowRect, GetWindowTextW, HICON, HMENU, HTCAPTION, HWND_TOPMOST,
-    ICONINFO, IDC_ARROW, IsDialogMessageW, KillTimer, LWA_ALPHA, LoadCursorW, MENU_ITEM_FLAGS,
-    MF_CHECKED, MF_DISABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, PostMessageW,
-    PostQuitMessage, RegisterClassExW, SM_CXSCREEN, SPI_GETWORKAREA, SW_HIDE, SW_SHOWNOACTIVATE,
-    SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
-    SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    SystemParametersInfoW, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu,
-    TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_COMMAND, WM_DESTROY, WM_ERASEBKGND,
-    WM_EXITSIZEMOVE, WM_HOTKEY, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NULL, WM_PAINT,
-    WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW, WS_BORDER, WS_CAPTION, WS_CHILD, WS_EX_DLGMODALFRAME,
-    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_SYSMENU,
-    WS_TABSTOP, WS_VISIBLE,
+    GetWindowLongPtrW, GetWindowRect, HICON, HTCAPTION, HTCLIENT, HWND_TOPMOST, ICONINFO,
+    IDC_ARROW, KillTimer, LWA_ALPHA, LoadCursorW, MENU_ITEM_FLAGS, MF_CHECKED, MF_DISABLED,
+    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, PostMessageW, PostQuitMessage,
+    RegisterClassExW, SM_CXSCREEN, SPI_GETWORKAREA, SW_HIDE, SW_SHOWNOACTIVATE, SW_SHOWNORMAL,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetLayeredWindowAttributes,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, TPM_BOTTOMALIGN,
+    TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_APP, WM_COMMAND, WM_DESTROY, WM_DEVICECHANGE, WM_ERASEBKGND, WM_EXITSIZEMOVE,
+    WM_HOTKEY, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_NCHITTEST, WM_NULL, WM_PAINT, WM_RBUTTONUP,
+    WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_POPUP,
 };
 use windows::core::PCWSTR;
 
 use super::render::{Dirty, Frame, Renderer, window_size};
 use super::wheel_panel::WheelPanel;
+use super::wheel_panel::capture_indicator;
 use super::{QuitEvent, wide};
 use crate::config::{Config, normalize_server};
 use crate::hotkey::parse_hotkey;
@@ -64,13 +64,12 @@ const HOTKEY_ID: i32 = 0x4937;
 
 const ID_STATUS: usize = 100;
 const ID_SERVER_STATUS: usize = 101;
+const ID_RECORDING_STATUS: usize = 102;
 const ID_SHOW: usize = 110;
 const ID_SCALE_BASE: usize = 120;
-const ID_PAUSE: usize = 130;
 const ID_OPEN: usize = 140;
 const ID_SERVER: usize = 150;
 const ID_WHEEL_RECORDER: usize = 160;
-const ID_WHEEL_MARK: usize = 161;
 const ID_EXIT: usize = 199;
 
 const SCALES: [(&str, f64); 3] = [("Compact", 0.8), ("Standard", 1.0), ("Expanded", 1.25)];
@@ -183,7 +182,7 @@ pub fn run(params: UiParams) -> UiExit {
 
         let layout = initial_layout(&params.hub, &params.config);
         let scale = params.config.placement.scale;
-        let (w, h) = window_size(scale);
+        let (w, h) = overlay_size(scale);
         let (x, y) = initial_position(&params.config, w, h);
         let overlay = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
@@ -217,13 +216,14 @@ pub fn run(params: UiParams) -> UiExit {
         )
         .expect("create controller window");
 
+        let wheel_panel = WheelPanel::with_state_dir(params.state_dir.clone());
         let app = Box::new(App {
             hub: params.hub,
             config: params.config,
             state_dir: params.state_dir,
             quit: params.quit,
             wheel: params.wheel,
-            wheel_panel: WheelPanel::default(),
+            wheel_panel,
             overlay,
             controller,
             renderer: Renderer::new(),
@@ -249,7 +249,11 @@ pub fn run(params: UiParams) -> UiExit {
         {
             let app = &mut *app_ptr;
             app.register_hotkey();
+            let _ = app.wheel.send(WheelCommand::Initialize {
+                window: controller.0 as isize,
+            });
             app.update_tray(true);
+            app.apply_visibility();
         }
         SetTimer(Some(controller), TIMER_ID, TIMER_MS, None);
 
@@ -398,6 +402,22 @@ fn make_icon(rgb: u32) -> HICON {
 }
 
 impl App {
+    fn recording_status(&self) -> String {
+        self.wheel.try_snapshot().map_or_else(
+            || "RECORDING STATUS UNAVAILABLE".into(),
+            |status| {
+                let usb = if status.usb.contains("trace recording (") {
+                    "USB ON"
+                } else if status.usb.contains("pending") {
+                    "USB PENDING"
+                } else {
+                    "USB OFF"
+                };
+                format!("{} · {usb}", capture_indicator(&status))
+            },
+        )
+    }
+
     fn register_hotkey(&mut self) {
         if let Some((mods, vk)) = parse_hotkey(&self.config.hotkey) {
             // SAFETY: registers against our own controller window.
@@ -514,7 +534,8 @@ impl App {
 
     fn update_tray(&mut self, force: bool) {
         let (sim, server) = self.status_lines();
-        let tip = format!("iRacing Coach · {sim} · {server}");
+        let recording = self.recording_status();
+        let tip = format!("iRacing Coach · {recording} · {sim} · {server}");
         let live = self.hub.live().is_some_and(|s| s.connected);
         if force || self.tray_live != Some(live) || self.tray_tip != tip {
             let message = if self.tray_live.is_none() {
@@ -533,6 +554,12 @@ impl App {
         unsafe {
             let menu = CreatePopupMenu().expect("popup menu");
             let (sim, server) = self.status_lines();
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING | MF_DISABLED | MF_GRAYED,
+                ID_RECORDING_STATUS,
+                PCWSTR(wide(&self.recording_status()).as_ptr()),
+            );
             let _ = AppendMenuW(
                 menu,
                 MF_STRING | MF_DISABLED | MF_GRAYED,
@@ -569,13 +596,6 @@ impl App {
                 sizes.0 as usize,
                 PCWSTR(wide("Monitor size").as_ptr()),
             );
-            let paused = self.hub.paused.load(Ordering::Relaxed);
-            let _ = AppendMenuW(
-                menu,
-                MF_STRING | check(paused),
-                ID_PAUSE,
-                PCWSTR(wide("Pause coaching cue").as_ptr()),
-            );
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             let _ = AppendMenuW(
                 menu,
@@ -589,33 +609,11 @@ impl App {
                 ID_SERVER,
                 PCWSTR(wide("Set server address...").as_ptr()),
             );
-            let troubleshooting = CreatePopupMenu().expect("troubleshooting menu");
             let _ = AppendMenuW(
-                troubleshooting,
+                menu,
                 MF_STRING,
                 ID_WHEEL_RECORDER,
-                PCWSTR(wide("Wheel interruption recorder...").as_ptr()),
-            );
-            let _ = AppendMenuW(
-                menu,
-                MF_STRING | MF_POPUP,
-                troubleshooting.0 as usize,
-                PCWSTR(wide("Troubleshooting").as_ptr()),
-            );
-            let can_mark = self
-                .wheel
-                .try_snapshot()
-                .is_some_and(|s| s.running && !s.busy);
-            let _ = AppendMenuW(
-                menu,
-                MF_STRING
-                    | if can_mark {
-                        MENU_ITEM_FLAGS(0)
-                    } else {
-                        MF_DISABLED | MF_GRAYED
-                    },
-                ID_WHEEL_MARK,
-                PCWSTR(wide("Mark wheel incident").as_ptr()),
+                PCWSTR(wide("USB diagnostics...").as_ptr()),
             );
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             let _ = AppendMenuW(menu, MF_STRING, ID_EXIT, PCWSTR(wide("Exit").as_ptr()));
@@ -642,17 +640,12 @@ impl App {
             ID_SHOW => {
                 self.config.monitor_visible = !self.config.monitor_visible;
                 self.save_config();
-                let connected = self.hub.live().is_some_and(|s| s.connected);
-                self.apply_visibility(connected);
+                self.apply_visibility();
             }
             i if (ID_SCALE_BASE..ID_SCALE_BASE + SCALES.len()).contains(&i) => {
                 self.config.placement.scale = SCALES[i - ID_SCALE_BASE].1;
                 self.resize_overlay();
                 self.save_config();
-            }
-            ID_PAUSE => {
-                let now = !self.hub.paused.load(Ordering::Relaxed);
-                self.hub.paused.store(now, Ordering::Relaxed);
             }
             ID_OPEN => {
                 let url = wide(&self.config.server);
@@ -672,15 +665,6 @@ impl App {
             ID_WHEEL_RECORDER => {
                 if let Err(error) = self.wheel_panel.show(self.controller, &self.wheel) {
                     crate::warn!("wheel recorder window unavailable: {error}");
-                }
-            }
-            ID_WHEEL_MARK => {
-                if self
-                    .wheel
-                    .try_snapshot()
-                    .is_some_and(|s| s.running && !s.busy)
-                {
-                    let _ = self.wheel.send(WheelCommand::MarkIncident);
                 }
             }
             ID_EXIT => {
@@ -710,24 +694,14 @@ impl App {
                 }
             }
             Ok(_) => {}
-            Err(e) => {
-                // SAFETY: a plain message box.
-                unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::MessageBoxW(
-                        Some(self.controller),
-                        PCWSTR(wide(&e.to_string()).as_ptr()),
-                        PCWSTR(wide("Server address").as_ptr()),
-                        windows::Win32::UI::WindowsAndMessaging::MB_OK,
-                    );
-                }
-            }
+            Err(error) => crate::warn!("server dialog returned an invalid address: {error}"),
         }
     }
 
     // ---- overlay ----
 
     fn resize_overlay(&mut self) {
-        let (w, h) = window_size(self.config.placement.scale);
+        let (w, h) = overlay_size(self.config.placement.scale);
         // SAFETY: repositions our own window without activating it.
         unsafe {
             let mut rect = RECT::default();
@@ -770,9 +744,9 @@ impl App {
             if let Some(r) = rects.get(i) {
                 let area = RECT {
                     left: r.x,
-                    top: r.y,
+                    top: r.y + monitor_header_height(self.config.placement.scale),
                     right: r.x + r.w,
-                    bottom: r.y + r.h,
+                    bottom: r.y + r.h + monitor_header_height(self.config.placement.scale),
                 };
                 // SAFETY: invalidates a rectangle of our own window.
                 unsafe {
@@ -782,8 +756,8 @@ impl App {
         }
     }
 
-    fn apply_visibility(&mut self, connected: bool) {
-        let want = self.config.monitor_visible && connected;
+    fn apply_visibility(&mut self) {
+        let want = self.config.monitor_visible;
         if want != self.visible {
             self.visible = want;
             // SAFETY: shows or hides our own window without activating it.
@@ -833,10 +807,11 @@ impl App {
             self.invalidate();
         }
         let live = self.hub.live();
-        self.apply_visibility(live.is_some_and(|s| s.connected));
+        self.apply_visibility();
         if self.last_tray.elapsed().as_millis() >= TRAY_REFRESH_MS {
             self.last_tray = Instant::now();
             self.update_tray(false);
+            self.wheel_panel.on_timer(&self.wheel);
         }
         if !self.visible {
             return;
@@ -884,16 +859,17 @@ impl App {
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(self.overlay, &mut ps);
             let (w, h) = window_size(self.config.placement.scale);
+            let (_, total_height) = overlay_size(self.config.placement.scale);
             if self
                 .back
                 .as_ref()
-                .is_some_and(|b| b.width != w || b.height != h)
+                .is_some_and(|b| b.width != w || b.height != total_height)
                 && let Some(old) = self.back.take()
             {
                 old.destroy();
             }
             if self.back.is_none() {
-                self.back = Some(BackBuffer::create(hdc, w, h));
+                self.back = Some(BackBuffer::create(hdc, w, total_height));
                 self.repaint = Repaint::All;
             }
             if let Some(back) = &self.back {
@@ -906,12 +882,27 @@ impl App {
                     state: state.as_ref(),
                     now_ms: self.hub.clock.mono_ms(),
                 };
+                let _ = SetViewportOrgEx(
+                    back.dc,
+                    0,
+                    monitor_header_height(self.config.placement.scale),
+                    None,
+                );
                 match std::mem::replace(&mut self.repaint, Repaint::Tiles(Vec::new())) {
                     Repaint::All => self.renderer.paint(back.dc, &frame),
                     Repaint::Tiles(tiles) if !tiles.is_empty() => {
                         self.renderer.paint_tiles(back.dc, &frame, &tiles)
                     }
                     Repaint::Tiles(_) => {}
+                }
+                let _ = SetViewportOrgEx(back.dc, 0, 0, None);
+                if ps.rcPaint.top < monitor_header_height(self.config.placement.scale) {
+                    self.renderer.paint_monitor_header(
+                        back.dc,
+                        w,
+                        self.config.placement.scale,
+                        self.config.monitor_locked,
+                    );
                 }
                 // Only the invalidated area is copied: that is what changed on screen.
                 let area = ps.rcPaint;
@@ -933,6 +924,15 @@ impl App {
             let _ = EndPaint(self.overlay, &ps);
         }
     }
+}
+
+fn monitor_header_height(scale: f64) -> i32 {
+    (26.0 * scale).round() as i32
+}
+
+fn overlay_size(scale: f64) -> (i32, i32) {
+    let (w, h) = window_size(scale);
+    (w, h + monitor_header_height(scale))
 }
 
 unsafe fn app_of(hwnd: HWND) -> Option<&'static mut App> {
@@ -961,7 +961,32 @@ unsafe extern "system" fn overlay_proc(
             WM_ERASEBKGND => return LRESULT(1),
             WM_MOUSEACTIVATE => return LRESULT(3), // MA_NOACTIVATE
             WM_NCHITTEST => {
-                return LRESULT(HTCAPTION as isize);
+                if let Some(app) = app_of(hwnd) {
+                    let mut rect = RECT::default();
+                    let _ = GetWindowRect(hwnd, &mut rect);
+                    let x = (lparam.0 as u32 & 0xFFFF) as i16 as i32 - rect.left;
+                    let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as i32 - rect.top;
+                    return LRESULT(monitor_hit_test(
+                        x,
+                        y,
+                        rect.right - rect.left,
+                        app.config.placement.scale,
+                        app.config.monitor_locked,
+                    ) as isize);
+                }
+            }
+            WM_LBUTTONUP => {
+                if let Some(app) = app_of(hwnd) {
+                    let (w, _) = overlay_size(app.config.placement.scale);
+                    let x = (lparam.0 as u32 & 0xFFFF) as i16 as i32;
+                    let y = ((lparam.0 as u32 >> 16) & 0xFFFF) as i16 as i32;
+                    if lock_contains(x, y, w, app.config.placement.scale) {
+                        app.config.monitor_locked = !app.config.monitor_locked;
+                        app.save_config();
+                        app.invalidate();
+                        return LRESULT(0);
+                    }
+                }
             }
             WM_EXITSIZEMOVE => {
                 if let Some(app) = app_of(hwnd) {
@@ -974,6 +999,19 @@ unsafe extern "system" fn overlay_proc(
     }
 }
 
+fn lock_contains(x: i32, y: i32, width: i32, scale: f64) -> bool {
+    let bounds = super::render::monitor_lock_bounds(width, scale);
+    x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom
+}
+
+fn monitor_hit_test(x: i32, y: i32, width: i32, scale: f64, locked: bool) -> u32 {
+    if locked || lock_contains(x, y, width, scale) {
+        HTCLIENT
+    } else {
+        HTCAPTION
+    }
+}
+
 unsafe extern "system" fn controller_proc(
     hwnd: HWND,
     msg: u32,
@@ -983,6 +1021,12 @@ unsafe extern "system" fn controller_proc(
     // SAFETY: window procedure for our own class on the UI thread.
     unsafe {
         match msg {
+            WM_DEVICECHANGE => {
+                if let Some(app) = app_of(hwnd) {
+                    let _ = app.wheel.send(WheelCommand::Refresh);
+                }
+                return LRESULT(0);
+            }
             WM_TIMER => {
                 if let Some(app) = app_of(hwnd) {
                     app.on_timer();
@@ -991,10 +1035,12 @@ unsafe extern "system" fn controller_proc(
             }
             TRAY_MSG => {
                 let event = lparam.0 as u32 & 0xFFFF;
-                if (event == WM_RBUTTONUP || event == WM_LBUTTONUP)
-                    && let Some(app) = app_of(hwnd)
-                {
-                    app.show_menu();
+                if let Some(app) = app_of(hwnd) {
+                    if event == WM_LBUTTONUP {
+                        app.on_command(ID_SHOW);
+                    } else if event == WM_RBUTTONUP {
+                        app.show_menu();
+                    }
                 }
                 return LRESULT(0);
             }
@@ -1020,123 +1066,187 @@ unsafe extern "system" fn controller_proc(
     }
 }
 
-// ---- server address prompt ----
+// ---- themed server address prompt ----
 
-static DIALOG_DONE: AtomicBool = AtomicBool::new(false);
-static DIALOG_RESULT: Mutex<Option<String>> = Mutex::new(None);
-static DIALOG_EDIT: AtomicIsize = AtomicIsize::new(0);
+struct ServerPrompt {
+    theme: super::dialog_theme::DialogTheme,
+    edit: HWND,
+    error: HWND,
+    result: Option<String>,
+    done: bool,
+}
 
 const ID_DLG_OK: usize = 1;
 const ID_DLG_CANCEL: usize = 2;
 
-/// A small modal prompt for the server address; None when cancelled.
-///
 /// # Safety
-/// Must run on the UI thread.
+/// Creates and runs a native modal dialog on the UI thread.
 unsafe fn prompt_server(owner: HWND, current: &str) -> Option<String> {
-    // SAFETY: creates, runs and destroys a dialog window and its children on this thread.
+    use windows::Win32::UI::Controls::EM_SETSEL;
+    use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        EnableWindow, SetFocus, VK_ESCAPE, VK_RETURN,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    // SAFETY: only application-owned windows, controls and buffers on the calling UI thread.
     unsafe {
-        let instance: HINSTANCE = GetModuleHandleW(PCWSTR::null())
-            .map(|h| h.into())
-            .unwrap_or_default();
+        let instance: HINSTANCE = GetModuleHandleW(PCWSTR::null()).ok()?.into();
         register_class(instance, "CoachServerDialog", Some(dialog_proc), true);
-        DIALOG_DONE.store(false, Ordering::SeqCst);
-        *DIALOG_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        let dpi = GetDpiForWindow(owner).max(96);
+        let px = |v: i32| v * dpi as i32 / 96;
+        let mut bounds = RECT {
+            left: 0,
+            top: 0,
+            right: px(480),
+            bottom: px(240),
+        };
+        let style = WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN;
+        let extra = WS_EX_DLGMODALFRAME | WS_EX_CONTROLPARENT;
+        let _ = AdjustWindowRectExForDpi(&mut bounds, style, false, extra, dpi);
         let area = work_area_at(0, 0);
-        let (w, h) = (400, 132);
+        let (width, height) = (bounds.right - bounds.left, bounds.bottom - bounds.top);
         let dlg = CreateWindowExW(
-            WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+            extra,
             PCWSTR(wide("CoachServerDialog").as_ptr()),
-            PCWSTR(wide("Server address").as_ptr()),
-            WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-            area.left + (area.right - area.left - w) / 2,
-            area.top + (area.bottom - area.top - h) / 3,
-            w,
-            h,
+            PCWSTR(wide("Server address — iRacing Coach").as_ptr()),
+            style,
+            area.left + (area.right - area.left - width) / 2,
+            area.top + (area.bottom - area.top - height) / 3,
+            width,
+            height,
             Some(owner),
             None,
             Some(instance),
             None,
         )
         .ok()?;
+        let mut state = Box::new(ServerPrompt {
+            theme: super::dialog_theme::DialogTheme::new(dpi),
+            edit: HWND::default(),
+            error: HWND::default(),
+            result: None,
+            done: false,
+        });
+        SetWindowLongPtrW(
+            dlg,
+            GWLP_USERDATA,
+            (&mut *state as *mut ServerPrompt) as isize,
+        );
+        super::dialog_theme::apply_titlebar(dlg);
         let child = |class: &str,
                      text: &str,
-                     style: WINDOW_STYLE,
+                     flags: WINDOW_STYLE,
                      x: i32,
                      y: i32,
-                     cw: i32,
-                     ch: i32,
+                     w: i32,
+                     h: i32,
                      id: usize| {
-            CreateWindowExW(
+            let window = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 PCWSTR(wide(class).as_ptr()),
                 PCWSTR(wide(text).as_ptr()),
-                WS_CHILD | WS_VISIBLE | style,
-                x,
-                y,
-                cw,
-                ch,
+                WS_CHILD | WS_VISIBLE | flags,
+                px(x),
+                px(y),
+                px(w),
+                px(h),
                 Some(dlg),
                 Some(HMENU(id as *mut _)),
                 Some(instance),
                 None,
             )
-            .unwrap_or_default()
+            .unwrap_or_default();
+            state.theme.apply_font(window);
+            super::dialog_theme::style_control(window);
+            window
         };
         child(
             "STATIC",
-            "Collector server (host:port)",
+            "Coach server",
             WINDOW_STYLE(0),
-            12,
+            24,
+            20,
+            432,
+            26,
             10,
-            360,
-            18,
-            0,
+        );
+        child(
+            "STATIC",
+            "Address of your Coach server on the mini PC.",
+            WINDOW_STYLE(0),
+            24,
+            54,
+            432,
+            22,
+            11,
         );
         let edit = child(
             "EDIT",
             current,
-            WS_BORDER | WS_TABSTOP | WINDOW_STYLE(0x80),
-            12,
-            32,
-            360,
+            WS_TABSTOP | WS_BORDER | WINDOW_STYLE(ES_AUTOHSCROLL as u32),
             24,
-            0,
+            88,
+            432,
+            34,
+            12,
         );
-        DIALOG_EDIT.store(edit.0 as isize, Ordering::SeqCst);
-        child(
-            "BUTTON",
-            "OK",
-            WS_TABSTOP | WINDOW_STYLE(0x1),
-            200,
-            66,
-            80,
-            26,
-            ID_DLG_OK,
-        );
+        let error = child("STATIC", "", WINDOW_STYLE(0), 24, 134, 432, 38, 13);
         child(
             "BUTTON",
             "Cancel",
-            WS_TABSTOP,
-            292,
-            66,
-            80,
-            26,
+            WS_TABSTOP | WINDOW_STYLE(BS_OWNERDRAW as u32),
+            224,
+            184,
+            100,
+            36,
             ID_DLG_CANCEL,
         );
+        child(
+            "BUTTON",
+            "Save address",
+            WS_TABSTOP | WINDOW_STYLE(BS_OWNERDRAW as u32),
+            336,
+            184,
+            120,
+            36,
+            ID_DLG_OK,
+        );
+        state.edit = edit;
+        state.error = error;
+        let _ = EnableWindow(owner, false);
+        let _ = ShowWindow(dlg, SW_SHOWNORMAL);
         let _ = SetForegroundWindow(dlg);
-
+        let _ = SetFocus(Some(edit));
+        SendMessageW(edit, EM_SETSEL, Some(WPARAM(0)), Some(LPARAM(-1)));
         let mut msg = MSG::default();
-        while !DIALOG_DONE.load(Ordering::SeqCst) && GetMessageW(&mut msg, None, 0, 0).as_bool() {
-            if !IsDialogMessageW(dlg, &msg).as_bool() {
+        loop {
+            if state.done {
+                break;
+            }
+            let result = GetMessageW(&mut msg, None, 0, 0).0;
+            if result <= 0 {
+                if result == 0 {
+                    PostQuitMessage(msg.wParam.0 as i32);
+                }
+                let _ = DestroyWindow(dlg);
+                break;
+            }
+            if msg.message == WM_KEYDOWN
+                && (msg.wParam.0 == VK_RETURN.0 as usize || msg.wParam.0 == VK_ESCAPE.0 as usize)
+            {
+                let command = if msg.wParam.0 == VK_RETURN.0 as usize {
+                    ID_DLG_OK
+                } else {
+                    ID_DLG_CANCEL
+                };
+                SendMessageW(dlg, WM_COMMAND, Some(WPARAM(command)), None);
+            } else if !IsDialogMessageW(dlg, &msg).as_bool() {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
         }
-        DIALOG_RESULT
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
+        let _ = EnableWindow(owner, true);
+        state.result.take()
     }
 }
 
@@ -1146,17 +1256,59 @@ unsafe extern "system" fn dialog_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // SAFETY: window procedure for our own dialog class on the UI thread.
+    use windows::Win32::Graphics::Gdi::{FillRect, HDC, SetTextColor};
+    use windows::Win32::UI::Controls::DRAWITEMSTRUCT;
+    use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    // SAFETY: pointer is installed after creation and remains alive until after dialog destruction.
     unsafe {
+        let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ServerPrompt;
+        if pointer.is_null() {
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
+        }
         match msg {
+            WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT | WM_CTLCOLORBTN => {
+                let dc = HDC(wparam.0 as *mut _);
+                let result = (*pointer).theme.control_colors(dc, msg == WM_CTLCOLOREDIT);
+                if HWND(lparam.0 as *mut _) == (*pointer).error {
+                    SetTextColor(
+                        dc,
+                        super::render::colorref(super::dialog_theme::palette().danger),
+                    );
+                }
+                return result;
+            }
+            WM_DRAWITEM if lparam.0 != 0 => {
+                (*pointer)
+                    .theme
+                    .paint_button(&*(lparam.0 as *const DRAWITEMSTRUCT), wparam.0 == ID_DLG_OK);
+                return LRESULT(1);
+            }
+            WM_ERASEBKGND => return LRESULT(1),
+            WM_PAINT => {
+                let mut paint = PAINTSTRUCT::default();
+                let dc = BeginPaint(hwnd, &mut paint);
+                FillRect(dc, &paint.rcPaint, (*pointer).theme.background);
+                let _ = EndPaint(hwnd, &paint);
+                return LRESULT(0);
+            }
             WM_COMMAND => match wparam.0 & 0xFFFF {
                 ID_DLG_OK => {
-                    let edit = HWND(DIALOG_EDIT.load(Ordering::SeqCst) as *mut _);
-                    let mut buf = [0u16; 256];
-                    let n = GetWindowTextW(edit, &mut buf).max(0) as usize;
-                    *DIALOG_RESULT.lock().unwrap_or_else(|e| e.into_inner()) =
-                        Some(String::from_utf16_lossy(&buf[..n]));
-                    let _ = DestroyWindow(hwnd);
+                    let mut buffer = [0u16; 512];
+                    let len = GetWindowTextW((*pointer).edit, &mut buffer).max(0) as usize;
+                    match normalize_server(&String::from_utf16_lossy(&buffer[..len])) {
+                        Ok(server) => {
+                            (*pointer).result = Some(server);
+                            let _ = DestroyWindow(hwnd);
+                        }
+                        Err(error) => {
+                            let _ = SetWindowTextW(
+                                (*pointer).error,
+                                PCWSTR(wide(&error.to_string()).as_ptr()),
+                            );
+                            let _ = SetFocus(Some((*pointer).edit));
+                        }
+                    }
                     return LRESULT(0);
                 }
                 ID_DLG_CANCEL => {
@@ -1165,18 +1317,98 @@ unsafe extern "system" fn dialog_proc(
                 }
                 _ => {}
             },
-            windows::Win32::UI::WindowsAndMessaging::WM_CLOSE => {
+            WM_CLOSE => {
                 let _ = DestroyWindow(hwnd);
                 return LRESULT(0);
             }
             WM_DESTROY => {
-                DIALOG_DONE.store(true, Ordering::SeqCst);
-                // Wake the nested loop so it sees the flag.
+                (*pointer).done = true;
                 let _ = PostMessageW(None, WM_NULL, WPARAM(0), LPARAM(0));
                 return LRESULT(0);
+            }
+            WM_NCDESTROY => {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
             _ => {}
         }
         DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monitor_can_drag_until_locked_and_lock_stays_clickable() {
+        assert_eq!(monitor_hit_test(80, 120, 540, 1.0, false), HTCAPTION);
+        assert_eq!(monitor_hit_test(80, 120, 540, 1.0, true), HTCLIENT);
+        assert_eq!(monitor_hit_test(525, 12, 540, 1.0, false), HTCLIENT);
+        assert_eq!(monitor_hit_test(525, 12, 540, 1.0, true), HTCLIENT);
+        assert!(lock_contains(788, 18, 810, 1.5));
+        assert!(!lock_contains(780, 80, 810, 1.5));
+    }
+
+    #[test]
+    fn server_dialog_validates_inline_before_saving() {
+        use windows::Win32::Graphics::Gdi::UpdateWindow;
+        use windows::Win32::UI::WindowsAndMessaging::*;
+        let target_thread = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
+        let target_process = unsafe { windows::Win32::System::Threading::GetCurrentProcessId() };
+        let driver = std::thread::spawn(move || {
+            let deadline = Instant::now() + std::time::Duration::from_secs(5);
+            let window = loop {
+                let mut previous = None;
+                let mut selected = None;
+                // SAFETY: enumerate by class, then require this exact test's process and UI thread.
+                unsafe {
+                    while let Ok(window) = FindWindowExW(
+                        None,
+                        previous,
+                        PCWSTR(wide("CoachServerDialog").as_ptr()),
+                        PCWSTR::null(),
+                    ) {
+                        let mut process = 0;
+                        let thread = GetWindowThreadProcessId(window, Some(&mut process));
+                        if thread == target_thread
+                            && process == target_process
+                            && IsWindowVisible(window).as_bool()
+                        {
+                            selected = Some(window);
+                            break;
+                        }
+                        previous = Some(window);
+                    }
+                }
+                if let Some(window) = selected {
+                    break window;
+                }
+                assert!(Instant::now() < deadline, "test server dialog did not open");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            };
+            // SAFETY: messages to controls of the isolated test dialog, never the installed app.
+            unsafe {
+                let edit = GetDlgItem(Some(window), 12).unwrap();
+                SetWindowTextW(edit, PCWSTR(wide("https://unsupported").as_ptr())).unwrap();
+                SendMessageW(window, WM_COMMAND, Some(WPARAM(ID_DLG_OK)), None);
+                assert!(IsWindow(Some(window)).as_bool());
+                let error = GetDlgItem(Some(window), 13).unwrap();
+                let mut text = [0u16; 256];
+                assert!(GetWindowTextW(error, &mut text) > 0);
+                if let Ok(path) = std::env::var("COACH_SERVER_UI_SNAPSHOT") {
+                    let _ = UpdateWindow(window);
+                    super::super::dialog_theme::save_test_bitmap(
+                        window,
+                        std::path::Path::new(&path),
+                    );
+                }
+                SetWindowTextW(edit, PCWSTR(wide("192.168.1.81:8210").as_ptr())).unwrap();
+                SendMessageW(window, WM_COMMAND, Some(WPARAM(ID_DLG_OK)), None);
+            }
+        });
+        // SAFETY: native modal dialog on this test's UI thread; no networking or persistence.
+        let answer = unsafe { prompt_server(HWND::default(), "http://localhost:8210") };
+        driver.join().unwrap();
+        assert_eq!(answer.as_deref(), Some("http://192.168.1.81:8210"));
     }
 }

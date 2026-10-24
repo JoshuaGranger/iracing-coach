@@ -40,6 +40,16 @@ pub fn window_size(scale: f64) -> (i32, i32) {
     )
 }
 
+/// Click target for the lock icon in the monitor's top-right corner.
+pub fn monitor_lock_bounds(width: i32, scale: f64) -> RECT {
+    RECT {
+        left: width - (26.0 * scale).round() as i32,
+        top: (2.0 * scale).round() as i32,
+        right: width - (4.0 * scale).round() as i32,
+        bottom: (24.0 * scale).round() as i32,
+    }
+}
+
 /// Everything `Renderer::paint` needs besides the device context.
 #[derive(Clone, Copy)]
 pub struct Frame<'a> {
@@ -77,6 +87,80 @@ impl Default for Renderer {
 }
 
 impl Renderer {
+    /// Small permanent lock control; the racing tiles keep their original geometry below it.
+    pub fn paint_monitor_header(&mut self, hdc: HDC, width: i32, scale: f64, locked: bool) {
+        let colors = super::dialog_theme::palette();
+        let height = (26.0 * scale).round() as i32;
+        // SAFETY: caller-owned back buffer; every temporary GDI object is restored/deleted.
+        unsafe {
+            fill(hdc, 0, 0, width, height, colors.app);
+            SetBkMode(hdc, TRANSPARENT);
+        }
+        self.text(
+            hdc,
+            "iRacing Coach",
+            RectI::new(
+                (10.0 * scale) as i32,
+                0,
+                width - (46.0 * scale) as i32,
+                height,
+            ),
+            colors.muted,
+            11.0 * scale,
+            500,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+        let r = monitor_lock_bounds(width, scale);
+        let px = |v: f64| (v * scale).round() as i32;
+        unsafe {
+            let pen = CreatePen(
+                PS_SOLID,
+                px(1.4).max(1),
+                colorref(if locked { colors.text } else { colors.muted }),
+            );
+            let brush = CreateSolidBrush(colorref(colors.surface));
+            let old_pen = SelectObject(hdc, HGDIOBJ(pen.0));
+            let old_brush = SelectObject(hdc, HGDIOBJ(brush.0));
+            let _ = RoundRect(
+                hdc,
+                r.left + px(4.0),
+                r.top + px(9.0),
+                r.right - px(4.0),
+                r.bottom - px(3.0),
+                px(3.0),
+                px(3.0),
+            );
+            let x = r.left + px(7.0);
+            let y = r.top + px(4.0);
+            let points = if locked {
+                vec![
+                    POINT { x, y: y + px(5.0) },
+                    POINT { x, y },
+                    POINT { x: x + px(6.0), y },
+                    POINT {
+                        x: x + px(6.0),
+                        y: y + px(5.0),
+                    },
+                ]
+            } else {
+                vec![
+                    POINT { x, y: y + px(5.0) },
+                    POINT { x, y },
+                    POINT { x: x + px(6.0), y },
+                    POINT {
+                        x: x + px(6.0),
+                        y: y + px(2.0),
+                    },
+                ]
+            };
+            let _ = Polyline(hdc, &points);
+            SelectObject(hdc, old_pen);
+            SelectObject(hdc, old_brush);
+            let _ = DeleteObject(HGDIOBJ(pen.0));
+            let _ = DeleteObject(HGDIOBJ(brush.0));
+        }
+    }
+
     pub fn new() -> Renderer {
         Renderer {
             fonts: HashMap::new(),
@@ -584,7 +668,7 @@ impl Renderer {
         weight: i32,
         flags: DRAW_TEXT_FORMAT,
     ) {
-        if rect.w <= 0 || rect.h <= 0 {
+        if s.is_empty() || rect.w <= 0 || rect.h <= 0 {
             return;
         }
         let font = self.font(px.round() as i32, weight);

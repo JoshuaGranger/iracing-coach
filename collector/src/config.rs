@@ -49,6 +49,7 @@ pub struct Config {
     pub server: String,
     pub placement: Placement,
     pub monitor_visible: bool,
+    pub monitor_locked: bool,
     pub safe_glance: bool,
     /// `ctrl+shift+L` style text; empty = no hotkey.
     pub hotkey: String,
@@ -65,6 +66,7 @@ impl Default for Config {
             server: DEFAULT_SERVER.to_string(),
             placement: Placement::default(),
             monitor_visible: true,
+            monitor_locked: false,
             safe_glance: true,
             hotkey: String::new(),
             layout: None,

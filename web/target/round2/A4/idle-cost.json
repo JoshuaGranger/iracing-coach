@@ -3,24 +3,24 @@
   "seconds": 4,
   "board": {
     "frames": 241,
-    "meanFrameMs": 16.62,
+    "meanFrameMs": 16.61,
     "p95FrameMs": 16.8,
-    "scriptMsPerS": 57,
-    "styleLayoutMsPerS": 30
+    "scriptMsPerS": 49,
+    "styleLayoutMsPerS": 32
   },
   "editorIdle": {
-    "frames": 242,
-    "meanFrameMs": 16.59,
-    "p95FrameMs": 16.7,
-    "scriptMsPerS": 47,
-    "styleLayoutMsPerS": 33
+    "frames": 241,
+    "meanFrameMs": 16.64,
+    "p95FrameMs": 16.8,
+    "scriptMsPerS": 42,
+    "styleLayoutMsPerS": 42
   },
   "editorSelected": {
     "frames": 241,
-    "meanFrameMs": 16.62,
-    "p95FrameMs": 16.7,
-    "scriptMsPerS": 44,
-    "styleLayoutMsPerS": 33
+    "meanFrameMs": 16.61,
+    "p95FrameMs": 16.8,
+    "scriptMsPerS": 42,
+    "styleLayoutMsPerS": 36
   },
   "rateMessages": []
 }

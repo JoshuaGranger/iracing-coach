@@ -1,6 +1,8 @@
 //! Windows-only parts: the shared-memory map, the overlay and tray, the directory watcher, thread
 //! priority, the single-instance mutex and the install commands.
 
+pub mod diagnostics_overlay;
+pub mod dialog_theme;
 pub mod direct_input;
 pub mod install;
 pub mod map;
