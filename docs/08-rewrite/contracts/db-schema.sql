@@ -508,8 +508,6 @@ CREATE TABLE sto_write_receipts (
   response_json TEXT NOT NULL
 );
 
-
--- Migration 6: canonical NAS library synchronization (2026-10-24).
 -- NAS library: payloads are cataloged once, deletions are terminal until a verified share restore.
 CREATE TABLE blobs_sync (
   sha256 TEXT PRIMARY KEY, size INTEGER NOT NULL,
