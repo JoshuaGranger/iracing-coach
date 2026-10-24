@@ -324,8 +324,122 @@ fn fingerprint(path: &Path) -> Result<String> {
     }
     file_signature(&crate::sys::open_nofollow(path)?)
 }
+struct Claim {
+    payload: crate::sys::AnchoredPath,
+    published: crate::sys::AnchoredPath,
+    receipt: String,
+}
+fn claim(root: &Path, dest: &Path, sha: &str, size: u64) -> Result<Claim> {
+    let kind = dest.extension().and_then(|s| s.to_str()).unwrap_or("");
+    if !matches!(kind, "ibt" | "sto" | "htm" | "rpy") || !crate::util::is_sha256_hex(sha) {
+        return Err(Error::invalid("invalid relocation claim identity"));
+    }
+    let parent = anchor(
+        root,
+        &format!("library/.catalog/claims/{kind}/.create"),
+        true,
+    )?;
+    let dir = parent.parent().unwrap().join(sha);
+    #[cfg(unix)]
+    let builder = {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder
+    };
+    #[cfg(not(unix))]
+    let builder = fs::DirBuilder::new();
+    let created = match builder.create(&dir) {
+        Ok(()) => {
+            fsync_dir(parent.parent().unwrap())?;
+            true
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(e) => return Err(e.into()),
+    };
+    let base = format!("library/.catalog/claims/{kind}/{sha}");
+    let payload = anchor(root, &format!("{base}/payload"), false)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if created {
+            // The production NAS inherits 0777 even for mkdir(mode0700). Explicit
+            // fchmod on this newly created, pinned directory is supported there.
+            crate::sys::make_parent_private(&payload)?;
+            fsync_dir(payload.parent().unwrap())?;
+        }
+        if fs::metadata(payload.parent().unwrap())?.mode() & 0o077 != 0 {
+            return Err(Error::conflict(
+                "library_conflict",
+                "relocation claim directory is not private",
+            ));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = created;
+    let receipt = format!("{sha}:{size}\n");
+    let receipt_path = anchor(root, &format!("{base}/receipt"), false)?;
+    write_receipt(&receipt_path, &receipt)?;
+    let published = anchor(root, &format!("{base}/published"), false)?;
+    Ok(Claim {
+        payload,
+        published,
+        receipt,
+    })
+}
+fn write_receipt(path: &Path, receipt: &str) -> Result<()> {
+    match read_small(path, 128) {
+        Ok(bytes) if bytes == receipt.as_bytes() => return Ok(()),
+        Ok(_) => {
+            return Err(Error::conflict(
+                "library_conflict",
+                "relocation receipt identity differs",
+            ));
+        }
+        Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    // Publish complete metadata atomically inside the private, pinned directory. A
+    // process kill during the write cannot leave a partial receipt blocking recovery.
+    let tmp = path
+        .parent()
+        .unwrap()
+        .join(format!("receipt-{}.tmp", new_uuid()));
+    let result = (|| -> Result<()> {
+        let mut file = OpenOptions::new().create_new(true).write(true).open(&tmp)?;
+        file.write_all(receipt.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&tmp, path)?;
+        fsync_dir(path.parent().unwrap())?;
+        Ok(())
+    })();
+    let _ = fs::remove_file(tmp);
+    result
+}
+fn finish_claim(claim: &Claim, dest: &Path, verified: Verified, faults: &Faults) -> Result<Reply> {
+    let signature = verified.signature.clone();
+    if fingerprint(dest)? != signature || file_signature(&verified.file)? != signature {
+        return Ok(Reply::Conflict(
+            "published claim changed after verification".into(),
+        ));
+    }
+    write_receipt(&claim.published, &claim.receipt)?;
+    faults.check("library.after_publish_receipt")?;
+    // Only the app-owned leaf inside a pinned private directory can be removed here.
+    // The original source name is never unlinked, including during recovery.
+    drop(verified);
+    if exists(&claim.payload)? {
+        fs::remove_file(&claim.payload)?;
+        fsync_dir(claim.payload.parent().unwrap())?;
+    }
+    faults.check("library.after_claim_unlink")?;
+    faults.check("archive.after_data_rename")?;
+    Ok(Reply::Present(signature))
+}
 fn relocate(
-    src: &Path,
+    root: &Path,
+    src: Option<&Path>,
     dest: &Path,
     sha: &str,
     size: u64,
@@ -333,6 +447,17 @@ fn relocate(
     faults: &Faults,
 ) -> Result<Reply> {
     check(gate)?;
+    let claim = claim(root, dest, sha, size)?;
+    let published = exists(&claim.published)?;
+    if published {
+        write_receipt(&claim.published, &claim.receipt)?;
+        if !exists(dest)? {
+            return Err(Error::unavailable(
+                60,
+                "published canonical file is missing; relocation will not recreate it",
+            ));
+        }
+    }
     if exists(dest)? {
         let verified = hash(dest, gate)?;
         if verified.hash != sha || verified.size != size {
@@ -340,76 +465,57 @@ fn relocate(
                 "canonical path holds different bytes".into(),
             ));
         }
-        if exists(src)? {
-            if !crate::sys::same_file(src, dest)? {
+        if exists(&claim.payload)? {
+            if !crate::sys::same_file(&claim.payload, dest)? {
                 return Ok(Reply::Conflict(
-                    "legacy and canonical paths are independent payloads; preserved".into(),
+                    "claim and canonical payload differ; both preserved".into(),
                 ));
             }
-            if fingerprint(dest)? != verified.signature
-                || file_signature(&verified.file)? != verified.signature
-            {
-                return Ok(Reply::Conflict(
-                    "recovery payload changed after verification".into(),
-                ));
-            }
-            let signature = verified.signature.clone();
-            drop(verified);
-            fs::remove_file(src)?;
-            fsync_dir(src.parent().unwrap())?;
-            return Ok(Reply::Present(signature));
+            return finish_claim(&claim, dest, verified, faults);
+        }
+        if !published && src.is_some_and(|p| p.exists()) {
+            return Ok(Reply::Conflict(
+                "source and canonical names both exist; both preserved for recovery".into(),
+            ));
         }
         return Ok(Reply::Present(verified.signature));
     }
-    if !exists(src)? {
-        return Ok(Reply::Missing);
+    if !exists(&claim.payload)? {
+        let Some(src) = src else {
+            return Ok(Reply::Missing);
+        };
+        if !exists(src)? {
+            return Ok(Reply::Missing);
+        }
+        // The exclusive private directory has no externally editable target leaf.
+        // A same-filesystem rename claims whichever source bytes exist atomically.
+        faults.check("library.before_claim")?;
+        fs::rename(src, &claim.payload)?;
+        fsync_dir(claim.payload.parent().unwrap())?;
+        fsync_dir(src.parent().unwrap())?;
+        faults.check("library.after_claim")?;
     }
-    let verified = hash(src, gate)?;
+    check(gate)?;
+    let verified = hash(&claim.payload, gate)?;
     if verified.hash != sha || verified.size != size {
-        return Ok(Reply::Conflict("legacy/inbox hash differs".into()));
+        return Ok(Reply::Conflict(format!(
+            "claimed source hash differs; bytes preserved in library/.catalog/claims/{}/{sha}/payload",
+            dest.extension().unwrap().to_string_lossy()
+        )));
     }
     faults.check("archive.after_readback")?;
-    publish_verified(src, dest, sha, size, gate, faults, verified)
-}
-
-fn publish_verified(
-    src: &Path,
-    dest: &Path,
-    sha: &str,
-    size: u64,
-    gate: &Gate,
-    faults: &Faults,
-    verified: Verified,
-) -> Result<Reply> {
-    check(gate)?;
     fs::create_dir_all(dest.parent().unwrap())?;
-    // No-replace relocation; a transient second name references the SAME physical file.
-    match fs::hard_link(src, dest) {
+    match fs::hard_link(&claim.payload, dest) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return relocate(src, dest, sha, size, gate, faults);
+            return relocate(root, src, dest, sha, size, gate, faults);
         }
         Err(e) => return Err(e.into()),
     }
     fsync_dir(dest.parent().unwrap())?;
     faults.check("library.after_link")?;
-    if fingerprint(dest)? != verified.signature
-        || file_signature(&verified.file)? != verified.signature
-    {
-        return Ok(Reply::Conflict("relocated payload changed".into()));
-    }
-    if !crate::sys::same_file(src, dest)? {
-        return Ok(Reply::Conflict(
-            "source name changed during relocation; preserved".into(),
-        ));
-    }
-    let signature = verified.signature.clone();
-    drop(verified);
-    fs::remove_file(src)?;
-    fsync_dir(src.parent().unwrap())?;
-    faults.check("library.after_unlink")?;
-    faults.check("archive.after_data_rename")?;
-    Ok(Reply::Present(signature))
+    check(gate)?;
+    finish_claim(&claim, dest, verified, faults)
 }
 fn inspect(
     root: &Path,
@@ -437,7 +543,9 @@ fn inspect(
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let parent = dest.parent().unwrap();
-            let m = fs::symlink_metadata(parent)?;
+            // `parent` is an already pinned descriptor path on Linux, not an untrusted
+            // pathname. Inspect its target directory rather than the /proc fd symlink.
+            let m = fs::metadata(parent)?;
             if !regular(&m) || !m.is_dir() {
                 return Err(Error::unavailable(60, "library parent unavailable"));
             }
@@ -663,16 +771,18 @@ pub fn execute(root: &Path, faults: &Faults, request: Request, gate: Gate) -> Re
             if let Some(legacy) = legacy {
                 match anchor(root, &legacy, false) {
                     Ok(src) => {
-                        if exists(&src)? || exists(&dest)? {
-                            return relocate(&src, &dest, &sha, size, &gate, faults);
+                        let result = relocate(root, Some(&src), &dest, &sha, size, &gate, faults)?;
+                        if !matches!(result, Reply::Missing) {
+                            return Ok(result);
                         }
                     }
                     Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
                     Err(e) => return Err(e),
                 }
             }
-            if exists(&dest)? {
-                return inspect(root, &path, &sha, size, None, &gate);
+            let recovered = relocate(root, None, &dest, &sha, size, &gate, faults)?;
+            if !matches!(recovered, Reply::Missing) {
+                return Ok(recovered);
             }
             let Some(source) = source else {
                 return Ok(Reply::Missing);
@@ -700,7 +810,7 @@ pub fn execute(root: &Path, faults: &Faults, request: Request, gate: Gate) -> Re
                 return Err(e);
             }
             faults.check("archive.after_tmp_write")?;
-            let result = relocate(&tmp, &dest, &sha, size, &gate, faults);
+            let result = relocate(root, Some(&tmp), &dest, &sha, size, &gate, faults);
             if result.is_err() && !matches!(result, Err(Error::Crash(_))) {
                 let _ = fs::remove_file(&tmp);
             }
@@ -857,7 +967,7 @@ pub fn execute(root: &Path, faults: &Faults, request: Request, gate: Gate) -> Re
                 return Err(Error::unavailable(60, "inbox changed before adoption"));
             }
             let dest = anchor(root, &path, true)?;
-            relocate(&src, &dest, &sha, file.size, &gate, faults)
+            relocate(root, Some(&src), &dest, &sha, file.size, &gate, faults)
         }
         Request::Identity(_) => unreachable!(),
     }
@@ -866,41 +976,132 @@ pub fn execute(root: &Path, faults: &Faults, request: Request, gate: Gate) -> Re
 #[cfg(test)]
 mod verification_tests {
     use super::*;
+
+    #[cfg(unix)]
     #[test]
-    fn publication_cannot_accept_bytes_replaced_after_hashing() {
+    fn private_mode_correction_uses_the_pinned_directory_not_a_replacement_name() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("new-claim");
+        let retained = dir.path().join("retained-claim");
+        fs::create_dir(&source).unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o777)).unwrap();
+        let pinned = anchor(dir.path(), "new-claim/payload", false).unwrap();
+        fs::rename(&source, &retained).unwrap();
+        fs::create_dir(&source).unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o777)).unwrap();
+        crate::sys::make_parent_private(&pinned).unwrap();
+        assert_eq!(
+            fs::metadata(retained).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(source).unwrap().permissions().mode() & 0o777,
+            0o777
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_permissive_claim_directory_is_preserved_and_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let sha = crate::util::sha256_hex(b"private-mode fixture");
+        let claim_dir = dir
+            .path()
+            .join(format!("library/.catalog/claims/sto/{sha}"));
+        fs::create_dir_all(&claim_dir).unwrap();
+        fs::set_permissions(&claim_dir, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(claim(dir.path(), &dir.path().join("canonical.sto"), &sha, 20).is_err());
+        assert_eq!(
+            fs::metadata(claim_dir).unwrap().permissions().mode() & 0o777,
+            0o777
+        );
+    }
+
+    #[test]
+    fn a_source_replaced_before_claim_is_preserved_as_a_conflict() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("source");
-        let dest = dir.path().join("canonical");
+        let dest = dir.path().join("canonical.sto");
         let bytes = b"verified old bytes";
         fs::write(&src, bytes).unwrap();
         let gate: Gate = Arc::new(|| true);
-        let verified = hash(&src, &gate).unwrap();
-        let expected = verified.hash.clone();
-        #[cfg(unix)]
-        {
-            fs::rename(&src, dir.path().join("retained-original")).unwrap();
-            fs::write(&src, vec![b'X'; bytes.len()]).unwrap();
-        }
-        #[cfg(windows)]
-        {
-            fs::write(&src, vec![b'X'; bytes.len()]).unwrap();
-        }
-        let reply = publish_verified(
-            &src,
+        let expected = crate::util::sha256_hex(bytes);
+        fs::rename(&src, dir.path().join("retained-original")).unwrap();
+        fs::write(&src, vec![b'X'; bytes.len()]).unwrap();
+        let reply = relocate(
+            dir.path(),
+            Some(&src),
             &dest,
             &expected,
             bytes.len() as u64,
             &gate,
             &Faults::default(),
-            verified,
         )
         .unwrap();
         assert!(matches!(reply, Reply::Conflict(_)));
-        assert!(src.exists());
-        #[cfg(unix)]
+        let claim = claim(dir.path(), &dest, &expected, bytes.len() as u64).unwrap();
+        assert_eq!(fs::read(&claim.payload).unwrap(), vec![b'X'; bytes.len()]);
+        assert!(!dest.exists());
         assert_eq!(
             fs::read(dir.path().join("retained-original")).unwrap(),
             bytes
         );
+    }
+
+    #[test]
+    fn a_replacement_source_name_after_atomic_move_is_never_unlinked() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.sto");
+        let dest = dir.path().join("canonical.sto");
+        let original = b"verified source bytes";
+        let replacement = b"new editor save must survive";
+        fs::write(&src, original).unwrap();
+        let expected = crate::util::sha256_hex(original);
+        let (replace_source, canonical) = (src.clone(), dest.clone());
+        let gate: Gate = Arc::new(move || {
+            if canonical.exists() && !replace_source.exists() {
+                fs::write(&replace_source, replacement).unwrap();
+            }
+            true
+        });
+        let reply = relocate(
+            dir.path(),
+            Some(&src),
+            &dest,
+            &expected,
+            original.len() as u64,
+            &gate,
+            &Faults::default(),
+        )
+        .unwrap();
+        assert!(matches!(reply, Reply::Present(_)));
+        assert_eq!(fs::read(src).unwrap(), replacement);
+        assert_eq!(fs::read(dest).unwrap(), original);
+    }
+
+    #[test]
+    fn recovery_never_unlinks_an_existing_source_name_even_when_it_was_an_alias() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.sto");
+        let dest = dir.path().join("canonical.sto");
+        let bytes = b"recovery fixture";
+        fs::write(&dest, bytes).unwrap();
+        fs::hard_link(&dest, &src).unwrap();
+        let gate: Gate = Arc::new(|| true);
+        let reply = relocate(
+            dir.path(),
+            Some(&src),
+            &dest,
+            &crate::util::sha256_hex(bytes),
+            bytes.len() as u64,
+            &gate,
+            &Faults::default(),
+        )
+        .unwrap();
+        assert!(matches!(reply, Reply::Conflict(_)));
+        assert_eq!(fs::read(src).unwrap(), bytes);
+        assert_eq!(fs::read(dest).unwrap(), bytes);
     }
 }

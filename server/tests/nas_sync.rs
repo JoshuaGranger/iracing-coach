@@ -295,11 +295,13 @@ async fn quiet_inbox_is_adopted_locked_idempotent_and_delivered_only_to_persiste
 }
 
 #[tokio::test]
-async fn pending_inbox_adoption_recovers_after_link_crash_without_duplicate_payload() {
+async fn pending_inbox_adoption_recovers_after_claim_crashes_without_duplicate_payload() {
     for cut in [
         "library.inbox_after_intent",
+        "library.after_claim",
         "library.after_link",
-        "library.after_unlink",
+        "library.after_publish_receipt",
+        "library.after_claim_unlink",
     ] {
         let env = Env::new().await;
         owner(&env).await;
@@ -331,13 +333,11 @@ async fn pending_inbox_adoption_recovers_after_link_crash_without_duplicate_payl
         if cut == "library.inbox_after_intent" {
             assert!(input.exists());
             assert!(!dest.exists());
-        } else if cut == "library.after_link" {
-            assert!(input.exists());
-            assert!(dest.exists());
-            assert!(coach_server::sys::same_file(&input, &dest).unwrap());
         } else {
             assert!(!input.exists());
-            assert!(dest.exists());
+            if cut != "library.after_claim" {
+                assert!(dest.exists());
+            }
         }
         let env = env.restart().await;
         passes(&env).await;
@@ -400,7 +400,12 @@ fn path_budgets_and_windows_reserved_names_are_not_silently_redirected() {
 
 #[tokio::test]
 async fn legacy_relocation_has_no_independent_copy_and_recovers_both_crash_cuts() {
-    for cut in ["library.after_link", "library.after_unlink"] {
+    for cut in [
+        "library.after_claim",
+        "library.after_link",
+        "library.after_publish_receipt",
+        "library.after_claim_unlink",
+    ] {
         let env = Env::new().await;
         let bytes = format!("legacy relocation {cut}").into_bytes();
         let sha = replay(&env, &bytes).await;
@@ -408,6 +413,12 @@ async fn legacy_relocation_has_no_independent_copy_and_recovers_both_crash_cuts(
         let legacy = env.nas().join(format!("replays/{}/{sha}.rpy", &sha[..2]));
         std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
         std::fs::rename(&dest, &legacy).unwrap();
+        // Model an archive from before library claims existed, rather than a published
+        // canonical file removed by a user (which must never be restored).
+        let prior_claim = env.nas().join(format!("library/.catalog/claims/rpy/{sha}"));
+        for name in ["published", "receipt"] {
+            std::fs::remove_file(prior_claim.join(name)).unwrap();
+        }
         let identity = coach_server::sys::file_identity(&legacy).unwrap();
         let key = sha.clone();
         env.app
@@ -421,12 +432,18 @@ async fn legacy_relocation_has_no_independent_copy_and_recovers_both_crash_cuts(
         env.faults.arm(cut, FaultMode::Crash);
         assert!(nas_library::reconcile(&env.app).await.is_err());
         let dest = canonical(&env, &sha);
-        assert!(dest.exists());
-        assert_eq!(coach_server::sys::file_identity(&dest).unwrap(), identity);
-        if cut.ends_with("link") && !cut.ends_with("unlink") {
-            assert!(legacy.exists());
-            assert!(coach_server::sys::same_file(&legacy, &dest).unwrap());
-        }
+        let current = if cut == "library.after_claim" {
+            env.nas()
+                .join(format!("library/.catalog/claims/rpy/{sha}/payload"))
+        } else {
+            dest.clone()
+        };
+        assert!(current.exists());
+        assert_eq!(
+            coach_server::sys::file_identity(&current).unwrap(),
+            identity
+        );
+        assert!(!legacy.exists());
         let env = env.restart().await;
         passes(&env).await;
         assert!(!legacy.exists());

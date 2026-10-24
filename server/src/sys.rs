@@ -23,6 +23,17 @@ impl AsRef<Path> for AnchoredPath {
     }
 }
 
+/// Correct NAS create-mode inheritance only on a directory this operation just created.
+/// The descriptor remains pinned, so replacing its pathname cannot redirect chmod.
+#[cfg(unix)]
+pub fn make_parent_private(path: &AnchoredPath) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    path._parents
+        .last()
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
+        .set_permissions(std::fs::Permissions::from_mode(0o700))
+}
+
 pub fn anchor_nas(root: &Path, relative: &str, create: bool) -> std::io::Result<AnchoredPath> {
     let parts: Vec<_> = relative.split('/').collect();
     if parts.is_empty()

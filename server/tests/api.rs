@@ -102,6 +102,17 @@ async fn every_endpoint_answers_as_the_contract_says() {
     let r = env.get("/api/v1/status").await;
     check(c, "GET", "/api/v1/status", &r);
     assert_eq!(r.json()["nas"]["state"], "ok");
+    let r = env
+        .get(&format!("/api/v1/collectors/{COLLECTOR}/sync"))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    check(c, "GET", "/api/v1/collectors/{collector_id}/sync", &r);
+    assert_eq!(r.json()["schema_version"], 1);
+    assert_eq!(r.json()["replay_upload"], true);
+    let r = env.get("/api/v1/collectors/not-enrolled/sync").await;
+    check(c, "GET", "/api/v1/collectors/{collector_id}/sync", &r);
+    assert!(r.json()["customer_id"].is_null());
+    assert!(r.json()["files"].as_array().unwrap().is_empty());
 
     // server-sent events: the first frame after a library change is a valid ServerEvent
     let response = env.call_stream("/api/v1/events?customer_id=1001").await;
