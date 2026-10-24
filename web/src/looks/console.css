@@ -1,0 +1,599 @@
+/*
+ * Console: the engineer's data console. JetBrains Mono everywhere, cool blue-black surfaces on a faint hairline grid, 1px borders and
+ * 2px corners, dense spacing. The header becomes a left icon rail; view tabs are an IDE tab strip; toggles read [ ] and [x]; buttons are
+ * bracketed text; titled panels carry a thin title bar. Racing data keeps its colours. Scoped to html[data-look="console"]; loaded only
+ * when the look is chosen (looks.ts).
+ */
+@import "@fontsource-variable/jetbrains-mono/wght.css";
+
+:root[data-look="console"] {
+  --color-app: #0a0d11;
+  --color-navigation: #07090c;
+  --color-surface1: #0e1217;
+  --color-surface2: #121820;
+  --color-surface3: #172029;
+  --color-surface-card-end: #0e1217;
+  --color-surface-hover: #1b2631;
+  --color-border-subtle: #1c2631;
+  --color-border-strong: #2c3a48;
+  --color-text-primary: #dce6ee;
+  --color-text-secondary: #a9b7c3;
+  --color-text-muted: #71838f;
+  --color-text-disabled: #45525e;
+  --color-accent: #e6f1fa;
+  --color-accent-fill: #22303d;
+  --color-accent-hover: #2b3b4a;
+  --color-accent-subtle: #121b24;
+  --color-interaction: #e6f1fa;
+  --color-focus: #e6f1fa;
+  --color-chart-background: #0b0f14;
+  --color-chart-grid: #1c2630;
+  --color-brand: #8fa7bc;
+  --color-brand-ink: #1a2430;
+  --color-brand-soft: #121a22;
+  --color-brand-ivory: #e6f1fa;
+  --font-ui: "JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --font-display: "JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --font-metric: "JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --radius-control: 2px;
+  --radius-card: 2px;
+  --radius-tile: 2px;
+  --radius-block: 2px;
+  --radius-panel: 2px;
+  --radius-pill: 2px;
+  --card-fill: var(--color-surface1);
+  --shadow-card: none;
+  --glow-interaction: none;
+  --lit: transparent;
+  --lit-strong: rgb(230 241 250 / 0.06);
+  --cn-rail: 4.75rem;
+  --cn-hair: rgb(150 180 205 / 0.035);
+  --cn-bar: #10161d;
+
+  & body {
+    background-color: var(--color-app);
+    background-image: linear-gradient(var(--cn-hair) 1px, transparent 1px), linear-gradient(90deg, var(--cn-hair) 1px, transparent 1px);
+    background-size: 1.5rem 1.5rem;
+    font-variant-ligatures: none;
+  }
+
+  /* Type: calm lower-case headings, small spaced capitals for labels. Sizes stay at the owner's minimums. */
+  & h1 {
+    font: 600 1.75rem / 1.15 var(--font-display);
+    letter-spacing: -0.02em;
+  }
+  & h1::before {
+    content: "~/";
+    margin-right: 0.35em;
+    color: var(--color-text-muted);
+    font-weight: 400;
+  }
+  & h2 {
+    font: 700 0.9375rem / 1.2 var(--font-display);
+    letter-spacing: 0.08em;
+  }
+  & :is(.dc, .eyebrow, label > span:first-child, .select-field > span) {
+    letter-spacing: 0.06em;
+  }
+  & :is(.d, .dc) {
+    font-stretch: normal;
+  }
+
+  /* ---- shell: the header is a left icon rail beside the page; the look strip keeps the full width above both ---- */
+  & .shell {
+    display: grid;
+    grid-template-columns: var(--cn-rail) minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr auto;
+  }
+  & #look-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  & .topbar {
+    grid-column: 1;
+    grid-row: 2 / 5;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    min-height: 0;
+    padding: var(--space-3) 0 var(--space-3);
+    background: var(--color-navigation);
+    border-bottom: 0;
+    border-right: 1px solid var(--color-border-subtle);
+    backdrop-filter: none;
+  }
+  & .banner {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  & .main {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  & .companion-footer {
+    grid-column: 2;
+    grid-row: 4;
+  }
+  /* The rail is as tall as the page; its parts hold to the window while a long page scrolls. */
+  & .brand {
+    position: sticky;
+    top: var(--space-3);
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    min-height: 0;
+    padding-bottom: var(--space-3);
+    margin: 0 var(--space-2);
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  & .brand-mark {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  & .brand-word {
+    align-items: center;
+  }
+  & .brand-eyebrow {
+    display: none;
+  }
+  & .brand-name {
+    color: var(--color-text-secondary);
+    font: 700 0.6875rem / 1 var(--font-display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  & .topbar nav {
+    position: sticky;
+    top: 5.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  & .nav-link {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.3125rem;
+    min-height: 3.75rem;
+    padding: 0.375rem 0.125rem;
+    border-radius: 0;
+    color: var(--color-text-muted);
+    font: 600 0.6875rem / 1 var(--font-ui);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  & .nav-link .nav-icon {
+    width: 1.375rem;
+    height: 1.375rem;
+  }
+  & .nav-link:hover:not(.active) {
+    background: var(--color-surface2);
+    color: var(--color-text-primary);
+  }
+  & .nav-link.active {
+    background: var(--color-surface2);
+    color: var(--color-text-primary);
+    box-shadow: inset 2px 0 0 var(--color-interaction);
+  }
+  & .nav-link:focus-visible {
+    outline-offset: -3px;
+  }
+  & .nav-link .live-dot {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.875rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    box-shadow: 0 0 0 2px var(--color-navigation);
+  }
+  & .driver-name,
+  & .driver-switch {
+    position: sticky;
+    bottom: var(--space-3);
+    margin-top: auto;
+    align-self: center;
+    justify-self: auto;
+  }
+  /* The driver reads bottom to top along the rail. */
+  & .driver-name {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    max-height: 16rem;
+    writing-mode: vertical-rl;
+    rotate: 180deg;
+    font-size: var(--text-compact);
+    color: var(--color-text-primary);
+  }
+  & .driver-eyebrow {
+    color: var(--color-text-muted);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  & .driver-switch select {
+    width: calc(var(--cn-rail) - 0.75rem);
+    padding: 0 0.25rem;
+    font-size: 0.6875rem;
+  }
+
+  & .main {
+    padding: var(--space-4) var(--space-6) var(--space-6);
+  }
+  & .main-wide {
+    padding: var(--space-2);
+  }
+  & .companion-footer {
+    padding: 0 var(--space-6) var(--space-2);
+  }
+
+  /* ---- controls ---- */
+  & :is(button, .btn) {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  & :is(.btn-accent, button.btn-accent) {
+    color: #0a0d11;
+  }
+  & :is(input, select, textarea) {
+    background: #0b0f14;
+    border-color: var(--color-border-strong);
+    font-family: var(--font-ui);
+  }
+  & .link-btn {
+    font-family: var(--font-ui);
+  }
+  & :focus-visible {
+    outline: 1px solid var(--color-focus);
+    outline-offset: 1px;
+  }
+
+  /* Tabs and segments: an IDE tab strip. Flat cells on a hairline base; the open tab is lifted to the panel colour with a light top edge. */
+  & :is(.ri-tabs, .seg:not(.phase, .sx-toggles)) {
+    gap: 0;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--color-border-strong);
+    border-radius: 0;
+    background: var(--cn-bar);
+  }
+  & :is(.ri-tab, .seg:not(.phase, .sx-toggles) button) {
+    position: relative;
+    min-height: var(--control-height);
+    margin-bottom: -1px;
+    padding: 0 var(--space-4);
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    font: 600 var(--text-control) / 1 var(--font-ui);
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    box-shadow: none;
+  }
+  & :is(.ri-tab, .seg:not(.phase, .sx-toggles) button) + :is(.ri-tab, button) {
+    border-left: 1px solid var(--color-border-subtle);
+  }
+  & :is(.ri-tab[aria-selected="true"], .seg:not(.phase, .sx-toggles) button:is(.on, [aria-pressed="true"], [aria-selected="true"])) {
+    border-color: var(--color-border-strong);
+    border-bottom: 0;
+    background: var(--color-surface1);
+    color: var(--color-text-primary);
+    box-shadow: inset 0 2px 0 var(--color-interaction);
+  }
+  & :is(.ri-tab, .seg:not(.phase, .sx-toggles) button):focus-visible {
+    outline: none;
+    text-decoration: underline;
+    text-underline-offset: 0.3em;
+    background: var(--color-surface-hover);
+  }
+  & .ri-tab::before {
+    content: "> ";
+    color: transparent;
+  }
+  & .ri-tab[aria-selected="true"]::before {
+    color: var(--color-text-muted);
+  }
+
+  /* P · Q · R: square cells, the phase band under each letter, the chosen phase on its band. */
+  & :is(.seg.phase, .ri-pqr) {
+    gap: 0;
+    padding: 0;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 2px;
+    background: var(--cn-bar);
+  }
+  & :is(.seg.phase button, .ri-pqr-seg) {
+    border-radius: 0;
+    font: 700 1.0625rem / 1 var(--font-display);
+  }
+  & :is(.seg.phase button, .ri-pqr-seg) + :is(button, .ri-pqr-sep) {
+    border-left: 1px solid var(--color-border-subtle);
+  }
+  & .ri-pqr-sep {
+    display: none;
+  }
+  & :is(.seg.phase button, .ri-pqr-seg)::after {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    border-radius: 0;
+  }
+  & :is(.seg.phase button.on, .ri-pqr-seg.on) {
+    box-shadow: none;
+  }
+
+  /* Toggles are checkboxes: [ ] off, [x] on. */
+  & :is(.ri-pill-toggle, .ri-toggle, .sx-toggles .sx-toggle) {
+    gap: 0.5rem;
+    border-color: transparent;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-family: var(--font-ui);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    box-shadow: none;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle, .sx-toggles .sx-toggle)::before {
+    content: "[ ]";
+    color: var(--color-text-muted);
+    font-weight: 400;
+    white-space: pre;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle, .sx-toggles .sx-toggle)[aria-pressed="true"] {
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-text-primary);
+    box-shadow: none;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle, .sx-toggles .sx-toggle)[aria-pressed="true"]::before {
+    content: "[x]";
+    color: var(--color-interaction);
+    font-weight: 700;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle, .sx-toggles .sx-toggle):hover:not([aria-disabled="true"]) {
+    background: var(--color-surface-hover);
+  }
+  /* Phase toggles on Sessions: [x] and the letter in its phase hue. */
+  & .sx-toggles {
+    gap: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  & .sx-toggles .sx-toggle {
+    width: auto;
+    padding: 0 0.5rem;
+    color: var(--b);
+  }
+  & .sx-toggles .sx-toggle[aria-pressed="true"] {
+    color: var(--b);
+  }
+
+  /* Buttons in the workspace: bracketed text, no pill. */
+  & :is(.ri-pill-button, .ri-button, .ri-text-button) {
+    gap: 0.375rem;
+    border-color: transparent;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: var(--font-ui);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  & :is(.ri-pill-button, .ri-button, .ri-text-button)::before {
+    content: "[";
+    color: var(--color-text-muted);
+    font-weight: 400;
+  }
+  & :is(.ri-pill-button, .ri-button, .ri-text-button)::after {
+    content: "]";
+    color: var(--color-text-muted);
+    font-weight: 400;
+  }
+  & :is(.ri-pill-button.on, .ri-button.active) {
+    border-color: transparent;
+    background: var(--color-surface3);
+    box-shadow: inset 0 -2px 0 var(--color-interaction);
+  }
+  & .ri-pill-button.primary {
+    border-color: var(--color-interaction);
+    background: var(--color-interaction);
+    color: #0a0d11;
+  }
+  & .ri-pill-button.primary::before,
+  & .ri-pill-button.primary::after {
+    color: #0a0d11;
+  }
+  & .ri-icon-pill {
+    border-radius: 2px;
+    border-color: var(--color-border-strong);
+  }
+  & .ri-pill-button:disabled,
+  & .ri-button:disabled {
+    border-color: transparent;
+  }
+
+  /* Choice and filter pills: boxed fields with a caret. */
+  & :is(.ms-pill, .ss-pill) {
+    border-radius: 2px;
+    border-color: var(--color-border-strong);
+    background: #0b0f14;
+    font-family: var(--font-ui);
+    letter-spacing: 0.04em;
+  }
+  & :is(.ms-pill, .ss-pill).open {
+    border-color: var(--color-interaction);
+  }
+  & :is(.ms-panel, .ss-panel, .fb-pop, .fb-sheet, .outbox) {
+    border-radius: 2px;
+    border-color: var(--color-border-strong);
+    background: var(--color-surface2);
+    box-shadow: 0 0.75rem 1.5rem rgb(0 0 0 / 0.6);
+  }
+  & :is(.ms-opt, .ss-opt) {
+    border-radius: 0;
+  }
+
+  /* Chips and badges: square-cornered tags. */
+  & :is(.badge, .chip, .state-chip, .change, .inc-chip, .ri-chip, .ri-inc-chip, .ri-count-chip, .sx-badge, .sx-letter) {
+    border-radius: 2px;
+  }
+  & :is(.change-gain, .change-loss, .inc-2, .ri-inc-chip.p2, .dot-green, .dot-caution, .dot-pit) {
+    box-shadow: none;
+  }
+  & .ri-count-chip {
+    border: 1px solid var(--color-border-strong);
+    background: transparent;
+    font-family: var(--font-ui);
+  }
+
+  /* ---- panels: flat, hairline, square ---- */
+  & :is(.panel, .bc-card, .sx-event, .ri-card, .ri-panel, .tile, .notice, .ri-pit-card, .ri-runs-pit, .pit-card, .ri-run-card) {
+    border-radius: 2px;
+    background: var(--color-surface1);
+    box-shadow: none;
+  }
+  & :is(.panel, .bc-card, .sx-event, .ri-card, .ri-panel, .tile) {
+    border-color: var(--color-border-subtle);
+  }
+  /* Title bars: the head of a titled panel is a thin strip on the bar colour. */
+  & :is(.ri-chart-head, .ri-rail-head, .ri-card-label, .ri-trace-head) {
+    background: var(--cn-bar);
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  & .ri-rail-head {
+    min-height: 2.875rem;
+  }
+  & .ri-trace-head {
+    min-height: 2.875rem;
+  }
+  & :is(.ri-card-title, .ri-rail-title) {
+    font: 700 0.9375rem / 1.2 var(--font-display);
+    letter-spacing: 0.08em;
+  }
+  & :is(.ri-card-title, .ri-rail-title)::before {
+    content: "▪ ";
+    color: var(--color-text-muted);
+  }
+  & .ri-chart-head > strong {
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* ---- investigation workspace ---- */
+  & .ri-workspace {
+    --ri-ice: #e6f1fa;
+    --ri-lit: transparent;
+    --ri-gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+  }
+  & .ri-run-head {
+    border-radius: 0;
+  }
+  & .ri-lap-row {
+    min-height: 2.5rem;
+  }
+  & .ri-tm {
+    font-size: 1.0625rem;
+    font-weight: 600;
+  }
+  & .ri-n {
+    font-size: 1rem;
+  }
+  & .ri-rail-cols {
+    letter-spacing: 0.04em;
+  }
+  & :is(.ri-legend, .ri-run-legend) {
+    letter-spacing: 0.03em;
+  }
+  & .ri-axis-title {
+    letter-spacing: 0.06em;
+  }
+  & .ri-sl-tab {
+    border-radius: 2px;
+  }
+  & .ri-pit-band {
+    letter-spacing: 0.06em;
+  }
+  & :is(.ri-pit-card, .ri-runs-pit) {
+    border-radius: 2px;
+  }
+  & .ri-run-card[aria-pressed="false"] {
+    opacity: 0.5;
+  }
+
+  /* ---- Sessions: each event a framed block, its identity in a title column ---- */
+  & .sx-event {
+    border-color: var(--color-border-strong);
+  }
+  & .sx-id {
+    background: var(--cn-bar);
+  }
+  & .sx-id h2 {
+    font-size: var(--text-body);
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+  & .sx-line {
+    border-radius: 0;
+    border-color: var(--color-border-subtle);
+    background: var(--color-surface1);
+  }
+  & .sx-lines {
+    gap: 0;
+    padding: 0;
+  }
+  & .sx-line + .sx-line {
+    border-top: 0;
+  }
+  & .sx-line {
+    border-width: 0 0 1px 0;
+  }
+  & .sx-line:last-child {
+    border-bottom: 0;
+  }
+  & .sx-line-body {
+    background-image: none;
+    box-shadow: inset 2px 0 0 var(--b);
+  }
+  & .sx-line[data-kind="race"] .sx-line-body {
+    background-image: linear-gradient(90deg, color-mix(in srgb, var(--b) 6%, transparent), transparent 35%);
+    box-shadow: inset 3px 0 0 var(--b);
+  }
+  & a.sx-line-body:hover {
+    background: var(--color-surface-hover);
+  }
+
+  /* ---- Live tiles ---- */
+  & .tile {
+    background: var(--color-surface1);
+  }
+  & .tile-label {
+    letter-spacing: 0.06em;
+  }
+  & .tile-primary {
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+
+  /* ---- Setups ---- */
+  & .setups-page .s-car-choice {
+    border-radius: 2px;
+    font-family: var(--font-ui);
+  }
+
+  & ::-webkit-scrollbar-thumb {
+    border-radius: 0;
+  }
+}

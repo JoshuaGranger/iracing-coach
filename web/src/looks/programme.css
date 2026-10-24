@@ -1,0 +1,690 @@
+/*
+ * Programme: the race-day programme. Warm black paper and cream ink; no filled cards and no shadows, only hairline rules and space.
+ * Fraunces for the nameplate, headings and figures (lining, tabular where they align); Inter for running text; letter-spaced small
+ * capitals for labels. Controls are text: numbered section heads for the views, underlined links and fields, a ruled box that fills
+ * for a toggle that is on. Racing data keeps its colours. Scoped to html[data-look="programme"]; loaded only when chosen (looks.ts).
+ */
+@import "@fontsource-variable/fraunces/opsz.css";
+@import "@fontsource-variable/fraunces/opsz-italic.css";
+@import "@fontsource-variable/inter/opsz.css";
+
+/* The base button recipe at the base rule's own weight: every component class still overrides it, as it overrides styles.css. */
+:where(:root[data-look="programme"]) :is(button, .btn) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text-primary);
+  font: 600 0.8125rem / 1 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.35em;
+}
+:where(:root[data-look="programme"]) :is(button, .btn):hover:not(:disabled) {
+  background: transparent;
+  text-decoration-color: var(--color-text-primary);
+}
+
+:root[data-look="programme"] {
+  --color-app: #12100d;
+  --color-navigation: #12100d;
+  --color-surface1: #171410;
+  --color-surface2: #1c1914;
+  --color-surface3: #24201a;
+  --color-surface-card-end: #12100d;
+  --color-surface-hover: #201c16;
+  --color-border-subtle: #2e2921;
+  --color-border-strong: #5c5345;
+  --color-text-primary: #efe7d6;
+  --color-text-secondary: #d2c9b7;
+  --color-text-muted: #9a907f;
+  --color-text-disabled: #645c4f;
+  --color-accent: #f3ebda;
+  --color-accent-fill: #2a251d;
+  --color-accent-hover: #332d24;
+  --color-accent-subtle: #1d1a15;
+  --color-interaction: #f3ebda;
+  --color-focus: #f3ebda;
+  --color-chart-background: #12100d;
+  --color-chart-grid: #2b261f;
+  --color-chart-reference: #8a7f6c;
+  --color-shadow: transparent;
+  --color-brand: #efe7d6;
+  --color-brand-ink: #12100d;
+  --color-brand-soft: #1e1a15;
+  --color-brand-ivory: #f6efe0;
+  --font-ui: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-display: "Fraunces Variable", Georgia, "Sitka Text", serif;
+  --font-metric: "Fraunces Variable", Georgia, serif;
+  --radius-control: 0;
+  --radius-card: 0;
+  --radius-tile: 0;
+  --radius-block: 0;
+  --radius-panel: 0;
+  --radius-pill: 0;
+  --card-fill: transparent;
+  --shadow-card: none;
+  --glow-interaction: none;
+  --lit: transparent;
+  --lit-strong: transparent;
+  --pg-ink: #efe7d6;
+  --pg-rule: 1px solid var(--color-border-subtle);
+  --pg-rule-strong: 1px solid var(--color-border-strong);
+  --pg-label: 600 0.75rem / 1.2 var(--font-ui);
+
+  & body {
+    background: var(--color-app);
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* ---- type ---- */
+  & h1 {
+    font: 500 3rem / 1.02 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.025em;
+    text-transform: none;
+  }
+  & h2 {
+    font: 600 1.375rem / 1.15 var(--font-display);
+    font-stretch: normal;
+    letter-spacing: -0.005em;
+    text-transform: none;
+  }
+  /* Labels: letter-spaced small capitals in the sans. */
+  & :is(.dc, .eyebrow, label > span:first-child, .select-field > span, .sx-l, .sx-act, .tile-label, .fb-field-label, .fb-title, .ri-axis-title, .ri-legend, .ri-run-legend, .ri-rail-cols, .ri-sl-cols, .ri-fact-label, .ri-chip, .ri-progress-key, .state-chip, .badge, .chip, .brand-eyebrow, .driver-eyebrow) {
+    font-family: var(--font-ui);
+    font-stretch: normal;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  & :is(.d, .sx-v, .tile-primary, .ri-tm, .ri-lap-row, .ri-readout, .ri-fact-value, .ri-run-lines li, .ri-pit-figs, .change, .inc-chip, .ri-inc-chip) {
+    font-family: var(--font-display);
+    font-stretch: normal;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  & a:hover {
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.25em;
+  }
+  & :focus-visible {
+    outline: 1px solid var(--pg-ink);
+    outline-offset: 3px;
+  }
+
+  /* ---- masthead: nameplate, text links between rules, a byline; a double rule under it ---- */
+  & .topbar {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    min-height: 4.5rem;
+    padding: 0 var(--space-8);
+    background: var(--color-app);
+    border-bottom: 3px double var(--color-border-strong);
+    backdrop-filter: none;
+  }
+  & .brand {
+    gap: var(--space-3);
+  }
+  & .brand-mark {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  & .mark-ring,
+  & .mark-hand {
+    stroke: var(--pg-ink);
+  }
+  & .brand-word {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+  & .brand-eyebrow {
+    order: 2;
+    color: var(--color-text-muted);
+    font-size: 0.6875rem;
+    letter-spacing: 0.22em;
+  }
+  & .brand-name {
+    color: var(--pg-ink);
+    font: italic 600 2.375rem / 1 var(--font-display);
+    letter-spacing: -0.03em;
+  }
+  & .topbar nav {
+    gap: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  & .nav-icon {
+    display: none;
+  }
+  & .nav-link {
+    padding: 0 var(--space-5);
+    border-radius: 0;
+    background: none;
+    color: var(--color-text-muted);
+    font: 600 0.8125rem / 1 var(--font-ui);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  & .nav-link + .nav-link {
+    border-left: var(--pg-rule-strong);
+  }
+  & .nav-link:hover:not(.active) {
+    background: none;
+    color: var(--pg-ink);
+  }
+  & .nav-link.active {
+    background: none;
+    box-shadow: none;
+    color: var(--pg-ink);
+  }
+  & .nav-link .nav-label {
+    padding: 0.3125rem 0;
+    border-bottom: 2px solid transparent;
+  }
+  & .nav-link.active .nav-label {
+    border-bottom-color: var(--pg-ink);
+  }
+  & .driver-name {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+  & .driver-eyebrow {
+    color: var(--color-text-muted);
+    font-size: 0.6875rem;
+  }
+  & .driver-eyebrow::after {
+    content: " —";
+    letter-spacing: 0;
+  }
+  & .driver-name > span:last-child {
+    color: var(--pg-ink);
+    font: italic 400 1.1875rem / 1.2 var(--font-display);
+  }
+  & .banner {
+    background: var(--color-app);
+    border-bottom: var(--pg-rule-strong);
+  }
+  & .companion-footer {
+    border-top: var(--pg-rule);
+    padding-top: var(--space-3);
+  }
+
+  /* ---- controls ---- */
+  & .btn-accent,
+  & button.btn-accent {
+    padding: 0 var(--space-4);
+    border: 1px solid var(--pg-ink);
+    background: transparent;
+    color: var(--pg-ink);
+    text-decoration: none;
+  }
+  & .btn-accent:hover:not(:disabled) {
+    background: var(--pg-ink);
+    color: var(--color-app);
+    box-shadow: none;
+  }
+  & button:disabled {
+    background: transparent;
+    text-decoration: none;
+  }
+  & .link-btn {
+    letter-spacing: 0;
+    text-transform: none;
+    text-decoration: underline;
+  }
+  & :is(input, select, textarea) {
+    border-radius: 0;
+    background: transparent;
+  }
+  & :is(input, select):not([type="checkbox"], [type="radio"], [type="range"]) {
+    border-width: 0 0 1px;
+    border-color: var(--color-border-strong);
+    padding-left: 0;
+  }
+  & select {
+    padding-right: var(--space-5);
+  }
+  & select option {
+    background: var(--color-surface2);
+  }
+  & textarea {
+    border: var(--pg-rule-strong);
+  }
+
+  /* Segments: text choices; the current one in ink over a 2px rule. */
+  & .seg {
+    gap: var(--space-4);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  & .seg button {
+    min-height: var(--control-height);
+    padding: 0 0.125rem;
+    border-radius: 0;
+    background: none;
+    color: var(--color-text-muted);
+    font: 600 0.8125rem / 1 var(--font-ui);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-decoration: none;
+    box-shadow: inset 0 -1px 0 transparent;
+  }
+  & .seg button:hover:not(:disabled):not(:where(.on, [aria-pressed="true"], [aria-selected="true"])) {
+    background: none;
+    color: var(--pg-ink);
+  }
+  & .seg button:is(.on, [aria-pressed="true"], [aria-selected="true"]) {
+    background: none;
+    color: var(--pg-ink);
+    box-shadow: inset 0 -2px 0 var(--pg-ink);
+  }
+
+  /* Phases, P Q R: serif letters; each keeps its band under it, and the chosen one is ink over a heavy band. */
+  & .seg.phase,
+  & .ri-pqr {
+    gap: var(--space-2);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  & :is(.seg.phase button, .ri-pqr-seg) {
+    min-width: 2.25rem;
+    width: 2.25rem;
+    border-radius: 0;
+    background: none;
+    color: var(--color-text-muted);
+    font: 600 1.375rem / 1 var(--font-display);
+    letter-spacing: 0;
+    text-decoration: none;
+    box-shadow: none;
+  }
+  & :is(.seg.phase button, .ri-pqr-seg)::after {
+    left: 0.375rem;
+    right: 0.375rem;
+    bottom: 0.125rem;
+    height: 1px;
+    border-radius: 0;
+  }
+  & :is(.seg.phase button.on, .ri-pqr-seg.on) {
+    background: none;
+    color: var(--pg-ink);
+    box-shadow: none;
+  }
+  & :is(.seg.phase button.on, .ri-pqr-seg.on)::after {
+    display: block;
+    height: 3px;
+  }
+  & .ri-pqr-sep {
+    color: var(--color-border-strong);
+  }
+
+  /* Sessions R Q P: the letter in serif, its phase hue as the rule under it; a hidden phase is muted on a hairline. */
+  & .sx-toggles .sx-toggle {
+    width: 2.25rem;
+    background: none;
+    color: var(--color-text-muted);
+    font: 600 1.375rem / 1 var(--font-display);
+    letter-spacing: 0;
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--b) 55%, transparent);
+  }
+  & .sx-toggles .sx-toggle[aria-pressed="true"] {
+    background: none;
+    color: var(--pg-ink);
+    box-shadow: inset 0 -3px 0 var(--b);
+  }
+
+  /* Filters and choices: underlined fields. */
+  & :is(.ms-pill, .ss-pill) {
+    padding-left: 0;
+    border-width: 0 0 1px;
+    border-style: solid;
+    border-color: var(--color-border-strong);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-family: var(--font-ui);
+    letter-spacing: 0.12em;
+    text-decoration: none;
+  }
+  & :is(.ms-pill, .ss-pill):hover {
+    background: transparent;
+    border-color: var(--pg-ink);
+  }
+  & :is(.ms-pill.open, .ss-pill.open, .ms-pill.has) {
+    border-color: var(--pg-ink);
+    background: transparent;
+  }
+  & :is(.ms-panel, .ss-panel, .fb-pop, .fb-sheet) {
+    border: var(--pg-rule-strong);
+    border-radius: 0;
+    background: var(--color-surface1);
+    box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 0.55);
+  }
+  & :is(.ms-opt, .ss-opt) {
+    border-radius: 0;
+  }
+
+  /* Chips and badges: small capitals in a hairline box. */
+  & :is(.badge, .chip, .state-chip, .ri-chip, .ri-count-chip) {
+    border-radius: 0;
+    font-size: 0.6875rem;
+  }
+  & :is(.change, .inc-chip, .ri-inc-chip, .sx-badge, .sx-letter) {
+    border-radius: 0;
+  }
+  & :is(.change-gain, .change-loss, .inc-2, .ri-inc-chip.p2, .live-dot, .dot.on, .dot-green, .dot-caution, .dot-pit, .stripe) {
+    box-shadow: none;
+  }
+  & .badge-fixed {
+    background: var(--pg-ink);
+  }
+
+  /* ---- pages: no cards; a rule above each block ---- */
+  & :is(.panel, .bc-card, .notice, .tile) {
+    border: 0;
+    border-top: var(--pg-rule-strong);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  & .panel {
+    padding: var(--space-4) 0;
+  }
+  & .page-head {
+    padding-bottom: var(--space-3);
+    border-bottom: var(--pg-rule);
+  }
+
+  /* Sessions: each event a ruled entry; identity left of a hairline, phases as ruled lines. */
+  & .sx-event {
+    border: 0;
+    border-top: var(--pg-rule-strong);
+    border-radius: 0;
+    background: transparent;
+  }
+  & .sx-events {
+    gap: var(--space-5);
+  }
+  & .sx-id {
+    border-right: var(--pg-rule);
+  }
+  & .sx-id h2 {
+    font: 600 1.375rem / 1.15 var(--font-display);
+    -webkit-line-clamp: 3;
+  }
+  & .sx-lines {
+    gap: 0;
+  }
+  & .sx-line {
+    border: 0;
+    border-bottom: var(--pg-rule);
+    border-radius: 0;
+    background: transparent;
+  }
+  & .sx-line:last-child {
+    border-bottom: 0;
+  }
+  & .sx-line-body {
+    background-image: none;
+  }
+  & .sx-line[data-kind="race"] .sx-line-body {
+    background-image: none;
+  }
+  & a.sx-line-body:hover {
+    background: var(--color-surface-hover);
+  }
+  & .sx-v {
+    font-weight: 500;
+  }
+  & .sx-line[data-kind="race"] .sx-v {
+    font-weight: 600;
+  }
+  & .sx-badge {
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+
+  /* Live: figures set large in the serif. */
+  & .tile {
+    padding: var(--space-3) 0;
+  }
+  & .tile-primary {
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  /* Pit cards: the service band stays (it is data); the card is a ruled box. */
+  & :is(.pit-card, .ri-pit-card, .ri-runs-pit) {
+    border-radius: 0;
+    background: var(--color-app);
+    box-shadow: none;
+  }
+
+  /* ---- investigation workspace ---- */
+  & .ri-workspace {
+    --ri-ice: var(--pg-ink);
+    --ri-on-ice: var(--color-app);
+    --ri-card: var(--color-app);
+    --ri-card2: var(--color-surface1);
+    --ri-raise: var(--color-surface2);
+    --ri-line: var(--color-border-subtle);
+    --ri-lit: transparent;
+  }
+  & :is(.ri-card, .ri-panel) {
+    border: 0;
+    border-top: var(--pg-rule-strong);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  & :is(.ri-card-title, .ri-rail-title) {
+    font: 600 1.5rem / 1.1 var(--font-display);
+    font-stretch: normal;
+    letter-spacing: -0.01em;
+    text-transform: none;
+  }
+  & .ri-card-label .ri-card-title {
+    font-size: 1.375rem;
+  }
+
+  /* View tabs: numbered section heads. */
+  & .ri-tabs {
+    counter-reset: pg-section;
+    gap: var(--space-6);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  & .ri-tab {
+    counter-increment: pg-section;
+    padding: 0 0.125rem;
+    border-radius: 0;
+    background: none;
+    color: var(--color-text-muted);
+    font: 500 1.1875rem / 1 var(--font-display);
+    letter-spacing: -0.005em;
+    text-transform: none;
+    text-decoration: none;
+    box-shadow: inset 0 -2px 0 transparent;
+  }
+  & .ri-tab::before {
+    content: counter(pg-section, decimal-leading-zero);
+    margin-right: 0.5em;
+    color: var(--color-text-disabled);
+    font: italic 400 0.875rem / 1 var(--font-display);
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  & .ri-tab[aria-selected="true"] {
+    background: none;
+    color: var(--pg-ink);
+    box-shadow: inset 0 -2px 0 var(--pg-ink);
+  }
+  & .ri-tab[aria-selected="true"]::before {
+    color: var(--color-text-muted);
+  }
+
+  /* Buttons: small capitals, underlined. */
+  & :is(.ri-button, .ri-pill-button, .ri-text-button) {
+    padding: 0 0.125rem;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--pg-ink);
+    font: 600 0.8125rem / 1 var(--font-ui);
+    letter-spacing: 0.12em;
+    text-decoration: underline;
+    text-decoration-color: var(--color-border-strong);
+    text-underline-offset: 0.35em;
+  }
+  & :is(.ri-button, .ri-pill-button, .ri-text-button):hover:not(:disabled) {
+    background: none;
+    text-decoration-color: var(--pg-ink);
+  }
+  & .ri-pill-button.primary {
+    padding: 0 var(--space-3);
+    border: 1px solid var(--pg-ink);
+    background: none;
+    color: var(--pg-ink);
+    text-decoration: none;
+  }
+  & :is(.ri-pill-button.on, .ri-button.active) {
+    box-shadow: inset 0 -2px 0 var(--pg-ink);
+    text-decoration: none;
+  }
+  & .ri-icon-pill {
+    border: var(--pg-rule-strong);
+    border-radius: 0;
+    background: none;
+  }
+
+  /* Toggles: a ruled box before the name, filled when on. */
+  & :is(.ri-pill-toggle, .ri-toggle) {
+    gap: 0.5rem;
+    padding: 0 0.125rem;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: var(--color-text-muted);
+    font: 600 0.8125rem / 1 var(--font-ui);
+    letter-spacing: 0.12em;
+    text-decoration: none;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)::before {
+    content: "";
+    flex: none;
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 1px solid var(--color-border-strong);
+    background: transparent;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)[aria-pressed="true"] {
+    border: 0;
+    background: none;
+    color: var(--pg-ink);
+    box-shadow: none;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)[aria-pressed="true"]::before {
+    border-color: var(--pg-ink);
+    background: var(--pg-ink);
+    box-shadow: inset 0 0 0 2px var(--color-app);
+  }
+  & :is(.ri-pill-toggle, .ri-toggle):hover:not([aria-pressed="true"]) {
+    background: none;
+    color: var(--pg-ink);
+  }
+
+  & .ri-count-chip {
+    background: none;
+    border: var(--pg-rule-strong);
+    color: var(--color-text-secondary);
+  }
+  & .ri-rail-bar {
+    background: var(--color-app);
+  }
+  & .ri-run-head {
+    margin: 0 0 2px;
+    border-radius: 0;
+    background: var(--color-surface1);
+    box-shadow: inset 3px 0 0 var(--run, transparent);
+  }
+  & .ri-run-head b {
+    font-family: var(--font-ui);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+  }
+  & .ri-lap-row {
+    font-weight: 500;
+  }
+  & .ri-n {
+    font-weight: 600;
+  }
+  & .ri-tm {
+    font-weight: 600;
+  }
+  & .ri-lap-row.selected::before {
+    border-radius: 0;
+    box-shadow: none;
+  }
+  & .ri-lap-row.spotlight {
+    border-radius: 0;
+  }
+  & .ri-blk {
+    border-radius: 0;
+  }
+  & :is(.ri-blk.sb, .ri-blk.pb, .ri-swl) {
+    box-shadow: none;
+  }
+  & .ri-search input {
+    border-radius: 0;
+    border-width: 0 0 1px;
+    background: transparent;
+  }
+  & .ri-run-card {
+    border: 0;
+    border-top: var(--pg-rule-strong);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  & .ri-run-card-head b {
+    font: 600 1.25rem / 1.1 var(--font-display);
+  }
+  & .ri-run-lines {
+    border-top: var(--pg-rule);
+  }
+  & .ri-run-lines li {
+    font-weight: 500;
+  }
+  & .ri-axis {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  & .ri-readout {
+    font-weight: 500;
+  }
+  & .ri-pit-duration {
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  & :is(.ri-sl-tab, .ri-tire-details, .ri-tire-detail-tread) {
+    border-radius: 0;
+  }
+  & .ri-tire-details {
+    background: var(--color-surface1);
+  }
+
+  & ::-webkit-scrollbar-thumb {
+    border-radius: 0;
+  }
+}

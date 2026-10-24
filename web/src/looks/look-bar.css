@@ -1,0 +1,77 @@
+/* The look chooser strip (LookBar.tsx). Fixed values, not theme tokens: it reads the same in every look. */
+#look-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 30px;
+  padding: 3px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+  background: #000;
+  border-bottom: 1px solid #333;
+  color: #bbb;
+  font: 500 12px / 1 system-ui, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+#look-bar .look-bar-label {
+  color: #888;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#look-bar .look-bar-choices {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #333;
+  border-radius: 6px;
+}
+#look-bar .look-bar-choice {
+  min-height: 22px;
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+  color: #bbb;
+  font: 600 12px / 1 system-ui, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+  transform: none;
+}
+#look-bar .look-bar-choice::before,
+#look-bar .look-bar-choice::after {
+  content: none;
+  display: none;
+}
+#look-bar .look-bar-choice:hover:not([aria-pressed="true"]) {
+  background: #222;
+  color: #fff;
+}
+#look-bar .look-bar-choice[aria-pressed="true"] {
+  background: #fff;
+  color: #000;
+}
+#look-bar .look-bar-idea {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #999;
+}
+#look-bar .look-bar-keys {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #777;
+  font-size: 11px;
+}
+@media (max-width: 900px) {
+  #look-bar .look-bar-idea,
+  #look-bar .look-bar-keys {
+    display: none;
+  }
+}

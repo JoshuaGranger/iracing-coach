@@ -8,6 +8,7 @@ import { cachedValue, invalidate, invalidateKey, useResource } from "./core/reso
 import { type ParsedRoute, href, navigate, useRoute } from "./core/router";
 import { events } from "./core/sse";
 import { readJson, useStore, writeJson } from "./core/store";
+import { LookBar } from "./looks/LookBar";
 import { DriversPage } from "./pages/drivers";
 import { SessionsPage } from "./pages/sessions";
 import { InvestigationSlot } from "./ui/investigation-slot";
@@ -251,6 +252,7 @@ export function App() {
   const page = renderPage(route);
   return (
     <div class="shell">
+      <LookBar />
       <Chrome route={route}>
         <Banner />
         <OutboxBar />

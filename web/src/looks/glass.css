@@ -1,0 +1,714 @@
+/*
+ * Glass: a calm night cockpit. Deep blue-black under soft cool glows, smoked-glass panels with hairline light edges, Inter with light
+ * figures, sentence case throughout, a left sidebar for navigation, segmented tracks with a raised thumb for every choice and
+ * switches for every on/off filter. Racing data keeps its colours; interaction stays light. Scoped to html[data-look="glass"];
+ * loaded only when the look is chosen (looks.ts).
+ */
+@import "@fontsource-variable/inter/opsz.css";
+
+:root[data-look="glass"] {
+  --color-app: #070a12;
+  --color-navigation: #090d18;
+  --color-surface1: #111624;
+  --color-surface2: #171d2e;
+  --color-surface3: #1e2538;
+  --color-surface-card-end: #0e1320;
+  --color-surface-hover: #242c42;
+  --color-border-subtle: #222a3d;
+  --color-border-strong: #343f58;
+  --color-text-primary: #f2f5fb;
+  --color-text-secondary: #c3cbda;
+  --color-text-muted: #8c96aa;
+  --color-text-disabled: #586178;
+  --color-accent: #e8eef8;
+  --color-accent-fill: #2a3550;
+  --color-accent-hover: #34405e;
+  --color-accent-subtle: #161d30;
+  --color-interaction: #e8eef8;
+  --color-focus: #e8eef8;
+  --color-chart-background: #0c1120;
+  --color-chart-grid: #252e44;
+  --color-shadow: #00000099;
+  --color-brand: #b4c2ff;
+  --color-brand-ink: #1c2443;
+  --color-brand-soft: #161c31;
+  --color-brand-ivory: #eef1ff;
+  --font-ui: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-display: "Inter Variable", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --radius-tile: 18px;
+  --radius-block: 22px;
+  --radius-panel: 18px;
+  --radius-pill: 999px;
+  --chip-height: 1.625rem;
+  --lit: rgb(255 255 255 / 0.06);
+  --lit-strong: rgb(255 255 255 / 0.1);
+  --gl-fill: linear-gradient(180deg, rgb(28 35 56 / 0.72), rgb(15 20 34 / 0.78));
+  --gl-fill-soft: linear-gradient(180deg, rgb(34 42 66 / 0.5), rgb(20 26 42 / 0.55));
+  --gl-edge: rgb(255 255 255 / 0.085);
+  --gl-edge-strong: rgb(255 255 255 / 0.14);
+  --gl-shadow: 0 1.25rem 3rem rgb(0 0 0 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.07);
+  --gl-control: rgb(255 255 255 / 0.065);
+  --gl-control-hover: rgb(255 255 255 / 0.11);
+  --gl-track: rgb(0 0 0 / 0.28);
+  --gl-thumb: linear-gradient(180deg, #f4f7fc, #dfe6f2);
+  --gl-thumb-ink: #0b1020;
+  --gl-thumb-shadow: 0 0.125rem 0.5rem rgb(0 0 0 / 0.45), 0 0 0 0.5px rgb(255 255 255 / 0.5);
+  --card-fill: var(--gl-fill);
+  --shadow-card: var(--gl-shadow);
+  --glow-interaction: 0 0 0 1px rgb(232 238 248 / 0.28);
+  --gl-sidebar: 15rem;
+  --gl-rail: 4.75rem;
+
+  & body {
+    background:
+      radial-gradient(60rem 42rem at 8% -12%, rgb(84 104 255 / 0.2), transparent 62%),
+      radial-gradient(52rem 38rem at 100% -6%, rgb(146 92 255 / 0.13), transparent 60%),
+      radial-gradient(72rem 46rem at 62% 118%, rgb(36 132 196 / 0.11), transparent 62%),
+      var(--color-app);
+    background-attachment: fixed;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "cv11", "tnum";
+  }
+
+  /* ---- sentence case everywhere: no capitals, tracking or condensed widths from the shipped label style ---- */
+  & body :not(#look-bar, #look-bar *) {
+    text-transform: none;
+    letter-spacing: normal;
+    font-stretch: normal;
+  }
+  & body :is(h1, .tile-primary, .ri-pit-duration, .pit-card .big, .sx-v, .ri-tm):not(#look-bar) {
+    letter-spacing: -0.02em;
+  }
+
+  & h1 {
+    font: 600 2.25rem / 1.1 var(--font-display);
+  }
+  & h2 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.0625rem;
+  }
+  & .dc,
+  & .eyebrow,
+  & label > span:first-child,
+  & .select-field > span {
+    font-weight: 500;
+  }
+
+  /* ---- shell: a left sidebar ---- */
+  & .shell {
+    display: grid;
+    grid-template-columns: var(--gl-sidebar) minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr auto;
+    align-items: start;
+    background: linear-gradient(90deg, rgb(10 14 26 / 0.86) 0 var(--gl-sidebar), transparent var(--gl-sidebar));
+  }
+  & #look-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  & .topbar {
+    grid-column: 1;
+    grid-row: 2 / 5;
+    align-self: start;
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-8);
+    height: calc(100dvh - 1.9375rem);
+    min-height: 0;
+    padding: var(--space-6) var(--space-4) var(--space-5);
+    background: none;
+    border: 0;
+    border-right: 1px solid var(--gl-edge);
+    backdrop-filter: none;
+  }
+  & .shell > :not(#look-bar, .topbar) {
+    grid-column: 2;
+  }
+  & .banner {
+    grid-row: 2;
+  }
+  & .main {
+    grid-row: 3;
+    align-self: stretch;
+  }
+  & .companion-footer {
+    grid-row: 4;
+  }
+
+  & .brand {
+    gap: var(--space-3);
+    padding: 0 var(--space-2);
+  }
+  & .brand-mark {
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0.375rem;
+    border-radius: 0.75rem;
+    background: linear-gradient(145deg, rgb(180 194 255 / 0.22), rgb(146 92 255 / 0.12));
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12), 0 0.5rem 1.25rem rgb(84 104 255 / 0.18);
+  }
+  & .mark-ring {
+    stroke: var(--color-brand);
+  }
+  & .brand-eyebrow {
+    font: 500 0.75rem / 1 var(--font-ui);
+    color: var(--color-text-muted);
+  }
+  & .brand-name {
+    font: 650 1.375rem / 1 var(--font-display);
+    letter-spacing: -0.02em;
+    color: var(--color-brand-ivory);
+  }
+
+  & .topbar nav {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  & .topbar nav::before {
+    content: "Library";
+    padding: 0 var(--space-3) var(--space-2);
+    color: var(--color-text-muted);
+    font: 500 0.75rem / 1 var(--font-ui);
+  }
+  & .nav-link {
+    justify-content: flex-start;
+    gap: var(--space-3);
+    min-height: 2.75rem;
+    padding: 0 var(--space-3);
+    border-radius: 0.75rem;
+    color: var(--color-text-secondary);
+    font: 500 0.9375rem / 1 var(--font-ui);
+  }
+  & .nav-link .nav-icon {
+    opacity: 0.8;
+  }
+  & .nav-link:hover:not(.active) {
+    background: var(--gl-control);
+    color: var(--color-text-primary);
+  }
+  & .nav-link.active {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.07));
+    color: var(--color-text-primary);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1), 0 0.5rem 1.25rem rgb(0 0 0 / 0.25);
+  }
+  & .nav-link.active .nav-icon {
+    opacity: 1;
+    color: var(--color-brand);
+  }
+  & .nav-link .live-dot {
+    margin-left: auto;
+  }
+  & .driver-name,
+  & .driver-switch {
+    margin-top: auto;
+    align-items: flex-start;
+    justify-self: stretch;
+    padding: var(--space-3);
+    border-radius: 0.875rem;
+    background: var(--gl-control);
+    box-shadow: inset 0 0 0 1px var(--gl-edge);
+  }
+  & .driver-name > span:last-child {
+    color: var(--color-text-primary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+  & .driver-switch select {
+    width: 100%;
+  }
+
+  /* Narrow desktop and tablet: the sidebar folds to an icon rail; the labels stay for assistive tech. */
+  @media (max-width: 1279px) {
+    & {
+      --gl-sidebar: var(--gl-rail);
+    }
+    & .topbar {
+      align-items: center;
+      padding: var(--space-5) var(--space-2);
+    }
+    & .brand {
+      padding: 0;
+    }
+    & :is(.brand-word, .nav-label) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    & .topbar nav::before {
+      display: none;
+    }
+    & .nav-link {
+      justify-content: center;
+      width: 3.25rem;
+      padding: 0;
+    }
+    & .nav-link .live-dot {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      margin: 0;
+    }
+    & .driver-name {
+      align-items: center;
+      padding: var(--space-3) var(--space-1);
+    }
+    & .driver-name > span:last-child {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+    }
+    & .driver-switch {
+      padding: 0;
+      background: none;
+      box-shadow: none;
+    }
+    & .driver-switch select {
+      width: 3.25rem;
+      padding: 0 0.25rem;
+    }
+  }
+  /* Phone: back to a bar across the top. */
+  @media (max-width: 759px) {
+    & .shell {
+      display: flex;
+      flex-direction: column;
+      background: none;
+    }
+    & .topbar {
+      position: sticky;
+      flex-direction: row;
+      align-items: center;
+      gap: var(--space-2);
+      height: auto;
+      padding: var(--space-2) var(--space-3);
+      border-right: 0;
+      border-bottom: 1px solid var(--gl-edge);
+      background: rgb(9 13 24 / 0.88);
+      backdrop-filter: blur(16px);
+    }
+    & .topbar nav {
+      flex-direction: row;
+    }
+    & .driver-name,
+    & .driver-switch {
+      margin: 0 0 0 auto;
+    }
+    & .driver-name > span:last-child {
+      writing-mode: horizontal-tb;
+      transform: none;
+    }
+  }
+
+  /* ---- controls: soft translucent fills, no hard edges ---- */
+  & :is(button, .btn) {
+    border-color: transparent;
+    background: var(--gl-control);
+    font-weight: 500;
+    box-shadow: inset 0 0 0 1px var(--gl-edge);
+  }
+  & :is(button, .btn):hover:not(:disabled):not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))) {
+    background: var(--gl-control-hover);
+  }
+  & button:disabled {
+    background: rgb(255 255 255 / 0.025);
+    border-color: transparent;
+    box-shadow: none;
+  }
+  & :is(.btn-accent, button.btn-accent) {
+    background: var(--gl-thumb);
+    color: var(--gl-thumb-ink);
+    box-shadow: var(--gl-thumb-shadow);
+  }
+  & :is(input, select, textarea):not([type="checkbox"], [type="radio"], [type="range"]) {
+    border: 1px solid var(--gl-edge);
+    border-radius: 0.75rem;
+    background: rgb(0 0 0 / 0.22);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.3);
+  }
+  & :is(input, textarea):focus-visible {
+    border-color: rgb(232 238 248 / 0.6);
+  }
+  & :focus-visible {
+    outline: 2px solid rgb(232 238 248 / 0.9);
+    outline-offset: 2px;
+  }
+  & .link-btn {
+    box-shadow: none;
+    background: none;
+  }
+
+  /* Segmented tracks: one recessed track, the current choice a raised light thumb. */
+  & .seg,
+  & .ri-tabs,
+  & .ri-pqr {
+    gap: 0.125rem;
+    padding: 0.25rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--gl-track);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35), inset 0 0 0 1px var(--gl-edge);
+  }
+  & .seg button,
+  & .ri-tab {
+    min-height: calc(var(--control-height) - 0.25rem);
+    padding: 0 var(--space-4);
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--color-text-secondary);
+    font: 500 0.9375rem / 1 var(--font-ui);
+    transition: background-color var(--motion-hover) var(--motion-easing), color var(--motion-hover) var(--motion-easing);
+  }
+  & .seg button:hover:not(:disabled):not(:where(.on, [aria-pressed="true"], [aria-selected="true"])),
+  & .ri-tab:hover:not([aria-selected="true"]) {
+    background: rgb(255 255 255 / 0.06);
+    color: var(--color-text-primary);
+  }
+  & .seg button:is(.on, [aria-pressed="true"], [aria-selected="true"]),
+  & .ri-tab[aria-selected="true"] {
+    background: var(--gl-thumb);
+    color: var(--gl-thumb-ink);
+    box-shadow: var(--gl-thumb-shadow);
+    font-weight: 600;
+  }
+  & .ri-tab:focus-visible,
+  & .seg button:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* P · Q · R: the same track; the chosen phase is a thumb in its band. */
+  & .ri-pqr-sep {
+    display: none;
+  }
+  & :is(.seg.phase button, .ri-pqr-seg) {
+    border-radius: 999px;
+    font: 600 1rem / 1 var(--font-ui);
+  }
+  & :is(.seg.phase button, .ri-pqr-seg)::after {
+    left: 50%;
+    right: auto;
+    width: 0.375rem;
+    height: 0.375rem;
+    bottom: 0.25rem;
+    margin-left: -0.1875rem;
+    border-radius: 50%;
+  }
+  & :is(.seg.phase button.on, .ri-pqr-seg.on) {
+    background: var(--band, var(--b));
+    color: #0b1020;
+    box-shadow: var(--gl-thumb-shadow);
+  }
+  & .sx-toggles .sx-toggle {
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--b) 55%, transparent);
+  }
+  & .sx-toggles .sx-toggle[aria-pressed="true"] {
+    box-shadow: var(--gl-thumb-shadow);
+  }
+
+  /* Switches: every on/off filter is a track and a knob before its name. */
+  & :is(.ri-pill-toggle, .ri-toggle) {
+    position: relative;
+    padding-left: 3.375rem;
+    padding-right: var(--space-4);
+    border: 0;
+    border-radius: 999px;
+    background: var(--gl-control);
+    box-shadow: inset 0 0 0 1px var(--gl-edge);
+    color: var(--color-text-secondary);
+    font: 500 0.9375rem / 1 var(--font-ui);
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)::before {
+    content: "";
+    position: absolute;
+    left: 0.625rem;
+    top: 50%;
+    width: 2.125rem;
+    height: 1.25rem;
+    margin-top: -0.625rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.13);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.4);
+    transition: background-color var(--motion-hover) var(--motion-easing);
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)::after {
+    content: "";
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    width: 1rem;
+    height: 1rem;
+    margin-top: -0.5rem;
+    border-radius: 50%;
+    background: #c9d1de;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+    transition: transform var(--motion-structure) var(--motion-easing), background-color var(--motion-hover) var(--motion-easing);
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)[aria-pressed="true"] {
+    color: var(--color-text-primary);
+    box-shadow: inset 0 0 0 1px var(--gl-edge-strong);
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)[aria-pressed="true"]::before {
+    background: #e8eef8;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle)[aria-pressed="true"]::after {
+    background: #0b1020;
+    transform: translateX(0.875rem);
+    box-shadow: none;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle):hover:not([aria-pressed="true"]) {
+    background: var(--gl-control-hover);
+  }
+
+  /* Investigation buttons: the soft control recipe. */
+  & :is(.ri-button, .ri-pill-button, .ri-text-button, .ri-icon-pill) {
+    border: 0;
+    background: var(--gl-control);
+    box-shadow: inset 0 0 0 1px var(--gl-edge);
+    color: var(--color-text-primary);
+    font: 500 0.9375rem / 1 var(--font-ui);
+  }
+  & :is(.ri-pill-button.on, .ri-button.active, .ri-icon-pill.on) {
+    background: rgb(255 255 255 / 0.14);
+    box-shadow: inset 0 0 0 1px rgb(232 238 248 / 0.45);
+  }
+  & .ri-pill-button.primary {
+    background: var(--gl-thumb);
+    color: var(--gl-thumb-ink);
+    box-shadow: var(--gl-thumb-shadow);
+  }
+  & .ri-sl-tab {
+    border: 0;
+    border-radius: 999px;
+    background: var(--gl-control);
+    box-shadow: inset 0 0 0 1px var(--gl-edge);
+    font-weight: 600;
+  }
+  & .ri-sl-tab[aria-selected="true"] {
+    background: var(--gl-thumb);
+    color: var(--gl-thumb-ink);
+    box-shadow: var(--gl-thumb-shadow);
+  }
+
+  /* Filter and choice fields: rounded glass. */
+  & :is(.ms-pill, .ss-pill) {
+    border: 0;
+    border-radius: 0.875rem;
+    background: var(--gl-control);
+    box-shadow: inset 0 0 0 1px var(--gl-edge);
+    font-weight: 500;
+  }
+  & :is(.ms-pill, .ss-pill):hover {
+    background: var(--gl-control-hover);
+  }
+  & :is(.ms-pill.open, .ss-pill.open, .ms-pill.has) {
+    box-shadow: inset 0 0 0 1px rgb(232 238 248 / 0.4);
+  }
+  & :is(.ms-panel, .ss-panel, .fb-pop, .fb-sheet, .ri-tire-details) {
+    border: 1px solid var(--gl-edge-strong);
+    border-radius: 1rem;
+    background: rgb(20 26 42 / 0.82);
+    backdrop-filter: blur(22px) saturate(150%);
+    box-shadow: 0 1.5rem 3.5rem rgb(0 0 0 / 0.55);
+  }
+
+  /* Chips and marks: soft rounded tags. */
+  & :is(.badge, .chip, .state-chip, .ri-chip, .ri-count-chip) {
+    border-radius: 999px;
+    font-weight: 500;
+  }
+  & :is(.change, .inc-chip, .ri-inc-chip) {
+    border-radius: 999px;
+  }
+  & .ri-count-chip {
+    background: var(--gl-control-hover);
+    color: var(--color-text-primary);
+  }
+  & :is(.sx-badge, .sx-letter) {
+    border-radius: 0.375rem;
+  }
+
+  /* ---- panels: smoked glass ---- */
+  & :is(.panel, .card, .bc-card, .sx-event, .tile, .notice, .le-sheet, .outbox) {
+    border: 1px solid var(--gl-edge);
+    background: var(--gl-fill);
+    box-shadow: var(--gl-shadow);
+  }
+  & :is(.panel, .card, .bc-card) {
+    border-radius: 1.375rem;
+  }
+  & .sx-event {
+    border-radius: 1.25rem;
+  }
+  & .tile {
+    border-radius: 1.125rem;
+  }
+  & .sx-events {
+    gap: 1rem;
+  }
+  & .sx-id {
+    border-right-color: var(--gl-edge);
+  }
+  & .sx-line {
+    border: 0;
+    border-radius: 0.875rem;
+    background: rgb(255 255 255 / 0.035);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.05);
+  }
+  & a.sx-line-body:hover {
+    background: rgb(255 255 255 / 0.06);
+  }
+  & .sx-id h2 {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  & .sx-l {
+    font-weight: 500;
+    font-size: 0.8125rem;
+  }
+  & .sx-v {
+    font-weight: 400;
+  }
+  & .sx-line[data-kind="race"] .sx-v {
+    font-weight: 400;
+  }
+
+  /* Setups and the setup detail: the same glass. */
+  & .ds {
+    --ds-card: var(--gl-fill);
+    --ds-line: rgb(255 255 255 / 0.06);
+    --ds-edge: rgb(255 255 255 / 0.08);
+  }
+  & .ds :is(.s-car, .d-head, .d-card) {
+    border: 1px solid var(--gl-edge);
+    border-radius: 1.375rem;
+    box-shadow: var(--gl-shadow);
+  }
+  & .setups-page :is(.s-board, .s-sto) {
+    border-color: var(--gl-edge);
+    border-radius: 1.375rem;
+    box-shadow: var(--gl-shadow);
+  }
+  & .ds .value-group {
+    border-radius: 1rem;
+    background: rgb(255 255 255 / 0.035);
+  }
+  & .ds :is(.pill, .seg, .s-search input, .s-baseline, button.versions) {
+    border-color: var(--gl-edge);
+  }
+  & .ds .seg button[aria-pressed="true"] {
+    background: var(--gl-thumb);
+    color: var(--gl-thumb-ink);
+    box-shadow: var(--gl-thumb-shadow);
+  }
+
+  /* Live tiles: light, large figures. */
+  & .tile-label {
+    font: 500 0.875rem / 1.2 var(--font-ui);
+  }
+  & .tile-primary {
+    font-family: var(--font-display);
+    font-weight: 300;
+  }
+  & .tile-unit {
+    font: 500 0.875rem / 1 var(--font-ui);
+  }
+
+  /* ---- investigation workspace ---- */
+  & .ri-workspace {
+    --ri-ice: #e8eef8;
+    --ri-on-ice: #0b1020;
+    --ri-card: #121827;
+    --ri-card2: #171d2e;
+    --ri-raise: #1d2438;
+    --ri-line: rgb(255 255 255 / 0.075);
+    --ri-lit: rgb(255 255 255 / 0.06);
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+  & :is(.ri-card, .ri-panel, .ri-sl-map, .ri-sl-laps, .ri-sl-open) {
+    border: 1px solid var(--gl-edge);
+    border-radius: 1.25rem;
+    background: var(--gl-fill);
+    box-shadow: var(--gl-shadow);
+  }
+  & :is(.ri-card-title, .ri-rail-title, .ri-sl-open h2) {
+    font-family: var(--font-display);
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+  & .ri-card-label .ri-card-title {
+    font-size: 1.0625rem;
+  }
+  & :is(.ri-legend, .ri-run-legend, .ri-rail-cols, .ri-sl-cols, .ri-progress-key) {
+    font-weight: 500;
+  }
+  & .ri-axis {
+    font-weight: 500;
+  }
+  & .ri-axis-title {
+    font-weight: 600;
+  }
+  & .ri-rail-bar {
+    border-color: rgb(255 255 255 / 0.06);
+    background: rgb(18 24 39 / 0.92);
+    backdrop-filter: blur(16px);
+  }
+  & .ri-run-head {
+    border-radius: 0.75rem;
+    background: rgb(29 36 56 / 0.94);
+    backdrop-filter: blur(16px);
+  }
+  & .ri-lap-row {
+    font-weight: 500;
+  }
+  & .ri-lap-row + .ri-lap-row {
+    border-top-color: rgb(255 255 255 / 0.04);
+  }
+  & .ri-tm {
+    font-weight: 500;
+  }
+  & .ri-n {
+    font-weight: 600;
+  }
+  & :is(.ri-pit-card, .ri-runs-pit, .pit-card) {
+    border-radius: 1.125rem;
+  }
+  & :is(.ri-pit-band, .pit-card-band) {
+    font-weight: 600;
+  }
+  & .ri-pit-duration {
+    font-weight: 300;
+  }
+  & .ri-run-card {
+    border-radius: 1.125rem;
+  }
+  & .ri-run-card-head b {
+    font-weight: 600;
+  }
+  & .ri-fact-value {
+    font-weight: 400;
+  }
+  & .ri-pit-pop .ri-pit-card,
+  & .ri-pit-card {
+    backdrop-filter: blur(18px);
+  }
+
+  & ::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.14);
+  }
+}

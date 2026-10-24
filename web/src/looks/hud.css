@@ -1,0 +1,635 @@
+/*
+ * HUD: the cockpit heads-up display. Near-black with a cool cast and a faint scan grid behind everything, Oxanium throughout with
+ * wide-tracked capitals, frames marked by four corner brackets over a hairline, chamfered controls (cut top-left and bottom-right
+ * corners), LED lamps on every on/off toggle, and a pale cyan-white light for selection and focus. Racing data keeps its colours.
+ * Scoped to html[data-look="hud"]; loaded only when the look is chosen (looks.ts).
+ */
+@import "@fontsource-variable/oxanium/wght.css";
+
+:root[data-look="hud"] {
+  --color-app: #05090b;
+  --color-navigation: #04080a;
+  --color-surface1: #0a1316;
+  --color-surface2: #0e1a1e;
+  --color-surface3: #142328;
+  --color-surface-card-end: #081013;
+  --color-surface-hover: #17292f;
+  --color-border-subtle: #15262c;
+  --color-border-strong: #2a4650;
+  --color-text-primary: #e6fbff;
+  --color-text-secondary: #a9c6cd;
+  --color-text-muted: #6f8f97;
+  --color-text-disabled: #3f565c;
+  --color-accent: #d8fbff;
+  --color-accent-fill: #16323a;
+  --color-accent-hover: #1d3f48;
+  --color-accent-subtle: #0c1d22;
+  --color-interaction: #d8fbff;
+  --color-focus: #d8fbff;
+  --color-chart-background: #071013;
+  --color-chart-grid: #16282e;
+  --color-chart-reference: #5f8c96;
+  --color-shadow: #00000099;
+  --color-brand: #9eeefc;
+  --color-brand-ink: #0d2a31;
+  --color-brand-soft: #0c1d22;
+  --color-brand-ivory: #e6fbff;
+  --font-ui: "Oxanium Variable", "Bahnschrift", sans-serif;
+  --font-display: "Oxanium Variable", "Bahnschrift", sans-serif;
+  --font-metric: "Oxanium Variable", "Bahnschrift", sans-serif;
+  --radius-control: 0;
+  --radius-card: 0;
+  --radius-tile: 0;
+  --radius-block: 0;
+  --radius-panel: 0;
+  --radius-pill: 0;
+  --lit: transparent;
+  --glow-interaction: none;
+  --shadow-card: none;
+
+  /* HUD parts */
+  --hud-ink: #04161b;
+  --hud-line: rgb(150 225 240 / 0.13);
+  --hud-line-strong: rgb(190 240 250 / 0.32);
+  --hud-b: rgb(205 248 255 / 0.62);
+  --hud-arm: 0.8rem;
+  --hud-w: 2px;
+  --hud-cut: 0.5rem;
+  --hud-fill: linear-gradient(180deg, rgb(13 25 29 / 0.92), rgb(7 15 18 / 0.92));
+  --hud-glow: 0 0 0.5rem rgb(160 240 255 / 0.55);
+  --card-fill: var(--hud-fill);
+
+  & body {
+    background:
+      linear-gradient(rgb(120 215 235 / 0.035) 1px, transparent 1px) 0 0 / 2.5rem 2.5rem,
+      linear-gradient(90deg, rgb(120 215 235 / 0.035) 1px, transparent 1px) 0 0 / 2.5rem 2.5rem,
+      radial-gradient(90rem 36rem at 50% -12%, rgb(70 190 220 / 0.09), transparent 62%),
+      var(--color-app);
+    background-attachment: fixed;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- type: tracked capitals for every heading and label ---- */
+  & h1 {
+    font: 600 2rem / 1.1 var(--font-display);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  & h2 {
+    font-weight: 600;
+    letter-spacing: 0.16em;
+  }
+  & :is(.dc, .eyebrow, label > span:first-child, .select-field > span, .sx-l, .tile-label) {
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  & .d {
+    font-variant-numeric: tabular-nums;
+  }
+  & ::selection {
+    background: rgb(216 251 255 / 0.25);
+  }
+
+  /* ---- frames: four corner brackets over a hairline, no rounding, no shadow ---- */
+  & :is(.panel, .card, .bc-card, .sx-event, .ri-card, .ri-panel, .ri-sl-map, .ri-sl-laps, .ri-sl-open, .tile, .notice, .ds .s-car, .ds .d-head, .ds .d-card, .ds .value-group, .ds .b-cand:not(.none), .setups-page .s-board, .setups-page .s-sto, .tuning-page .t-recs, .tuning-page .result-card, .outbox) {
+    border: 1px solid var(--hud-line);
+    border-radius: 0;
+    box-shadow: none;
+    background:
+      linear-gradient(var(--hud-b), var(--hud-b)) left top / var(--hud-arm) var(--hud-w) no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) left top / var(--hud-w) var(--hud-arm) no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) right top / var(--hud-arm) var(--hud-w) no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) right top / var(--hud-w) var(--hud-arm) no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) left bottom / var(--hud-arm) var(--hud-w) no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) left bottom / var(--hud-w) var(--hud-arm) no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) right bottom / var(--hud-arm) var(--hud-w) no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) right bottom / var(--hud-w) var(--hud-arm) no-repeat,
+      var(--hud-fill);
+    background-origin: border-box;
+  }
+  /* A tile or line inside a frame: a quieter frame, brackets dimmed. */
+  & :is(.tile, .ds .value-group, .ds .b-cand, .bc-tile) {
+    --hud-b: rgb(205 248 255 / 0.35);
+    --hud-arm: 0.5rem;
+  }
+  & .card-link:hover {
+    --hud-b: var(--color-interaction);
+  }
+  & .notice-bad {
+    border-color: color-mix(in srgb, var(--color-danger) 60%, transparent);
+  }
+
+  /* ---- header: a HUD bar with a light line under it ---- */
+  & .topbar {
+    background: linear-gradient(180deg, rgb(9 20 24 / 0.97), rgb(5 10 12 / 0.95));
+    border-bottom: 1px solid var(--hud-line-strong);
+    box-shadow: 0 1px 0 rgb(216 251 255 / 0.06), 0 0.25rem 1rem -0.25rem rgb(150 235 250 / 0.28);
+    backdrop-filter: none;
+  }
+  & .brand-mark {
+    filter: drop-shadow(0 0 0.3rem rgb(158 238 252 / 0.6));
+  }
+  & .mark-ring {
+    stroke: var(--color-brand);
+  }
+  & .mark-hand {
+    stroke: #fff;
+  }
+  & .brand-word {
+    gap: 0.25rem;
+  }
+  & .brand-eyebrow {
+    color: var(--color-text-muted);
+    font: 500 0.6875rem / 1 var(--font-display);
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+  }
+  & .brand-name {
+    color: var(--color-text-primary);
+    font: 700 1.25rem / 1 var(--font-display);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+  }
+  & .topbar nav {
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 0;
+    border-radius: 0;
+    background:
+      linear-gradient(var(--hud-b), var(--hud-b)) left top / 0.5rem 1.5px no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) left top / 1.5px 0.5rem no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) right bottom / 0.5rem 1.5px no-repeat,
+      linear-gradient(var(--hud-b), var(--hud-b)) right bottom / 1.5px 0.5rem no-repeat,
+      rgb(216 251 255 / 0.03);
+  }
+  & .nav-link {
+    padding: 0 1.125rem;
+    border-radius: 0;
+    background: rgb(216 251 255 / 0.045);
+    color: var(--color-text-secondary);
+    font: 600 0.875rem / 1 var(--font-display);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
+  }
+  & .nav-link:hover:not(.active) {
+    background: rgb(216 251 255 / 0.1);
+    color: var(--color-text-primary);
+  }
+  & .nav-link.active {
+    background: var(--color-interaction);
+    color: var(--hud-ink);
+    box-shadow: none;
+  }
+  & .nav-link:focus-visible {
+    outline: none;
+    text-decoration: underline 2px;
+    text-underline-offset: 0.3em;
+    box-shadow: inset 0 0 0 2px var(--color-interaction);
+  }
+  & .nav-link.active .live-dot {
+    box-shadow: 0 0 0 2px var(--hud-ink);
+  }
+  /* The driver as a readout: DRIVER tag, then the name. */
+  & .driver-name {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.625rem;
+    color: var(--color-text-primary);
+    font: 600 0.9375rem / 1 var(--font-display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  & .driver-eyebrow {
+    padding: 0.25rem 0.4375rem;
+    border: 1px solid var(--hud-line-strong);
+    color: var(--color-text-muted);
+    font: 600 0.6875rem / 1 var(--font-display);
+    letter-spacing: 0.24em;
+  }
+  & .banner {
+    background: rgb(255 90 110 / 0.08);
+    border-bottom-color: color-mix(in srgb, var(--race-loss) 50%, transparent);
+    letter-spacing: 0.06em;
+  }
+
+  /* ---- controls: chamfered blocks, tracked capitals ---- */
+  & :is(.btn, button:not([class]), button:is(.on, .danger, .btn-accent, .icon-btn, .kit-tab-on, .kit-tab-off), .ds .s-baseline, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-sl-tab) {
+    border: 0;
+    border-radius: 0;
+    background: rgb(216 251 255 / 0.06);
+    box-shadow: inset 0 -1px 0 var(--hud-line-strong);
+    color: var(--color-text-primary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
+  }
+  & :is(.btn, button:not([class]), button:is(.on, .danger, .btn-accent, .icon-btn, .kit-tab-on, .kit-tab-off), .ds .s-baseline, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-sl-tab):hover:not(:disabled) {
+    background: rgb(216 251 255 / 0.12);
+  }
+  & :is(.btn, button:not([class]), button:is(.on, .danger, .btn-accent, .icon-btn, .kit-tab-on, .kit-tab-off), .ds .s-baseline, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill, .ri-sl-tab):focus-visible {
+    outline: none;
+    text-decoration: underline 2px;
+    text-underline-offset: 0.3em;
+    box-shadow: inset 0 0 0 2px var(--color-interaction);
+  }
+  & :is(.btn, button:not([class]), button.on, .ri-button, .ri-pill-button, .ri-pill-toggle, .ri-toggle, .ri-text-button, .ri-icon-pill):disabled {
+    background: rgb(216 251 255 / 0.02);
+    box-shadow: inset 0 -1px 0 var(--hud-line);
+    color: var(--color-text-disabled);
+  }
+  & :is(.btn-accent, .ri-pill-button.primary, .ri-sl-tab[aria-selected="true"], .kit-tab-on) {
+    background: var(--color-interaction);
+    color: var(--hud-ink);
+    box-shadow: none;
+  }
+  & :is(.btn-accent, .ri-pill-button.primary):hover:not(:disabled) {
+    background: #fff;
+    box-shadow: none;
+  }
+  & :is(.btn.danger, button.danger) {
+    color: var(--color-danger);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-danger) 60%, transparent);
+  }
+  & .ri-icon-pill {
+    width: var(--control-height);
+  }
+  & .ri-icon-pill.on,
+  & .icon-btn.on {
+    background: rgb(216 251 255 / 0.16);
+    box-shadow: inset 0 0 0 1px var(--color-interaction);
+  }
+  & .link-btn {
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-underline-offset: 0.3em;
+  }
+
+  /* LED lamps: every on/off toggle carries one, dark when off, lit when on. */
+  & :is(.ri-pill-toggle, .ri-toggle, .ri-button[aria-pressed], .btn[aria-pressed], .tuning-page button[aria-pressed]) {
+    gap: 0.5rem;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle, .ri-button[aria-pressed], .btn[aria-pressed], .tuning-page button[aria-pressed])::before {
+    content: "";
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    background: #10232a;
+    box-shadow: inset 0 0 0 1px #2c4a54;
+  }
+  & :is(.ri-pill-toggle, .ri-toggle, .ri-button, .btn, .tuning-page button)[aria-pressed="true"] {
+    background: rgb(216 251 255 / 0.1);
+    color: var(--color-text-primary);
+    box-shadow: inset 0 -1px 0 var(--color-interaction);
+  }
+  & :is(.ri-pill-toggle, .ri-toggle, .ri-button, .btn, .tuning-page button)[aria-pressed="true"]::before {
+    background: var(--color-interaction);
+    box-shadow: 0 0 0.25rem 0.0625rem rgb(160 240 255 / 0.85), 0 0 0.75rem rgb(160 240 255 / 0.45);
+  }
+
+  /* Inputs and native selects: square fields with a light base line. */
+  & :is(input, select, textarea):not([type="checkbox"], [type="radio"], [type="range"]) {
+    border: 1px solid var(--hud-line);
+    border-bottom-color: var(--hud-line-strong);
+    border-radius: 0;
+    background-color: rgb(216 251 255 / 0.04);
+    letter-spacing: 0.04em;
+  }
+  & :is(input, select, textarea):not([type="checkbox"], [type="radio"], [type="range"]):focus-visible {
+    border-color: var(--color-interaction);
+    box-shadow: 0 0.25rem 0.75rem -0.375rem rgb(160 240 255 / 0.5);
+  }
+  & :is(input[type="checkbox"], input[type="radio"]) {
+    accent-color: var(--color-interaction);
+  }
+  & :focus-visible {
+    outline-color: var(--color-interaction);
+  }
+
+  /* Segments and view tabs: a row of chamfered blocks, the current one lit. The row glows where a block is lit. */
+  & :is(.seg, .ri-tabs) {
+    gap: 0.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    filter: drop-shadow(0 0 0.35rem rgb(150 235 250 / 0.18));
+  }
+  & :is(.seg button, .ri-tab) {
+    padding: 0 1.125rem;
+    border: 0;
+    border-radius: 0;
+    background: rgb(216 251 255 / 0.05);
+    box-shadow: inset 0 -1px 0 var(--hud-line);
+    color: var(--color-text-muted);
+    font: 600 var(--text-control) / 1 var(--font-display);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
+  }
+  & :is(.seg button, .ri-tab):hover:not(:disabled):not(.on, [aria-pressed="true"], [aria-selected="true"]) {
+    background: rgb(216 251 255 / 0.11);
+    color: var(--color-text-primary);
+  }
+  & :is(.seg button:is(.on, [aria-pressed="true"], [aria-selected="true"]), .ri-tab[aria-selected="true"]) {
+    background: var(--color-interaction);
+    color: var(--hud-ink);
+    box-shadow: none;
+  }
+  & :is(.seg button, .ri-tab):focus-visible {
+    outline: none;
+    text-decoration: underline 2px;
+    text-underline-offset: 0.3em;
+  }
+  & :is(.seg button, .ri-tab):not(.on, [aria-pressed="true"], [aria-selected="true"]):focus-visible {
+    box-shadow: inset 0 0 0 2px var(--color-interaction);
+  }
+  & .seg button:disabled {
+    background: rgb(216 251 255 / 0.02);
+    color: var(--color-text-disabled);
+  }
+
+  /* P · Q · R: chamfered squares, the phase band a lamp along the base; the chosen phase fills with its band. */
+  & :is(.seg.phase, .ri-pqr) {
+    gap: 0.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+  & .ri-pqr-sep {
+    display: none;
+  }
+  & :is(.seg.phase button, .ri-pqr-seg) {
+    border-radius: 0;
+    background: rgb(216 251 255 / 0.05);
+    color: var(--color-text-secondary);
+    font: 700 1.125rem / 1 var(--font-display);
+    letter-spacing: 0;
+    clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
+  }
+  & :is(.seg.phase button, .ri-pqr-seg)::after {
+    left: 0.625rem;
+    right: 0.625rem;
+    bottom: 0.25rem;
+    height: 2px;
+    border-radius: 0;
+    opacity: 0.6;
+  }
+  & :is(.seg.phase button.on, .ri-pqr-seg.on) {
+    background: var(--band, var(--b));
+    color: var(--hud-ink);
+    box-shadow: none;
+  }
+  & .ri-pqr-seg:focus-visible {
+    outline: none;
+    text-decoration: underline 2px;
+    text-underline-offset: 0.3em;
+  }
+
+  /* Sessions' R · Q · P toggles: a phase lamp along the base, lit when the phase is shown. */
+  & .sx-toggles .sx-toggle {
+    position: relative;
+    background: rgb(216 251 255 / 0.05);
+    color: var(--color-text-secondary);
+    box-shadow: none;
+    letter-spacing: 0;
+  }
+  & .sx-toggles .sx-toggle::after {
+    content: "";
+    position: absolute;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 0.25rem;
+    height: 3px;
+    background: var(--b);
+    opacity: 0.28;
+  }
+  & .sx-toggles .sx-toggle[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--b) 18%, transparent);
+    color: var(--color-text-primary);
+    box-shadow: none;
+  }
+  & .sx-toggles .sx-toggle[aria-pressed="true"]::after {
+    opacity: 1;
+    box-shadow: 0 0 0.5rem var(--b);
+  }
+
+  /* Filter and choice pills: chamfered readout fields with a light base line. */
+  & :is(.ms-pill, .ss-pill) {
+    border: 0;
+    border-radius: 0;
+    background: rgb(216 251 255 / 0.05);
+    box-shadow: inset 0 -1px 0 var(--hud-line-strong);
+    font-family: var(--font-display);
+    letter-spacing: 0.16em;
+    clip-path: polygon(var(--hud-cut) 0, 100% 0, 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, 0 100%, 0 var(--hud-cut));
+  }
+  & :is(.ms-pill, .ss-pill):hover {
+    background: rgb(216 251 255 / 0.1);
+  }
+  & :is(.ms-pill.open, .ss-pill.open, .ms-pill.has:not(.open)) {
+    background: rgb(216 251 255 / 0.12);
+    box-shadow: inset 0 -2px 0 var(--color-interaction);
+  }
+  & :is(.ms-pill, .ss-pill):focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-interaction);
+  }
+  & :is(.ms-panel, .ss-panel, .fb-pop, .fb-sheet) {
+    border: 1px solid var(--hud-line-strong);
+    border-radius: 0;
+    background: #071114;
+    box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 0.75), 0 0 1.25rem rgb(150 235 250 / 0.08);
+  }
+  & :is(.ms-opt, .ss-opt) {
+    border-radius: 0;
+    letter-spacing: 0.06em;
+  }
+  & :is(.ms-opt, .ss-opt)[aria-selected="true"] {
+    box-shadow: inset 2px 0 0 var(--color-interaction);
+  }
+  & .ms-box {
+    border-radius: 0;
+  }
+
+  /* Chips and badges: small chamfered tags. */
+  & :is(.badge, .chip, .state-chip, .change, .inc-chip, .ri-chip, .ri-inc-chip, .ri-count-chip, .sx-badge, .sx-letter, .ds .tag) {
+    border-radius: 0;
+    clip-path: polygon(0.3rem 0, 100% 0, 100% calc(100% - 0.3rem), calc(100% - 0.3rem) 100%, 0 100%, 0 0.3rem);
+  }
+  & :is(.badge, .chip, .state-chip, .ri-chip, .ri-count-chip, .ds .tag) {
+    letter-spacing: 0.14em;
+  }
+  & .ri-count-chip {
+    background: rgb(216 251 255 / 0.1);
+    color: var(--color-text-primary);
+  }
+  & .badge-fixed {
+    background: var(--color-interaction);
+    color: var(--hud-ink);
+  }
+
+  /* ---- Sessions: event frames, lines cut at their top-right corner ---- */
+  & .sx-events {
+    gap: 1rem;
+  }
+  & .sx-id {
+    border-right-color: var(--hud-line);
+  }
+  & .sx-id h2 {
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  & .sx-sil-line {
+    stroke: var(--color-brand);
+  }
+  & .sx-line {
+    border: 0;
+    border-radius: 0;
+    background: rgb(216 251 255 / 0.035);
+    clip-path: polygon(0 0, calc(100% - 0.75rem) 0, 100% 0.75rem, 100% 100%, 0 100%);
+  }
+  & a.sx-line-body:hover {
+    background-color: rgb(216 251 255 / 0.07);
+  }
+  & .sx-v {
+    letter-spacing: 0.02em;
+  }
+  & .bc-id h2 {
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  & .bc-tile {
+    border-radius: 0;
+    background: rgb(216 251 255 / 0.035);
+    box-shadow: none;
+  }
+  & .bc-silhouette {
+    color: var(--color-brand);
+    filter: drop-shadow(0 0 0.5rem rgb(158 238 252 / 0.4));
+  }
+  & .stripe {
+    border-radius: 0;
+  }
+
+  /* ---- investigation workspace ---- */
+  & .ri-workspace {
+    --ri-ice: #d8fbff;
+    --ri-on-ice: #04161b;
+    --ri-lit: transparent;
+    --ri-card: rgb(13 25 29 / 0.92);
+  }
+  & :is(.ri-card-title, .ri-rail-title) {
+    font-weight: 600;
+    letter-spacing: 0.18em;
+  }
+  /* A lamp before every board title. */
+  & :is(.ri-card-title, .ri-rail-title)::before {
+    content: "";
+    display: inline-block;
+    width: 0.375rem;
+    height: 0.375rem;
+    margin: 0 0.625rem 0.15em 0;
+    vertical-align: middle;
+    background: var(--color-interaction);
+    box-shadow: var(--hud-glow);
+  }
+  & .ri-card-label .ri-card-title {
+    font-size: 1rem;
+  }
+  & .ri-rail-title {
+    font-size: 1.125rem;
+  }
+  & .ri-count-chip {
+    letter-spacing: 0.12em;
+  }
+  & :is(.ri-legend, .ri-run-legend, .ri-axis-title, .ri-rail-cols) {
+    letter-spacing: 0.12em;
+  }
+  & .ri-rail-bar {
+    background: rgb(7 15 18 / 0.96);
+    border-color: var(--hud-line);
+  }
+  & .ri-run-head {
+    border-radius: 0;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 0.4rem), calc(100% - 0.4rem) 100%, 0 100%);
+  }
+  & .ri-run-head b {
+    letter-spacing: 0.16em;
+  }
+  & .ri-run-comp {
+    border-radius: 0;
+  }
+  & .ri-lap-row {
+    letter-spacing: 0.02em;
+  }
+  & .ri-lap-row + .ri-lap-row {
+    border-top-color: rgb(150 225 240 / 0.06);
+  }
+  & .ri-run-lines {
+    border-top-color: var(--hud-line);
+  }
+  & .ri-progress-bar,
+  & .ri-temp-key i,
+  & .ri-swl {
+    border-radius: 0;
+  }
+  /* Run cards and the pit cards: framed, square. */
+  & .ri-run-card {
+    border-radius: 0;
+    border-color: var(--hud-line);
+    background-color: rgb(13 25 29 / 0.9);
+  }
+  & .ri-run-card-head b {
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  & :is(.ri-pit-card, .ri-runs-pit, .pit-card, .ri-tire-details) {
+    border-radius: 0;
+    clip-path: polygon(0 0, calc(100% - 0.75rem) 0, 100% 0.75rem, 100% 100%, 0.75rem 100%, 0 calc(100% - 0.75rem));
+  }
+  & :is(.ri-pit-band, .pit-card-band) {
+    letter-spacing: 0.16em;
+  }
+  & .ri-sl-tabs {
+    gap: 0.25rem;
+    border-bottom-color: var(--hud-line);
+  }
+  & .ri-sl-tab {
+    letter-spacing: 0.04em;
+  }
+
+  /* ---- Setups, Tuning and Live: framed boards, tracked titles ---- */
+  & .ds {
+    --ds-line: var(--hud-line);
+    --ds-edge: transparent;
+  }
+  & .ds .s-car-head {
+    background: linear-gradient(100deg, color-mix(in srgb, var(--car) 16%, #0a1316), #0a1316 60%);
+  }
+  & .ds .s-search input {
+    border-radius: 0;
+  }
+  & :is(.setups-page .s-car-choice, .ds .s-files-toggle, .ds .s-fcar-toggle, .ds .s-car-toggle) {
+    border-radius: 0;
+  }
+  & .ds h1,
+  & .ds .d-head h1 {
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  & .tile-value,
+  & .tile-primary {
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- scrollbars: square thumbs ---- */
+  & ::-webkit-scrollbar-thumb {
+    border-radius: 0;
+    background: #2a4650;
+    background-clip: padding-box;
+  }
+}
