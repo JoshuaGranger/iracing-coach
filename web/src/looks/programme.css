@@ -81,7 +81,7 @@
     text-transform: none;
   }
   /* Labels: letter-spaced small capitals in the sans. */
-  & :is(.dc, .eyebrow, label > span:first-child, .select-field > span, .sx-l, .sx-act, .tile-label, .fb-field-label, .fb-title, .ri-axis-title, .ri-legend, .ri-run-legend, .ri-rail-cols, .ri-sl-cols, .ri-chip, .ri-progress-key, .ri-trace-count, .ri-readout-head > span, .ri-kv span, .ri-run-head b, .state-chip, .badge, .chip, .tag, .caps, .brand-eyebrow, .driver-eyebrow) {
+  & :is(.dc, .eyebrow, label > span:first-child, .select-field > span, .sx-l, .sx-act, .tile-label, .fb-field-label, .fb-title, .ri-axis-title, .ri-legend, .ri-run-legend, .ri-rail-cols, .ri-sl-cols, .ri-chip, .ri-progress-key, .ri-trace-count, .ri-readout-head > span, .ri-kv span, .ri-run-head b, .state-chip, .badge, .chip, .tag, .caps, .bc-id-meta, .bc-stat > span, .bc-band, .bc-hero-from, .pit-card-band span, .brand-eyebrow, .driver-eyebrow) {
     font-family: var(--font-ui);
     font-stretch: normal;
     font-weight: 600;
@@ -498,6 +498,11 @@
   & .setups-page :is(.s-track-head, .s-board-head) {
     background: transparent;
   }
+  & .setups-page .s-cols {
+    font: 600 0.6875rem / 1.2 var(--font-ui);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
   & .ds .pill {
     border-radius: 0;
     background: transparent;
@@ -614,6 +619,10 @@
   }
   & .ri-kv {
     border-top-width: 1px;
+  }
+  & .ri-kv span {
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
   }
   & .ri-kv strong {
     font-size: 1.5rem;
@@ -824,5 +833,12 @@
 
   & ::-webkit-scrollbar-thumb {
     border-radius: 0;
+  }
+}
+
+/* A narrower track strip puts its readouts on two rows (investigation.css): the figures return to the strip's own size there. */
+@container strip (max-width: 50rem) {
+  :root[data-look="programme"] .ri-kv strong {
+    font-size: 1.125rem;
   }
 }
