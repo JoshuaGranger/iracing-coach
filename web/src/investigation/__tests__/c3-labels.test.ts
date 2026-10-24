@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paceTopMargin } from "../ui/RaceView";
+import { incidentTagDrop, paceTopMargin } from "../ui/RaceView";
 import { rowNameWraps } from "../ui/TraceChart";
 
 describe("rowNameWraps: a trace row wraps a long name only when two lines and the unit fit", () => {
@@ -32,5 +32,19 @@ describe("paceTopMargin: the Lap time title clears the pit and incident tags", (
 
   it("leaves room above the pit tag for its glow", () => {
     for (const k of [0.875, 1, 1.25]) expect(paceTopMargin([400], 52, k) - 25 * k).toBeGreaterThanOrEqual(12 * k);
+  });
+});
+
+describe("incidentTagDrop: an incident on a pit lap sits under the pit tag", () => {
+  it("stays in the tag row on a lap without a stop", () => {
+    expect(incidentTagDrop(false, 1)).toBe(0);
+  });
+
+  it("drops below the pit tag (25 to 5 px above the plot) so neither covers the other", () => {
+    for (const k of [0.875, 1, 1.25]) {
+      const pitBottom = -5 * k;
+      const incidentTop = -26 * k + incidentTagDrop(true, k);
+      expect(incidentTop).toBeGreaterThan(pitBottom);
+    }
   });
 });

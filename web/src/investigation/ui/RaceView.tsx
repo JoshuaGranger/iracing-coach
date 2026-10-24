@@ -144,6 +144,11 @@ export function chartLaps(laps: readonly InvestigationLap[]): { pace: Investigat
  * clears the chart's top edge, #41), and a further line when a tag would sit under the `Lap time · s` title at the plot's top left
  * (a narrow chart with an early stop or incident), so the title clears it.
  */
+/** How far an incident tag drops: on a lap with a pit tag it sits under it (the pit tag's 20 px and a 2 px gap), so both read. */
+export function incidentTagDrop(onPitLap: boolean, k: number): number {
+  return onPitLap ? 22 * k : 0;
+}
+
 export function paceTopMargin(tagXs: readonly number[], left: number, k: number): number {
   const titleRight = left + 12 * 7.3 * k + 6 * k;
   const crowded = tagXs.some((x) => x - 14 * k < titleRight);
@@ -328,11 +333,12 @@ function ProgressChart({ inv, stops, knownPitLaps, fastestLap, word, identities,
         {incidents.map((item) => {
           const x = pace.x(item.lap);
           const points = item.value ?? 0;
+          const tagDrop = incidentTagDrop(stops.some((stop) => stop.lap === item.lap), k);
           return (
             <g key={`i${item.lap}`} data-incident-lap={item.lap}>
               <line x1={n(x)} x2={n(x)} y1={n(pace.top - 4)} y2={n(bandBottom)} class="ri-event incident" />
-              <rect x={n(x - 14 * k)} y={n(pace.top - 26 * k)} width={n(28 * k)} height={n(21 * k)} rx={n(10.5 * k)} class={`ri-inc-tag${points >= 2 ? " solid" : ""}`} />
-              <text x={n(x)} y={n(pace.top - 11 * k)} text-anchor="middle" class={`ri-inc-tag-text${points >= 2 ? " solid" : ""}`}>{`x${points.toFixed(0)}`}<title>{`L${item.lap} · x${points.toFixed(0)}`}</title></text>
+              <rect x={n(x - 14 * k)} y={n(pace.top - 26 * k + tagDrop)} width={n(28 * k)} height={n(21 * k)} rx={n(10.5 * k)} class={`ri-inc-tag${points >= 2 ? " solid" : ""}`} />
+              <text x={n(x)} y={n(pace.top - 11 * k + tagDrop)} text-anchor="middle" class={`ri-inc-tag-text${points >= 2 ? " solid" : ""}`}>{`x${points.toFixed(0)}`}<title>{`L${item.lap} · x${points.toFixed(0)}`}</title></text>
             </g>
           );
         })}
