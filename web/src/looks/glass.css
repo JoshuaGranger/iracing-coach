@@ -58,7 +58,7 @@
   --card-fill: var(--gl-fill);
   --shadow-card: var(--gl-shadow);
   --glow-interaction: 0 0 0 1px rgb(232 238 248 / 0.28);
-  --gl-sidebar: 15rem;
+  --gl-sidebar: 14rem;
   --gl-rail: 4.75rem;
 
   & body {
@@ -136,9 +136,19 @@
   & .main {
     grid-row: 3;
     align-self: stretch;
+    max-width: 112rem;
+    margin: 0;
+    padding-left: var(--space-7);
+    padding-right: var(--space-7);
+  }
+  & .main-wide {
+    padding: var(--space-2);
   }
   & .companion-footer {
     grid-row: 4;
+    max-width: 112rem;
+    margin: 0;
+    padding-left: var(--space-7);
   }
 
   & .brand {
@@ -174,12 +184,6 @@
     border: 0;
     border-radius: 0;
     background: none;
-  }
-  & .topbar nav::before {
-    content: "Library";
-    padding: 0 var(--space-3) var(--space-2);
-    color: var(--color-text-muted);
-    font: 500 0.75rem / 1 var(--font-ui);
   }
   & .nav-link {
     justify-content: flex-start;
@@ -248,9 +252,6 @@
       clip: rect(0 0 0 0);
       white-space: nowrap;
     }
-    & .topbar nav::before {
-      display: none;
-    }
     & .nav-link {
       justify-content: center;
       width: 3.25rem;
@@ -312,35 +313,6 @@
     }
   }
 
-  /* ---- controls: soft translucent fills, no hard edges ---- */
-  & :is(button, .btn) {
-    border-color: transparent;
-    background: var(--gl-control);
-    font-weight: 500;
-    box-shadow: inset 0 0 0 1px var(--gl-edge);
-  }
-  & :is(button, .btn):hover:not(:disabled):not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))) {
-    background: var(--gl-control-hover);
-  }
-  & button:disabled {
-    background: rgb(255 255 255 / 0.025);
-    border-color: transparent;
-    box-shadow: none;
-  }
-  & :is(.btn-accent, button.btn-accent) {
-    background: var(--gl-thumb);
-    color: var(--gl-thumb-ink);
-    box-shadow: var(--gl-thumb-shadow);
-  }
-  & :is(input, select, textarea):not([type="checkbox"], [type="radio"], [type="range"]) {
-    border: 1px solid var(--gl-edge);
-    border-radius: 0.75rem;
-    background: rgb(0 0 0 / 0.22);
-    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.3);
-  }
-  & :is(input, textarea):focus-visible {
-    border-color: rgb(232 238 248 / 0.6);
-  }
   & :focus-visible {
     outline: 2px solid rgb(232 238 248 / 0.9);
     outline-offset: 2px;
@@ -401,11 +373,11 @@
   & :is(.seg.phase button, .ri-pqr-seg)::after {
     left: 50%;
     right: auto;
-    width: 0.375rem;
-    height: 0.375rem;
-    bottom: 0.25rem;
-    margin-left: -0.1875rem;
-    border-radius: 50%;
+    width: 0.875rem;
+    height: 3px;
+    bottom: 0.1875rem;
+    margin-left: -0.4375rem;
+    border-radius: 2px;
   }
   & :is(.seg.phase button.on, .ri-pqr-seg.on) {
     background: var(--band, var(--b));
@@ -603,6 +575,16 @@
     border-radius: 1.375rem;
     box-shadow: var(--gl-shadow);
   }
+  & .setups-page .s-car-choice {
+    border-color: var(--gl-edge);
+    border-radius: 1.125rem;
+    background: var(--gl-fill-soft);
+  }
+  & .setups-page .s-car-choice[aria-pressed="true"] {
+    border-color: color-mix(in srgb, var(--car) 35%, transparent);
+    background: linear-gradient(100deg, color-mix(in srgb, var(--car) 12%, transparent), transparent 45%), var(--gl-fill);
+    box-shadow: inset 3px 0 0 var(--car), var(--gl-shadow);
+  }
   & .ds .value-group {
     border-radius: 1rem;
     background: rgb(255 255 255 / 0.035);
@@ -711,4 +693,39 @@
   & ::-webkit-scrollbar-thumb {
     background: rgb(255 255 255 / 0.14);
   }
+}
+
+/*
+ * The base control recipe, restyled at the base rules' own weight (one element more than `button`, `.btn`, `input`), so every
+ * control with a class of its own (lap rows, run cards, the car chooser, list rows, the tire picture) keeps its own look.
+ */
+:where(:root[data-look="glass"]) body button,
+:where(:root[data-look="glass"]) body .btn {
+  border-color: var(--gl-edge);
+  background: var(--gl-control);
+  font-weight: 500;
+}
+:where(:root[data-look="glass"]) body button:hover:not(:disabled):not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))),
+:where(:root[data-look="glass"]) body .btn:hover:not(:where(.on, .selected, [aria-pressed="true"], [aria-selected="true"], [aria-current]:not([aria-current="false"]))) {
+  background: var(--gl-control-hover);
+}
+:where(:root[data-look="glass"]) body button:disabled {
+  background: rgb(255 255 255 / 0.025);
+  border-color: transparent;
+  box-shadow: none;
+}
+:where(:root[data-look="glass"]) body :is(.btn-accent, button.btn-accent) {
+  border-color: transparent;
+  background: var(--gl-thumb);
+  color: var(--gl-thumb-ink);
+  box-shadow: var(--gl-thumb-shadow);
+}
+:where(:root[data-look="glass"]) body :where(input:not([type="checkbox"], [type="radio"], [type="range"]), select, textarea) {
+  border: 1px solid var(--gl-edge);
+  border-radius: 0.75rem;
+  background: rgb(0 0 0 / 0.22);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.3);
+}
+:where(:root[data-look="glass"]) body :where(input, textarea):focus-visible {
+  border-color: rgb(232 238 248 / 0.6);
 }

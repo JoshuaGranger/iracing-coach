@@ -149,6 +149,8 @@
     top: 5.5rem;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    width: 100%;
     gap: 0.125rem;
     padding: 0;
     border: 0;
@@ -156,6 +158,8 @@
     background: none;
   }
   & .nav-link {
+    display: flex;
+    width: 100%;
     flex-direction: column;
     justify-content: center;
     gap: 0.3125rem;
@@ -185,8 +189,8 @@
   }
   & .nav-link .live-dot {
     position: absolute;
-    top: 0.5rem;
-    right: 0.875rem;
+    top: 0.625rem;
+    right: 1.125rem;
     width: 0.5rem;
     height: 0.5rem;
     box-shadow: 0 0 0 2px var(--color-navigation);
@@ -382,6 +386,7 @@
   /* Buttons in the workspace: bracketed text, no pill. */
   & :is(.ri-pill-button, .ri-button, .ri-text-button) {
     gap: 0.375rem;
+    padding: 0 0.375rem;
     border-color: transparent;
     border-radius: 2px;
     background: transparent;
@@ -417,6 +422,16 @@
   & .ri-icon-pill {
     border-radius: 2px;
     border-color: var(--color-border-strong);
+  }
+  /* The narrow traces card turns Customize into its icon: no brackets around a glyph. */
+  @container studio (max-width: 46rem) {
+    & .ri-trace-head .ri-pill-button[aria-controls]::before,
+    & .ri-trace-head .ri-pill-button[aria-controls]::after {
+      content: none;
+    }
+  }
+  & .ri-rail-foot {
+    gap: var(--space-1);
   }
   & .ri-pill-button:disabled,
   & .ri-button:disabled {
@@ -481,6 +496,9 @@
     font: 700 0.9375rem / 1.2 var(--font-display);
     letter-spacing: 0.08em;
   }
+  & .ri-rail-title {
+    white-space: nowrap;
+  }
   & :is(.ri-card-title, .ri-rail-title)::before {
     content: "▪ ";
     color: var(--color-text-muted);
@@ -511,7 +529,29 @@
   & .ri-n {
     font-size: 1rem;
   }
+  /* Mono is wider than the condensed face the rail was measured for: the sector heads close their word gaps to fit their cells. */
   & .ri-rail-cols {
+    letter-spacing: 0;
+    word-spacing: -0.3em;
+  }
+  & .ri-kvs {
+    gap: var(--space-2);
+  }
+  & .ri-kv span {
+    letter-spacing: 0.02em;
+  }
+  & .ri-kv strong {
+    font-size: 1.375rem;
+    font-weight: 600;
+    letter-spacing: -0.05em;
+  }
+  & .ri-kv small {
+    margin-left: 0.0625rem;
+  }
+  & .ri-kv {
+    border-top-width: 2px;
+  }
+  & .ri-readout-head > span {
     letter-spacing: 0.04em;
   }
   & :is(.ri-legend, .ri-run-legend) {
@@ -574,12 +614,38 @@
   & a.sx-line-body:hover {
     background: var(--color-surface-hover);
   }
+  & .sx-slots {
+    --head: 13rem;
+    column-gap: 1rem;
+  }
+  /* Mono figures need about 6 rem more than the condensed face: a line between 56 and 62 rem keeps the narrow layout (head on its own
+     row, figures in even columns under it) instead of pushing its last column out of the card. */
+  @container sx-line (min-width: 56.01rem) and (max-width: 62rem) {
+    & .sx-slots {
+      grid-template-columns: repeat(var(--cols, 4), minmax(max-content, 1fr));
+      align-items: start;
+    }
+    & .sx-head {
+      grid-column: 1 / -1;
+      align-self: auto;
+    }
+    & .sx-slots[data-figures="false"] {
+      grid-template-columns: max-content;
+    }
+    & .sx-line .sx-slot:nth-child(n) {
+      grid-column: auto;
+    }
+  }
 
   /* ---- Live tiles ---- */
   & .tile {
     background: var(--color-surface1);
   }
   & .tile-label {
+    margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-4)) 0;
+    padding: 0.5rem var(--space-4);
+    background: var(--cn-bar);
+    border-bottom: 1px solid var(--color-border-subtle);
     letter-spacing: 0.06em;
   }
   & .tile-primary {
@@ -587,10 +653,54 @@
     letter-spacing: -0.03em;
   }
 
-  /* ---- Setups ---- */
+  /* ---- Setups: square cards, the file head a title bar ---- */
+  & .ds {
+    --ds-card: var(--color-surface1);
+    --ds-line: var(--color-border-subtle);
+    --ds-edge: transparent;
+  }
+  & .ds :is(.pill .count, .tag, .vu, .s-car, .s-name .count, .d-head, .d-card, .value-group, .b-cand, .b-checks li),
+  & .setup-file .sf-bar,
   & .setups-page .s-car-choice {
     border-radius: 2px;
+    box-shadow: none;
+  }
+  & .ds .d-head::before {
+    width: 3px;
+    box-shadow: none;
+  }
+  & .ds .d-card > h2:first-child {
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-5)) 0;
+    padding: 0.625rem var(--space-5);
+    background: var(--cn-bar);
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  & .setups-page .s-car-choice {
     font-family: var(--font-ui);
+  }
+
+  /* ---- Tuning: square, the recording list's car column wide enough for a mono car name ---- */
+  & .tuning-page :is(.correction, .result-card, .turn-list button, .why li, .t-recs) {
+    border-radius: 2px;
+    box-shadow: none;
+  }
+  @media (min-width: 901px) {
+    & .tuning-page .t-rec {
+      grid-template-columns: 8.5rem minmax(0, 1fr) minmax(16rem, 20rem) 8.5rem;
+    }
+    & .tuning-page .t-rec .t-car {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  /* Panels with a heading first: the heading becomes the title bar. */
+  & .panel > :is(h2, .panel-head):first-child {
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+    padding: 0.625rem var(--space-4);
+    background: var(--cn-bar);
+    border-bottom: 1px solid var(--color-border-subtle);
   }
 
   & ::-webkit-scrollbar-thumb {
