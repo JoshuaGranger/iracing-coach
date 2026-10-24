@@ -3822,6 +3822,7 @@ mod tests {
         assert!(!handle.send(WheelCommand::ReportDiagnosticIncident));
         wait(|| entered.load(Ordering::Acquire));
         let before = reads.load(Ordering::Relaxed);
+        #[cfg(windows)]
         let directory = snapshot(&handle).capture_directory.unwrap();
         #[cfg(windows)]
         let heartbeat_before = {
