@@ -1,8 +1,8 @@
 @import "./gen/theme.css";
 
 /*
- * Broadcast pages with Pit-wall data boards (docs/08-rewrite/design/README.md).
- * Colour is racing data: green flag, caution, pit, best, loss, fuel and car identity (--race-*, --car-*, --phase-*).
+ * Warm workshop chrome around Pit-wall data boards. Copper belongs to the brand and navigation only.
+ * Data colours retain their racing meanings: green flag, caution, pit, best, loss, fuel and identity (--race-*, --car-*, --phase-*).
  * Interaction is light (--color-interaction): selected, current, focus, primary action, cursor. Every size is rem.
  */
 
@@ -17,10 +17,10 @@
   /* Control heights (#80): every button, select, tab and segment is --control-height (the theme token, --touch-target on touch); every
      chip, badge and count tag is --chip-height. A control keeps its label, value and chevron on one centre line (see .ctl-t below). */
   --chip-height: 1.625rem;
-  --lit: rgb(255 255 255 / 0.08);
-  --lit-strong: rgb(255 255 255 / 0.14);
+  --lit: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+  --lit-strong: color-mix(in srgb, var(--color-text-primary) 14%, transparent);
   --card-fill: linear-gradient(180deg, var(--color-surface1), var(--color-surface-card-end));
-  --shadow-card: 0 10px 28px rgb(0 0 0 / 0.35), inset 0 1px 0 var(--lit);
+  --shadow-card: 0 8px 24px var(--color-shadow), inset 0 1px 0 var(--lit);
   --glow-interaction: 0 0 0 1px rgb(234 242 246 / 0.3), 0 0 18px rgb(234 242 246 / 0.14);
   --font-label: var(--font-display);
   /* Themed scrollbars (backlog 1o): thin muted thumb, track that blends into the surface, no arrow buttons. */
@@ -41,7 +41,7 @@ body {
   min-width: 320px;
   overflow-x: hidden;
   font: var(--weight-regular) var(--text-body) / var(--leading-body) var(--font-ui);
-  background: radial-gradient(75rem 31rem at 70% -8%, #122130 0%, transparent 60%), var(--color-app);
+  background: radial-gradient(75rem 31rem at 70% -8%, color-mix(in srgb, var(--color-brand) 9%, var(--color-app)) 0%, transparent 60%), var(--color-app);
 
 }
 
@@ -92,10 +92,8 @@ ol {
   list-style: none;
 }
 h1 {
-  font: 700 var(--text-heading) / 1.05 var(--font-display);
-  font-stretch: condensed;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font: 600 var(--text-heading) / 1.12 var(--font-display);
+  letter-spacing: -0.015em;
 }
 h2 {
   font: 700 var(--text-section-title) / 1.2 var(--font-display);
@@ -186,10 +184,8 @@ button,
 .btn {
   min-height: var(--control-height);
   padding: 0 var(--space-4);
-  font: var(--weight-semibold) var(--text-control) / 1 var(--font-display);
-  font-stretch: condensed;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font: var(--weight-semibold) var(--text-control) / 1 var(--font-ui);
+  letter-spacing: 0;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
   background: var(--color-surface2);
@@ -419,14 +415,14 @@ label.check > span:first-child {
   flex-direction: column;
 }
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-4);
   padding: 0 var(--space-8);
   min-height: 3.25rem;
-  background: rgb(8 13 18 / 0.86);
+  background: radial-gradient(22rem 5rem at 0 50%, color-mix(in srgb, var(--color-brand) 10%, transparent), transparent 75%), color-mix(in srgb, var(--color-navigation) 94%, transparent);
   border-bottom: 1px solid var(--color-border-subtle);
-  flex-wrap: wrap;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -435,57 +431,82 @@ label.check > span:first-child {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
+  justify-self: start;
+  min-height: var(--touch-target);
   color: var(--color-text-primary);
-  font: 700 1.1875rem / 1 var(--font-display);
-  font-stretch: condensed;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  padding: var(--space-2) 0;
+  text-decoration: none;
 }
 .brand:hover {
   text-decoration: none;
 }
-.brand svg {
-  color: var(--color-interaction);
-  filter: drop-shadow(0 0 6px rgb(234 242 246 / 0.45));
+.brand-mark {
+  flex: none;
+}
+.mark-ring {
+  stroke: var(--color-brand);
+  transition: stroke var(--motion-hover) var(--motion-easing);
+}
+.mark-hand {
+  stroke: var(--color-brand-ivory);
+}
+.brand:hover .mark-ring {
+  stroke: var(--color-brand-ivory);
+}
+.brand-word {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+.brand-eyebrow,
+.driver-eyebrow {
+  color: var(--color-text-muted);
+  font: var(--weight-medium) var(--text-compact) / 1 var(--font-ui);
+}
+.brand-name {
+  color: var(--color-brand-ivory);
+  font: 700 1.5rem / 1 var(--font-display);
+  letter-spacing: -0.025em;
 }
 .topbar nav {
-  display: flex;
-  gap: 6px;
-  flex: 1;
-  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-surface1) 90%, transparent);
+}
+.topbar nav:empty {
+  display: none;
 }
 .nav-link {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--touch-target);
-  padding: 0 var(--space-3);
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
   color: var(--color-text-muted);
-  font: var(--weight-semibold) 1rem / 1 var(--font-display);
-  font-stretch: condensed;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font: var(--weight-semibold) var(--text-control) / 1 var(--font-ui);
+  transition: background-color var(--motion-hover) var(--motion-easing), color var(--motion-hover) var(--motion-easing);
 }
-.nav-link:hover {
+.nav-link:hover:not(.active) {
   color: var(--color-text-primary);
+  background: var(--color-brand-soft);
   text-decoration: none;
 }
 .nav-link.active {
-  color: var(--color-text-primary);
+  color: var(--color-brand-ivory);
+  background: var(--color-brand-ink);
+  box-shadow: inset 0 0 0 1px var(--color-brand);
 }
-.nav-link.active::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -1px;
-  height: 3px;
-  border-radius: 2px 2px 0 0;
-  background: var(--color-interaction);
-  box-shadow: 0 0 12px rgb(234 242 246 / 0.6);
+.nav-link.active:hover {
+  text-decoration: none;
+}
+.nav-icon {
+  flex: none;
 }
 .live-dot,
 .dot {
@@ -502,15 +523,32 @@ label.check > span:first-child {
   box-shadow: 0 0 8px color-mix(in srgb, var(--race-green) 75%, transparent);
 }
 .driver-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-self: end;
+  gap: var(--space-1);
   color: var(--color-text-secondary);
   min-width: 0;
+  font-size: var(--text-compact);
+}
+.driver-name > span {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.driver-switch select {
-  min-width: 10rem;
+.driver-switch {
+  justify-self: end;
+  max-width: 100%;
+  min-width: 0;
 }
+.driver-switch select {
+  width: 11rem;
+  max-width: 100%;
+  min-width: 0;
+}
+.card > .chip { align-self: flex-start; }
 .banner {
   margin: 0;
   padding: var(--space-2) var(--space-8);
@@ -789,6 +827,7 @@ button.chip-action {
   --ms-ctl-h: var(--control-height);
 }
 @media (max-width: 700px), (pointer: coarse) {
+  .nav-link { min-height: var(--touch-target); }
   :root {
     --ms-pill-h: var(--touch-target);
     --ms-ctl-h: var(--touch-target);
@@ -1197,7 +1236,7 @@ button.chip-action {
   position: fixed;
   z-index: 55;
   inset: 0;
-  background: rgb(5 9 12 / 0.6);
+  background: color-mix(in srgb, var(--color-app) 60%, transparent);
 }
 .fb-grip {
   align-self: center;
@@ -1909,8 +1948,8 @@ tr.group-head th {
   white-space: nowrap;
 }
 .badge-fixed {
-  background: #e9eef1;
-  color: #0b1218;
+  background: var(--color-text-primary);
+  color: var(--color-app);
 }
 .badge-open {
   border: 1.5px dashed var(--color-text-secondary);
@@ -2356,26 +2395,63 @@ tr.group-head th {
     padding: var(--space-3);
   }
   .topbar {
-    padding: 0 var(--space-3);
+    display: flex;
+    flex-wrap: wrap;
+    padding: var(--space-1) var(--space-3);
     gap: var(--space-2);
+    min-height: 4rem;
   }
   .companion-footer {
     padding-left: var(--space-3);
     padding-right: var(--space-3);
   }
   .topbar nav {
-    order: 3;
-    flex-basis: 100%;
+    flex: 1;
+    min-width: min(100%, 13.5rem);
+    padding: 0.125rem;
+    gap: 0;
+    max-width: 100%;
   }
   .topbar .brand {
-    flex: 1;
+    min-width: var(--touch-target);
   }
   .driver-name {
     display: none;
   }
   .nav-link {
     flex: 1;
+    flex-direction: column;
+    gap: 0.25rem;
     justify-content: center;
+    min-height: 3rem;
+    min-width: 0;
+    padding: 0.25rem 0.5rem;
+    border-radius: 1.5rem;
+  }
+  .nav-icon {
+    width: 1rem;
+    height: 1rem;
+  }
+  .nav-link .live-dot {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    width: 0.4375rem;
+    height: 0.4375rem;
+  }
+  .topbar-multi .driver-switch {
+    order: 1;
+    margin-left: auto;
+  }
+  .topbar-multi { row-gap: 0; }
+  .topbar-multi nav {
+    order: 2;
+    flex-basis: 100%;
+    justify-content: center;
+  }
+  .nav-label {
+    text-align: center;
+    overflow-wrap: anywhere;
   }
   h1 {
     font-size: 1.625rem;
@@ -2395,4 +2471,8 @@ tr.group-head th {
   .bc-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+@media (max-width: 370px) {
+  .topbar:not(.topbar-multi):has(nav:not(:empty)) .brand-word { display: none; }
 }

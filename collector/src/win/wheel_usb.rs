@@ -1,6 +1,7 @@
-//! Explicit, same-executable USB ETW helper. Ordinary wheel capture stays unelevated. No trace
-//! begins at construction/startup; only the recorder's separate administrator-prompt action
-//! calls `start`. Tests inject every trace operation and never elevate or start real ETW.
+//! Same-executable USB ETW helper. Ordinary input capture stays unelevated. Construction starts
+//! no trace; the separate USB worker starts the configured startup or explicit capture action.
+//! Its existing elevated helper can finalize incident snapshots without another prompt. Tests
+//! inject every trace operation and never elevate or start real ETW.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -39,12 +40,18 @@ use windows::Win32::UI::WindowsAndMessaging::SW_HIDE;
 use windows::core::{PCWSTR, PWSTR};
 
 use super::{quote_arg, wide};
-use crate::wheel::WheelUsbTrace;
+use crate::util::{iso_utc, unix_ms_now, uuid_v4};
+use crate::wheel::{UsbIncidentSnapshot, WheelUsbTrace};
 
 const REPARSE_POINT: u32 = 0x400;
 const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const METADATA_LIMIT: u64 = 16 * 1024;
+const TRACE_LIMIT: u64 = 32 * 1024 * 1024;
+const SNAPSHOT_REQUEST: &str = "usb-snapshot-request.json";
+const SNAPSHOT_RESULT: &str = "usb-snapshot-result.json";
+const SNAPSHOT_WAIT: Duration = Duration::from_secs(15);
+const SNAPSHOT_LIMITATIONS: &str = "USB ETL is bounded circular context, not a guaranteed five-minute slice or a snapshot frozen at the button press. It may include events outside the requested window, including earlier events and later events while the request is processed, or omit overwritten events. Snapshotting briefly stops and restarts the trace. TraceStoppedUtc confirms native-session absence; InterruptionMs conservatively measures the stop request through confirmed restart, including tool and file-copy time. USB events alone do not prove a disconnect cause or the force-feedback path.";
 // Only brief file operations share this gate, never a prompt, native input read or tool wait.
 static WRITE_GATE: Mutex<()> = Mutex::new(());
 const PROVIDERS: [&str; 3] = [
@@ -67,6 +74,48 @@ struct UsbOwner {
     parent_id: u32,
     parent_start_filetime: u64,
     sid: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct SnapshotRequest {
+    id: String,
+    requested_utc: String,
+    owner: UsbOwner,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct SnapshotResult {
+    id: String,
+    requested_utc: String,
+    completed_utc: String,
+    ready: bool,
+    trace_restarted: bool,
+    stop_requested_utc: Option<String>,
+    trace_stopped_utc: Option<String>,
+    trace_restarted_utc: Option<String>,
+    interruption_ms: Option<u64>,
+    error: Option<String>,
+}
+
+fn snapshot_name(id: &str) -> Option<String> {
+    session_name(id).then(|| format!("usb-snapshot-{id}.etl"))
+}
+
+/// Private protocol files and finalized snapshots are owned capture artifacts, never paths
+/// supplied by a requester. The recorder may prune these with its other owned capture files.
+pub fn is_owned_snapshot_name(name: &str) -> bool {
+    matches!(
+        name,
+        SNAPSHOT_REQUEST
+            | SNAPSHOT_RESULT
+            | "usb-snapshot-request.json.tmp"
+            | "usb-snapshot-result.json.tmp"
+    ) || name
+        .strip_prefix("usb-snapshot-")
+        .and_then(|n| n.strip_suffix(".etl"))
+        .is_some_and(session_name)
 }
 
 #[derive(Debug)]
@@ -139,6 +188,7 @@ pub struct NativeWheelUsbTrace {
     recovering: bool,
     unconfirmed_cleanup: bool,
     message: String,
+    pending_snapshot: Option<SnapshotRequest>,
 }
 
 impl Default for NativeWheelUsbTrace {
@@ -156,6 +206,7 @@ impl NativeWheelUsbTrace {
             recovering: false,
             unconfirmed_cleanup: false,
             message: "Off".into(),
+            pending_snapshot: None,
         }
     }
 
@@ -296,6 +347,7 @@ impl WheelUsbTrace for NativeWheelUsbTrace {
         };
         self.directory = Some(session_directory.to_path_buf());
         self.recovering = false;
+        self.pending_snapshot = None;
         if session_directory
             .join("usb-stop")
             .try_exists()
@@ -371,6 +423,130 @@ impl WheelUsbTrace for NativeWheelUsbTrace {
             self.message =
                 "USB heartbeat could not be written; helper watchdog will attempt cleanup.".into();
         }
+    }
+
+    fn snapshot(&mut self) -> Result<Option<UsbIncidentSnapshot>, String> {
+        if self.recovering {
+            return Ok(None);
+        }
+        let Some(directory) = self.directory.clone() else {
+            return Ok(None);
+        };
+        let root = self.allowed_root()?;
+        if !same_path(directory.parent().ok_or("Missing USB capture root")?, &root)
+            || !directory
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(session_name)
+            || !safe_session_directory(&directory)
+        {
+            return Err("USB snapshot requires the owned machine-local capture directory.".into());
+        }
+        // Stopped traces need no elevated operation. Preserve their actual provenance rather
+        // than claiming that a previous trace contains events up to this report's button press.
+        if self.pending_snapshot.is_none() && (self.helper.is_none() || self.exit_code().is_some())
+        {
+            if !self.safe_to_export() {
+                return Err("USB cleanup is uncertain; a stable snapshot is unavailable.".into());
+            }
+            if !directory
+                .join("usb.etl")
+                .try_exists()
+                .map_err(|e| e.to_string())?
+            {
+                return Ok(None);
+            }
+            let id = uuid_v4().replace('-', "");
+            let requested_utc = iso_utc(unix_ms_now());
+            let path = finalize_snapshot_file(&directory, &id).map_err(|e| e.to_string())?;
+            return Ok(Some(UsbIncidentSnapshot {
+                path,
+                requested_utc,
+                completed_utc: iso_utc(unix_ms_now()),
+                trace_restarted: false,
+                limitations: format!(
+                    "{SNAPSHOT_LIMITATIONS} The USB trace was already stopped before this request; its end time is not inferred from the report time."
+                ),
+                trace_stopped_utc: None,
+                trace_restarted_utc: None,
+                interruption_ms: None,
+            }));
+        }
+        if self.pending_snapshot.is_none() {
+            if !self.state().is_some_and(|state| state.state == "Recording") {
+                return Err("USB trace has not confirmed recording; incident data will identify the missing USB snapshot.".into());
+            }
+            let owner: UsbOwner =
+                read_json(&directory.join("usb-owner.json")).map_err(|e| e.to_string())?;
+            // SAFETY: query-only access to our own process identity; no supplied PID is acted on.
+            let same_parent = unsafe {
+                owner.parent_id == GetCurrentProcessId()
+                    && process_creation(GetCurrentProcess()).ok()
+                        == Some(owner.parent_start_filetime)
+                    && process_sid(GetCurrentProcess()).ok().as_deref() == Some(owner.sid.as_str())
+            };
+            if !same_parent {
+                return Err("USB snapshot owner does not match this Coach process.".into());
+            }
+            snapshot_capacity(&root, &directory).map_err(|e| e.to_string())?;
+            let request = SnapshotRequest {
+                id: uuid_v4().replace('-', ""),
+                requested_utc: iso_utc(unix_ms_now()),
+                owner,
+            };
+            write_json(&directory, SNAPSHOT_REQUEST, &request).map_err(|e| e.to_string())?;
+            self.pending_snapshot = Some(request);
+        }
+        let request = self
+            .pending_snapshot
+            .clone()
+            .ok_or("USB snapshot request unavailable")?;
+        let started = Instant::now();
+        while started.elapsed() < SNAPSHOT_WAIT {
+            if let Ok(result) = read_json::<SnapshotResult>(&directory.join(SNAPSHOT_RESULT))
+                && result.id == request.id
+            {
+                self.pending_snapshot = None;
+                if !result.ready {
+                    return Err(result
+                        .error
+                        .unwrap_or_else(|| "USB snapshot was not finalized.".into()));
+                }
+                let path = directory
+                    .join(snapshot_name(&result.id).ok_or("Invalid USB snapshot identity")?);
+                let metadata = checked_metadata(&path).map_err(|e| e.to_string())?;
+                if metadata.len() == 0 || metadata.len() > TRACE_LIMIT {
+                    return Err("USB snapshot exceeds its bounded trace size.".into());
+                }
+                let extra = result
+                    .error
+                    .map_or_else(String::new, |error| format!(" {error}"));
+                let stop = result
+                    .stop_requested_utc
+                    .map_or_else(String::new, |utc| format!(" Stop requested at {utc}."));
+                return Ok(Some(UsbIncidentSnapshot {
+                    path,
+                    requested_utc: result.requested_utc,
+                    completed_utc: result.completed_utc,
+                    trace_restarted: result.trace_restarted,
+                    limitations: format!("{SNAPSHOT_LIMITATIONS}{stop}{extra}"),
+                    trace_stopped_utc: result.trace_stopped_utc,
+                    trace_restarted_utc: result.trace_restarted_utc,
+                    interruption_ms: result.interruption_ms,
+                }));
+            }
+            if self.exit_code().is_some() {
+                self.pending_snapshot = None;
+                return Err("USB snapshot was interrupted by trace shutdown; no finalized snapshot was confirmed.".into());
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        // Retain the request identity: a later attempt can recover its finalized result without
+        // creating a second snapshot or replaying the stop/restart operation.
+        Err(
+            "USB snapshot confirmation timed out; the original request is retained for recovery."
+                .into(),
+        )
     }
 
     fn stop(&mut self) -> Result<(), String> {
@@ -598,6 +774,285 @@ impl TraceOps for NativeTraceOps {
     }
 }
 
+fn snapshot_capacity(root: &Path, directory: &Path) -> std::io::Result<()> {
+    if !safe_directory(root) || !safe_session_directory(directory) {
+        return Err(std::io::Error::other("Redirected USB snapshot directory."));
+    }
+    let mut bytes = 0_u64;
+    let mut count = 0_usize;
+    for entry in fs::read_dir(root)? {
+        let path = entry?.path();
+        count += 1;
+        if count > 4096 {
+            return Err(std::io::Error::other(
+                "USB snapshot storage enumeration limit.",
+            ));
+        }
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.file_attributes() & REPARSE_POINT != 0 {
+            return Err(std::io::Error::other("Redirected USB snapshot storage."));
+        }
+        if metadata.is_dir() {
+            for child in fs::read_dir(&path)? {
+                let child = child?.path();
+                count += 1;
+                if count > 4096 {
+                    return Err(std::io::Error::other(
+                        "USB snapshot storage enumeration limit.",
+                    ));
+                }
+                let metadata = checked_metadata(&child)?;
+                if path == directory
+                    && child.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                        n.starts_with("usb-snapshot-")
+                            && n.ends_with(".etl")
+                            && is_owned_snapshot_name(n)
+                    })
+                {
+                    return Err(std::io::Error::other(
+                        "An earlier USB snapshot is preserved; save it before requesting another.",
+                    ));
+                }
+                bytes = bytes
+                    .checked_add(metadata.len())
+                    .ok_or_else(|| std::io::Error::other("USB storage size overflow."))?;
+            }
+        } else {
+            bytes = bytes
+                .checked_add(checked_metadata(&path)?.len())
+                .ok_or_else(|| std::io::Error::other("USB storage size overflow."))?;
+        }
+    }
+    if bytes
+        .checked_add(TRACE_LIMIT)
+        .is_none_or(|size| size > crate::wheel::ROOT_BUDGET)
+    {
+        return Err(std::io::Error::other(
+            "USB snapshot would exceed the diagnostics storage budget.",
+        ));
+    }
+    Ok(())
+}
+
+fn finalize_snapshot_file(directory: &Path, id: &str) -> std::io::Result<PathBuf> {
+    let name =
+        snapshot_name(id).ok_or_else(|| std::io::Error::other("Invalid USB snapshot ID."))?;
+    let root = directory
+        .parent()
+        .ok_or_else(|| std::io::Error::other("Missing USB snapshot root."))?;
+    snapshot_capacity(root, directory)?;
+    let source = directory.join("usb.etl");
+    let size = checked_metadata(&source)?.len();
+    if size == 0 || size > TRACE_LIMIT {
+        return Err(std::io::Error::other(
+            "USB ETL is empty or exceeds its 32 MiB limit.",
+        ));
+    }
+    let mut input = OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .custom_flags(OPEN_REPARSE_POINT)
+        .open(source)?;
+    let metadata = input.metadata()?;
+    if !metadata.is_file()
+        || metadata.file_attributes() & REPARSE_POINT != 0
+        || metadata.len() != size
+    {
+        return Err(std::io::Error::other("USB ETL changed before snapshot."));
+    }
+    let destination = directory.join(name);
+    let mut output = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .share_mode(1)
+        .custom_flags(OPEN_REPARSE_POINT)
+        .open(&destination)?;
+    let copied = (|| {
+        let copied = std::io::copy(&mut (&mut input).take(TRACE_LIMIT + 1), &mut output)?;
+        if copied != size || copied > TRACE_LIMIT {
+            return Err(std::io::Error::other("USB ETL changed while snapshotting."));
+        }
+        output.sync_all()?;
+        Ok(())
+    })();
+    drop(output);
+    if let Err(error) = copied {
+        // This path was created with create_new in this call; no existing evidence is removed.
+        if checked_metadata(&destination).is_ok() {
+            let _ = fs::remove_file(&destination);
+        }
+        return Err(error);
+    }
+    Ok(destination)
+}
+
+enum SnapshotFlow {
+    Continue,
+    Stop,
+}
+
+fn process_snapshot(
+    directory: &Path,
+    name: &str,
+    owner: Option<&UsbOwner>,
+    enabled: &mut Vec<String>,
+    seen: &mut Option<String>,
+    ops: &mut impl TraceOps,
+    keep_running: &mut impl FnMut() -> bool,
+) -> SnapshotFlow {
+    let Ok(request) = read_json::<SnapshotRequest>(&directory.join(SNAPSHOT_REQUEST)) else {
+        return SnapshotFlow::Continue;
+    };
+    if !session_name(&request.id)
+        || request.requested_utc.len() > 64
+        || request.requested_utc.is_empty()
+        || !request.requested_utc.bytes().all(|c| c.is_ascii_graphic())
+        || seen.as_deref() == Some(request.id.as_str())
+        || !owner.is_some_and(|owner| same_owner(owner, &request.owner))
+        || !directory
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|session| trace_name(&request.owner.sid, session) == name)
+    {
+        return SnapshotFlow::Continue;
+    }
+    *seen = Some(request.id.clone());
+    let mut result = SnapshotResult {
+        id: request.id.clone(),
+        requested_utc: request.requested_utc,
+        completed_utc: String::new(),
+        ready: false,
+        trace_restarted: false,
+        stop_requested_utc: None,
+        trace_stopped_utc: None,
+        trace_restarted_utc: None,
+        interruption_ms: None,
+        error: None,
+    };
+    let root = directory.parent();
+    let capacity = root
+        .ok_or_else(|| std::io::Error::other("Missing USB snapshot root."))
+        .and_then(|root| snapshot_capacity(root, directory));
+    if let Err(error) = capacity {
+        result.error = Some(error.to_string());
+        result.completed_utc = iso_utc(unix_ms_now());
+        let _ = write_json(directory, SNAPSHOT_RESULT, &result);
+        return SnapshotFlow::Continue;
+    }
+    if !keep_running() {
+        return SnapshotFlow::Stop;
+    }
+    let interrupted = Instant::now();
+    // Record the beginning of the stop request, a conservative start bound for missing events.
+    result.stop_requested_utc = Some(iso_utc(unix_ms_now()));
+    let stopped = ops.run(&stop_arguments(name));
+    // A snapshot requires typed absence, stronger than a successful tool exit alone. Never
+    // copy a potentially live ETL or layer a restart over an uncertain native session.
+    if ops.query(name) != TraceQuery::Absent {
+        result.error = Some("USB snapshot stop could not confirm native session absence; cleanup remains uncertain.".into());
+        result.completed_utc = iso_utc(unix_ms_now());
+        let _ = write_state(
+            directory,
+            "Cleanup uncertain",
+            result.error.as_deref().unwrap(),
+            enabled,
+        );
+        let _ = write_json(directory, SNAPSHOT_RESULT, &result);
+        return SnapshotFlow::Stop;
+    }
+    result.trace_stopped_utc = Some(iso_utc(unix_ms_now()));
+    match finalize_snapshot_file(directory, &request.id) {
+        Ok(_) => result.ready = true,
+        Err(error) => result.error = Some(format!("USB snapshot copy failed: {error}")),
+    }
+    if stopped != 0 {
+        let warning = "The native session ended, but ETL flush completion was not confirmed.";
+        result.error = Some(
+            result
+                .error
+                .map_or_else(|| warning.into(), |error| format!("{error} {warning}")),
+        );
+    }
+    let providers = enabled.clone();
+    enabled.clear();
+    for provider in providers {
+        // Do not overwrite the only trace if its finalized copy failed.
+        if !result.ready {
+            break;
+        }
+        if !keep_running() {
+            break;
+        }
+        let arguments = if enabled.is_empty() {
+            restart_arguments(name, &directory.join("usb.etl"), &provider)
+        } else {
+            update_arguments(name, &provider)
+        };
+        let success = ops.run(&arguments) == 0;
+        if success {
+            enabled.push(provider);
+        } else if enabled.is_empty() {
+            break;
+        }
+    }
+    let continuing =
+        keep_running() && !enabled.is_empty() && ops.query(name) == TraceQuery::Present;
+    if continuing {
+        result.trace_restarted = true;
+        result.trace_restarted_utc = Some(iso_utc(unix_ms_now()));
+        result.interruption_ms =
+            Some(interrupted.elapsed().as_millis().min(u64::MAX as u128) as u64);
+        let _ = write_state(
+            directory,
+            "Recording",
+            &format!(
+                "USB state trace recording ({}/3 USB 3 stack providers); incident snapshot finalized.",
+                enabled.len()
+            ),
+            enabled,
+        );
+    } else {
+        let stopped = ops.run(&stop_arguments(name));
+        let query = ops.query(name);
+        let ended = query == TraceQuery::Absent;
+        let message = if ended {
+            "USB trace remains stopped after incident snapshot."
+        } else {
+            "USB restart/cleanup could not be confirmed after incident snapshot."
+        };
+        let _ = write_state(
+            directory,
+            if ended {
+                "Stopped"
+            } else {
+                "Cleanup uncertain"
+            },
+            message,
+            enabled,
+        );
+        result.error = Some(
+            result
+                .error
+                .map_or_else(|| message.into(), |error| format!("{error} {message}")),
+        );
+        // Retain the conservative bound when a restart failed/was cancelled; there is no end.
+        let _ = stopped;
+    }
+    result.completed_utc = iso_utc(unix_ms_now());
+    let _ = write_json(directory, SNAPSHOT_RESULT, &result);
+    if continuing {
+        SnapshotFlow::Continue
+    } else {
+        SnapshotFlow::Stop
+    }
+}
+
+fn same_owner(a: &UsbOwner, b: &UsbOwner) -> bool {
+    a.parent_id == b.parent_id
+        && a.parent_start_filetime == b.parent_start_filetime
+        && a.sid == b.sid
+}
+
 fn capture_owned_trace(
     directory: &Path,
     name: &str,
@@ -606,6 +1061,8 @@ fn capture_owned_trace(
 ) -> i32 {
     let mut enabled = Vec::new();
     let mut attempted_start = false;
+    let owner = read_json::<UsbOwner>(&directory.join("usb-owner.json")).ok();
+    let mut seen_snapshot = None;
     if write_state(directory, "Starting", "Starting USB state trace.", &enabled).is_err() {
         return 2;
     }
@@ -646,6 +1103,20 @@ fn capture_owned_trace(
         .is_ok()
         {
             while keep_running() {
+                if matches!(
+                    process_snapshot(
+                        directory,
+                        name,
+                        owner.as_ref(),
+                        &mut enabled,
+                        &mut seen_snapshot,
+                        ops,
+                        &mut keep_running
+                    ),
+                    SnapshotFlow::Stop
+                ) {
+                    break;
+                }
                 thread::sleep(Duration::from_millis(500));
             }
             0
@@ -847,6 +1318,13 @@ fn update_arguments(name: &str, provider: &str) -> Vec<String> {
         .iter()
         .map(|s| (*s).to_string())
         .collect()
+}
+fn restart_arguments(name: &str, output: &Path, provider: &str) -> Vec<String> {
+    // The stopped ETL has been copied and synced before this explicitly owned log is replaced.
+    // logman otherwise may refuse an existing file, silently leaving USB monitoring stopped.
+    let mut arguments = start_arguments(name, output, provider);
+    arguments.push("-ow".into());
+    arguments
 }
 fn stop_arguments(name: &str) -> Vec<String> {
     ["stop", name, "-ets"]
@@ -1225,6 +1703,410 @@ fn write_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct SnapshotOps {
+        directory: PathBuf,
+        commands: Vec<Vec<String>>,
+        current: TraceQuery,
+        stop_query: TraceQuery,
+        stop_result: i32,
+        fail_restart: bool,
+        stop_intent: bool,
+    }
+
+    impl TraceOps for SnapshotOps {
+        fn run(&mut self, args: &[String]) -> i32 {
+            self.commands.push(args.to_vec());
+            match args[0].as_str() {
+                "stop" => {
+                    self.current = self.stop_query;
+                    if self.stop_intent {
+                        request_stop_directory(&self.directory).unwrap();
+                    }
+                    self.stop_result
+                }
+                "start" => {
+                    assert!(
+                        args.iter().any(|arg| arg == "-ow"),
+                        "snapshot restart must explicitly handle its existing owned ETL"
+                    );
+                    if self.fail_restart {
+                        return -1;
+                    }
+                    self.current = TraceQuery::Present;
+                    fs::write(self.directory.join("usb.etl"), b"new trace after snapshot").unwrap();
+                    0
+                }
+                "update" => 0,
+                _ => panic!("snapshot may only stop/start/update its owned trace"),
+            }
+        }
+
+        fn query(&mut self, _: &str) -> TraceQuery {
+            self.current
+        }
+    }
+
+    struct SnapshotFixture {
+        root: PathBuf,
+        path: PathBuf,
+        owner: UsbOwner,
+        request: SnapshotRequest,
+        name: String,
+    }
+
+    impl SnapshotFixture {
+        fn new() -> Self {
+            let root = directory();
+            let session = uuid_v4().replace('-', "");
+            let path = root.join(&session);
+            fs::create_dir(&path).unwrap();
+            let owner = UsbOwner {
+                parent_id: 123,
+                parent_start_filetime: 456,
+                sid: "S-1-5-21-1".into(),
+            };
+            let request = SnapshotRequest {
+                id: uuid_v4().replace('-', ""),
+                requested_utc: iso_utc(unix_ms_now()),
+                owner: owner.clone(),
+            };
+            write_json(&path, "usb-owner.json", &owner).unwrap();
+            write_json(&path, SNAPSHOT_REQUEST, &request).unwrap();
+            fs::write(path.join("usb.etl"), b"stable earlier USB evidence").unwrap();
+            Self {
+                root,
+                path,
+                name: trace_name(&owner.sid, &session),
+                owner,
+                request,
+            }
+        }
+
+        fn ops(&self) -> SnapshotOps {
+            SnapshotOps {
+                directory: self.path.clone(),
+                commands: Vec::new(),
+                current: TraceQuery::Present,
+                stop_query: TraceQuery::Absent,
+                stop_result: 0,
+                fail_restart: false,
+                stop_intent: false,
+            }
+        }
+
+        fn run(&self, ops: &mut SnapshotOps) -> (SnapshotFlow, SnapshotResult) {
+            let flow = process_snapshot(
+                &self.path,
+                &self.name,
+                Some(&self.owner),
+                &mut PROVIDERS.map(str::to_owned).to_vec(),
+                &mut None,
+                ops,
+                &mut || !self.path.join("usb-stop").exists(),
+            );
+            (flow, read_json(&self.path.join(SNAPSHOT_RESULT)).unwrap())
+        }
+    }
+
+    impl Drop for SnapshotFixture {
+        fn drop(&mut self) {
+            // Exclusively synthetic temp data created above. The fixed prefix and parent are
+            // checked before recursive cleanup; no installed capture is a possible target.
+            assert_eq!(self.root.parent(), Some(std::env::temp_dir().as_path()));
+            assert!(
+                self.root
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("coach-usb-test-")
+            );
+            fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
+
+    #[test]
+    fn live_snapshot_flushes_copies_and_restarts_only_owned_trace_without_new_prompt() {
+        let fixture = SnapshotFixture::new();
+        let mut ops = fixture.ops();
+        let (flow, result) = fixture.run(&mut ops);
+        assert!(matches!(flow, SnapshotFlow::Continue));
+        assert!(result.ready && result.trace_restarted);
+        assert!(result.error.is_none());
+        assert!(result.trace_stopped_utc.is_some());
+        assert!(result.trace_restarted_utc.is_some());
+        assert!(result.interruption_ms.is_some());
+        let snapshot = fixture
+            .path
+            .join(snapshot_name(&fixture.request.id).unwrap());
+        assert_eq!(fs::read(snapshot).unwrap(), b"stable earlier USB evidence");
+        assert_eq!(
+            fs::read(fixture.path.join("usb.etl")).unwrap(),
+            b"new trace after snapshot"
+        );
+        assert_eq!(
+            ops.commands
+                .iter()
+                .map(|c| c[0].as_str())
+                .collect::<Vec<_>>(),
+            ["stop", "start", "update", "update"]
+        );
+        assert!(ops.commands.iter().all(|c| c[1] == fixture.name));
+        assert_eq!(
+            read_json::<UsbState>(&fixture.path.join("usb-status.json"))
+                .unwrap()
+                .state,
+            "Recording"
+        );
+    }
+
+    #[test]
+    fn duplicate_snapshot_request_never_repeats_native_stop_or_overwrites_evidence() {
+        let fixture = SnapshotFixture::new();
+        let mut ops = fixture.ops();
+        let mut providers = PROVIDERS.map(str::to_owned).to_vec();
+        let mut seen = None;
+        assert!(matches!(
+            process_snapshot(
+                &fixture.path,
+                &fixture.name,
+                Some(&fixture.owner),
+                &mut providers,
+                &mut seen,
+                &mut ops,
+                &mut || true
+            ),
+            SnapshotFlow::Continue
+        ));
+        let count = ops.commands.len();
+        assert!(matches!(
+            process_snapshot(
+                &fixture.path,
+                &fixture.name,
+                Some(&fixture.owner),
+                &mut providers,
+                &mut seen,
+                &mut ops,
+                &mut || true
+            ),
+            SnapshotFlow::Continue
+        ));
+        assert_eq!(ops.commands.len(), count);
+        assert_eq!(
+            fs::read(
+                fixture
+                    .path
+                    .join(snapshot_name(&fixture.request.id).unwrap())
+            )
+            .unwrap(),
+            b"stable earlier USB evidence"
+        );
+    }
+
+    #[test]
+    fn stop_intent_during_snapshot_preserves_evidence_and_prevents_restart() {
+        let fixture = SnapshotFixture::new();
+        let mut ops = fixture.ops();
+        ops.stop_intent = true;
+        let (flow, result) = fixture.run(&mut ops);
+        assert!(matches!(flow, SnapshotFlow::Stop));
+        assert!(result.ready && !result.trace_restarted);
+        assert!(result.trace_restarted_utc.is_none());
+        assert!(result.interruption_ms.is_none());
+        assert!(fixture.path.join("usb-stop").exists());
+        assert!(ops.commands.iter().all(|c| c[0] == "stop"));
+        assert_eq!(
+            fs::read(fixture.path.join("usb.etl")).unwrap(),
+            b"stable earlier USB evidence"
+        );
+    }
+
+    #[test]
+    fn unknown_or_present_cleanup_never_copies_live_etl_or_restarts() {
+        for query in [TraceQuery::Present, TraceQuery::Unavailable(5)] {
+            let fixture = SnapshotFixture::new();
+            let mut ops = fixture.ops();
+            ops.stop_query = query;
+            let (flow, result) = fixture.run(&mut ops);
+            assert!(matches!(flow, SnapshotFlow::Stop));
+            assert!(!result.ready && !result.trace_restarted);
+            assert!(result.error.unwrap().contains("absence"));
+            assert_eq!(ops.commands.len(), 1);
+            assert!(
+                !fixture
+                    .path
+                    .join(snapshot_name(&fixture.request.id).unwrap())
+                    .exists()
+            );
+            assert_eq!(
+                read_json::<UsbState>(&fixture.path.join("usb-status.json"))
+                    .unwrap()
+                    .state,
+                "Cleanup uncertain"
+            );
+        }
+    }
+
+    #[test]
+    fn restart_failure_still_returns_finalized_evidence_and_truthful_stopped_status() {
+        let fixture = SnapshotFixture::new();
+        let mut ops = fixture.ops();
+        ops.fail_restart = true;
+        let (flow, result) = fixture.run(&mut ops);
+        assert!(matches!(flow, SnapshotFlow::Stop));
+        assert!(result.ready && !result.trace_restarted);
+        assert!(result.error.unwrap().contains("stopped"));
+        assert_eq!(
+            read_json::<UsbState>(&fixture.path.join("usb-status.json"))
+                .unwrap()
+                .state,
+            "Stopped"
+        );
+        assert_eq!(
+            fs::read(
+                fixture
+                    .path
+                    .join(snapshot_name(&fixture.request.id).unwrap())
+            )
+            .unwrap(),
+            b"stable earlier USB evidence"
+        );
+    }
+
+    #[test]
+    fn unconfirmed_flush_is_labelled_even_when_typed_absence_allows_snapshot() {
+        let fixture = SnapshotFixture::new();
+        let mut ops = fixture.ops();
+        ops.stop_result = -1;
+        let (_, result) = fixture.run(&mut ops);
+        assert!(result.ready && result.trace_restarted);
+        assert!(
+            result
+                .error
+                .unwrap()
+                .contains("flush completion was not confirmed")
+        );
+    }
+
+    #[test]
+    fn wrong_owner_or_traversal_request_is_ignored_before_any_native_operation() {
+        let fixture = SnapshotFixture::new();
+        let mut ops = fixture.ops();
+        for request in [
+            SnapshotRequest {
+                owner: UsbOwner {
+                    parent_id: 124,
+                    ..fixture.owner.clone()
+                },
+                ..fixture.request.clone()
+            },
+            SnapshotRequest {
+                owner: UsbOwner {
+                    sid: "S-1-5-21-2".into(),
+                    ..fixture.owner.clone()
+                },
+                ..fixture.request.clone()
+            },
+            SnapshotRequest {
+                id: "../outside".into(),
+                ..fixture.request.clone()
+            },
+        ] {
+            write_json(&fixture.path, SNAPSHOT_REQUEST, &request).unwrap();
+            assert!(matches!(
+                process_snapshot(
+                    &fixture.path,
+                    &fixture.name,
+                    Some(&fixture.owner),
+                    &mut Vec::new(),
+                    &mut None,
+                    &mut ops,
+                    &mut || true
+                ),
+                SnapshotFlow::Continue
+            ));
+        }
+        assert!(ops.commands.is_empty());
+        assert!(!fixture.path.join(SNAPSHOT_RESULT).exists());
+    }
+
+    #[test]
+    fn a_preserved_snapshot_or_exhausted_root_budget_is_rejected_before_trace_stop() {
+        for exhausted in [false, true] {
+            let fixture = SnapshotFixture::new();
+            if exhausted {
+                let reserve = OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .open(fixture.root.join("synthetic-reserve.bin"))
+                    .unwrap();
+                reserve
+                    .set_len(crate::wheel::ROOT_BUDGET - TRACE_LIMIT)
+                    .unwrap();
+            } else {
+                fs::write(
+                    fixture
+                        .path
+                        .join(snapshot_name("00000000000000000000000000000001").unwrap()),
+                    b"preserved",
+                )
+                .unwrap();
+            }
+            let mut ops = fixture.ops();
+            let (flow, result) = fixture.run(&mut ops);
+            assert!(matches!(flow, SnapshotFlow::Continue));
+            assert!(!result.ready);
+            assert!(ops.commands.is_empty());
+            assert!(
+                result
+                    .error
+                    .unwrap()
+                    .contains(if exhausted { "budget" } else { "preserved" })
+            );
+        }
+    }
+
+    #[test]
+    fn oversized_etl_is_preserved_and_never_overwritten_after_snapshot_failure() {
+        let fixture = SnapshotFixture::new();
+        let trace = OpenOptions::new()
+            .write(true)
+            .open(fixture.path.join("usb.etl"))
+            .unwrap();
+        trace.set_len(TRACE_LIMIT + 1).unwrap();
+        drop(trace);
+        let mut ops = fixture.ops();
+        let (flow, result) = fixture.run(&mut ops);
+        assert!(matches!(flow, SnapshotFlow::Stop));
+        assert!(!result.ready && !result.trace_restarted);
+        assert!(result.error.unwrap().contains("32 MiB"));
+        assert!(ops.commands.iter().all(|c| c[0] == "stop"));
+        assert_eq!(
+            fs::metadata(fixture.path.join("usb.etl")).unwrap().len(),
+            TRACE_LIMIT + 1
+        );
+    }
+
+    #[test]
+    fn snapshot_owned_names_are_narrow_and_reject_nested_or_unrelated_files() {
+        for name in [
+            SNAPSHOT_REQUEST,
+            SNAPSHOT_RESULT,
+            "usb-snapshot-result.json.tmp",
+            "usb-snapshot-0123456789abcdef0123456789abcdef.etl",
+        ] {
+            assert!(is_owned_snapshot_name(name));
+        }
+        for name in [
+            "usb-snapshot-../raw.etl",
+            "usb-snapshot-123.etl",
+            "settings.json",
+            "usb-snapshot-request.json/other",
+            "raw.ibt",
+        ] {
+            assert!(!is_owned_snapshot_name(name));
+        }
+    }
 
     struct FakeOps {
         commands: Vec<Vec<String>>,

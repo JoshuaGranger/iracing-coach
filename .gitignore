@@ -1,5 +1,7 @@
 # Local agent, test, and dependency state
 /.agents/
+/.debate/
+/.orchestrate/
 /.pytest_cache/
 /.validation-deps/
 **/__pycache__/
@@ -45,6 +47,9 @@ node_modules/
 /web/dist/
 /web/playwright-report/
 /web/test-results/
+
+# Windows API cache state created under the test server working directory.
+/server/%SystemDrive%/
 
 # Web build and test scratch: only the round screenshots and their measurements are kept.
 /web/target/*

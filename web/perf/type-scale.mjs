@@ -45,7 +45,7 @@ const PAGES = {
   runs: { source: "shell", view: "runs", ready: ".ri-dot" },
   sections: { source: "shell", view: "sections", ready: ".ri-sl-tabs" },
   traces: { source: "shell", view: "traces", ready: "[data-analysis-trace-path]" },
-  setups: { source: "mock", hash: `/d/${DRIVER}/setups`, ready: ".s-car a.s-name" },
+  setups: { source: "mock", hash: `/d/${DRIVER}/setups`, ready: ".s-board[aria-label='Recorded setups']" },
   live: { source: "mock", hash: `/d/${DRIVER}/live`, ready: "[data-metric=position]" },
   setup: { source: "mock", hash: `/d/${DRIVER}/setups/1`, ready: "table tbody tr, .value-group" },
   baseline: { source: "mock", hash: `/d/${DRIVER}/setups/baseline`, ready: "main h1" },

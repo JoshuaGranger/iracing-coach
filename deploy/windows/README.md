@@ -17,14 +17,14 @@ intact.
 The installer is self-contained: no runtime download, .NET, WebView, administrator
 rights, or reboot. It is currently unsigned; Windows may show a publisher warning.
 
-The optional recorder opens from the tray's **Troubleshooting → Wheel interruption
-recorder** menu. Windows sign-in starts the companion; wheel recording remains disabled
-on every launch. It records only after the user selects a wheel/axis and enables
-it. Ordinary recording needs no administrator rights. Optional USB tracing has
-its own explicit administrator prompt. Diagnostic captures and durable local ZIP
-exports survive upgrade and removal. See the
-[acceptance record](../../docs/08-rewrite/acceptance/wheel-diagnostics.md) for
-source reuse, bounds and pending hardware checks.
+Wheel and pedal diagnostics run with the companion by default. The tray's
+**USB diagnostics** panel provides separate enabled/controller choices, Run/Stop,
+Run on startup, a five-minute diagnostic incident report, and direct report-folder
+access. A small independent device overlay provides wheel/pedal health and an
+incident button. Configuration, overlay position, captures and durable reports
+survive upgrades. Ordinary recording requires no administrator rights; system USB
+tracing uses a same-user Windows administrator prompt. Left-clicking the tray
+icon toggles the racing monitor; its top-right lock controls dragging.
 
 ## Build and verify
 

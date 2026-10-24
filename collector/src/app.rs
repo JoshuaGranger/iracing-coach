@@ -294,7 +294,7 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
     }
     #[cfg(windows)]
     {
-        let _ = wheel.shutdown_wait(Duration::from_secs(4));
+        shutdown_diagnostics(&wheel, &paths.state_dir.join("wheel-diagnostics"));
     }
     for h in helpers {
         let _ = h.join();
@@ -321,6 +321,56 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
         pipeline: stats,
         restart,
     })
+}
+
+/// Runs only after the native UI loop has returned. A USB snapshot may take 15 seconds;
+/// keep the process alive for its accepted report without extending ordinary UI operations.
+#[cfg(windows)]
+fn shutdown_diagnostics(
+    wheel: &crate::wheel::WheelDiagnostics,
+    capture_root: &std::path::Path,
+) -> bool {
+    let pending = wheel
+        .try_snapshot()
+        .is_some_and(|status| status.report_pending);
+    if pending {
+        crate::info!(
+            "finishing the accepted diagnostic incident report before exit (up to 30 seconds)"
+        );
+    }
+    let finished = wheel.shutdown_wait(Duration::from_secs(30));
+    if !finished {
+        let status = wheel.try_snapshot();
+        let directory = status
+            .as_ref()
+            .and_then(|status| status.capture_directory.as_deref())
+            .unwrap_or(capture_root);
+        if status.as_ref().is_some_and(|status| status.report_pending) {
+            crate::warn!(
+                "diagnostics shutdown timed out after 30 seconds; incident report completion is unconfirmed, retained input history is at {}",
+                directory.display()
+            );
+        } else {
+            crate::warn!(
+                "diagnostics shutdown timed out after 30 seconds; reader or USB cleanup is unconfirmed, retained input history is at {}",
+                directory.display()
+            );
+        }
+    } else if let Some(status) = wheel.try_snapshot() {
+        if let Some(error) = status.report_error {
+            crate::warn!(
+                "diagnostic incident report did not save successfully before exit: {error}; retained input history is at {}",
+                status
+                    .capture_directory
+                    .as_deref()
+                    .unwrap_or(capture_root)
+                    .display()
+            );
+        } else if pending {
+            crate::info!("diagnostic incident report finished before collector exit");
+        }
+    }
+    finished
 }
 
 /// Waits until the journal's garage entries are acknowledged, the upload queue is empty and the
@@ -360,4 +410,96 @@ fn drain(hub: &Hub, opts: &RunOptions) {
         thread::sleep(Duration::from_millis(100));
     }
     crate::warn!("drain timed out; exiting with work still queued");
+}
+
+#[cfg(all(test, windows))]
+mod diagnostic_shutdown_tests {
+    use super::*;
+    use crate::wheel::{WheelCommand, WheelDevice, WheelInputSource, WheelReading, WheelUsbTrace};
+    use std::path::Path;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct Input;
+    impl WheelInputSource for Input {
+        fn enumerate(&mut self) -> Result<Vec<WheelDevice>, String> {
+            Ok(vec![WheelDevice {
+                id: "synthetic-wheel".into(),
+                name: "Synthetic wheel".into(),
+                product_guid: None,
+            }])
+        }
+        fn select(&mut self, _: &str, _: u8, _: isize) -> Result<(), String> {
+            Ok(())
+        }
+        fn read(&mut self) -> WheelReading {
+            WheelReading {
+                availability: "Available".into(),
+                axis: Some(100),
+                native_error: None,
+            }
+        }
+    }
+    struct Usb(Arc<AtomicBool>);
+    impl WheelUsbTrace for Usb {
+        fn status(&mut self) -> String {
+            "Synthetic recording".into()
+        }
+        fn safe_to_export(&mut self) -> bool {
+            true
+        }
+        fn start(&mut self, _: &Path) -> Result<(), String> {
+            Ok(())
+        }
+        fn heartbeat(&mut self) {}
+        fn stop(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+        fn snapshot(&mut self) -> Result<Option<crate::wheel::UsbIncidentSnapshot>, String> {
+            self.0.store(true, Ordering::Release);
+            thread::sleep(Duration::from_secs(5));
+            Ok(None)
+        }
+    }
+    fn wait(mut condition: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(6);
+        while !condition() {
+            assert!(
+                Instant::now() < deadline,
+                "diagnostic test did not reach expected state"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn exit_waits_for_an_accepted_report_longer_than_the_previous_four_second_limit() {
+        let directory = std::env::temp_dir().join(format!(
+            "coach-app-diagnostic-shutdown-{}",
+            crate::util::uuid_v4()
+        ));
+        let capture_root = directory.join("capture");
+        let snapshot_started = Arc::new(AtomicBool::new(false));
+        let wheel = crate::wheel::WheelDiagnostics::new(
+            capture_root.clone(),
+            directory.join("exports"),
+            Arc::new(|| Box::new(Input)),
+            Box::new(Usb(snapshot_started.clone())),
+        );
+        assert!(wheel.send(WheelCommand::Initialize { window: 123 }));
+        wait(|| {
+            wheel
+                .try_snapshot()
+                .is_some_and(|status| status.sample_count >= 3 && status.can_export)
+        });
+        assert!(wheel.send(WheelCommand::ReportDiagnosticIncident));
+        wait(|| snapshot_started.load(Ordering::Acquire));
+        let began = Instant::now();
+        assert!(shutdown_diagnostics(&wheel, &capture_root));
+        assert!(began.elapsed() > Duration::from_secs(4));
+        let status = wheel.try_snapshot().unwrap();
+        assert!(!status.report_pending && status.report_error.is_none());
+        assert!(status.export_path.unwrap().is_file());
+        assert!(capture_root.join("last-export.json").is_file());
+        let _ = fs::remove_dir_all(directory);
+    }
 }

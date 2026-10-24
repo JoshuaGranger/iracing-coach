@@ -1,774 +1,1285 @@
-//! Optional, local wheel recorder controls. The modeless window never owns capture: hiding it
-//! cancels its 1 Hz UI timer, while the recorder's worker keeps running in the tray.
+//! Native USB diagnostics. Capture lives independently of the panel and overlay.
 
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
-
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    CLIP_DEFAULT_PRECIS, COLOR_WINDOW, CreateFontW, DEFAULT_CHARSET, DEFAULT_QUALITY, DeleteObject,
-    HBRUSH, HFONT, HGDIOBJ, OUT_DEFAULT_PRECIS,
+use super::{
+    diagnostics_overlay::{
+        DiagnosticsOverlay, DiagnosticsUiState, device_symbol, fill, health, health_color,
+        health_label, rounded, text,
+    },
+    dialog_theme::{DialogTheme, DpiAwarenessGuard, apply_titlebar, palette, style_control},
+    render::colorref,
+    wide,
 };
+use crate::wheel::{
+    DeviceMonitorConfig, DeviceRole, WheelCommand, WheelDevice, WheelHandle, WheelStatus,
+};
+use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
+use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::SetScrollInfo;
-use windows::Win32::UI::HiDpi::{
-    AdjustWindowRectExForDpi, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow,
-    SetThreadDpiAwarenessContext,
+use windows::Win32::UI::Controls::{
+    DRAWITEMSTRUCT, MEASUREITEMSTRUCT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus, SetFocus};
+use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
+use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, SetFocus};
+use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::PCWSTR;
 
-use super::wide;
-use crate::wheel::{WheelCommand, WheelHandle, WheelStatus};
-
-const CLASS: &str = "CoachWheelDiagnostics";
-const WIDTH: i32 = 700;
-const HEIGHT: i32 = 610;
+const CLASS: &str = "CoachUsbDiagnostics";
+const WIDTH: i32 = 720;
+const HEIGHT: i32 = 490;
 const POLL: usize = 1;
-const REFRESH: usize = 301;
-const DEVICE: usize = 302;
-const AXIS: usize = 303;
-const ENABLE: usize = 304;
-const DISABLE: usize = 305;
-const MARK: usize = 306;
-const EXPORT: usize = 307;
-const REVEAL: usize = 308;
-const USB: usize = 309;
+const WHEEL_ENABLED: usize = 301;
+const PEDALS_ENABLED: usize = 302;
+const WHEEL_DEVICE: usize = 303;
+const PEDALS_DEVICE: usize = 304;
+const RUN: usize = 305;
+const STARTUP: usize = 306;
+const SHOW_OVERLAY: usize = 307;
+const REPORT: usize = 308;
+const FILES: usize = 309;
+const TRACE: usize = 310;
+const WHEEL_AXIS: usize = 311;
+const AXIS_LABELS: [&str; 6] = [
+    "X axis", "Y axis", "Z axis", "Rx axis", "Ry axis", "Rz axis",
+];
 const CLOSE: usize = 2;
-const MESSAGE: usize = 310;
-const INPUT: usize = 311;
-const USB_STATUS: usize = 312;
-const RECOVER_USB: usize = 313;
-const REPOSITION: u32 = WM_APP + 23;
 
-#[derive(Default)]
 pub struct WheelPanel {
     window: HWND,
+    ui: Rc<RefCell<DiagnosticsUiState>>,
+    overlay: DiagnosticsOverlay,
 }
-
+impl Default for WheelPanel {
+    fn default() -> Self {
+        Self {
+            window: HWND::default(),
+            ui: Rc::new(RefCell::new(DiagnosticsUiState::load(None))),
+            overlay: DiagnosticsOverlay::default(),
+        }
+    }
+}
 impl WheelPanel {
+    pub fn with_state_dir(state_dir: PathBuf) -> Self {
+        Self {
+            window: HWND::default(),
+            ui: Rc::new(RefCell::new(DiagnosticsUiState::load(Some(
+                state_dir.join("diagnostics-ui.json"),
+            )))),
+            overlay: DiagnosticsOverlay::default(),
+        }
+    }
     pub fn show(&mut self, owner: HWND, wheel: &WheelHandle) -> Result<(), String> {
-        // SAFETY: all window/control operations run on the collector's UI thread.
+        // SAFETY: all native window operations run on the companion's UI thread.
         unsafe {
             if self.window.is_invalid() {
-                self.window = create(owner, wheel.clone()).map_err(|e| e.to_string())?;
+                self.window =
+                    create(owner, wheel.clone(), self.ui.clone()).map_err(|e| e.to_string())?;
             }
             let _ = ShowWindow(self.window, SW_SHOWNORMAL);
-            SetTimer(Some(self.window), POLL, 1_000, None);
+            SetTimer(Some(self.window), POLL, 500, None);
             if let Some(panel) = state(self.window) {
                 panel.refresh();
             }
             let _ = SetForegroundWindow(self.window);
             let _ = SetFocus(Some(
-                GetDlgItem(Some(self.window), REFRESH as i32).unwrap_or_default(),
+                GetDlgItem(Some(self.window), RUN as i32).unwrap_or_default(),
             ));
         }
         Ok(())
     }
-
-    /// Routes Tab, Shift-Tab, mnemonic keys and Escape through the native dialog manager.
+    /// Runs even with the panel hidden. The diagnostics overlay has independent visibility.
+    pub fn on_timer(&mut self, wheel: &WheelHandle) {
+        if let Some(snapshot) = wheel.try_snapshot() {
+            self.overlay.update(wheel, &snapshot, self.ui.clone());
+        }
+    }
     pub fn translate(&self, message: &MSG) -> bool {
-        // SAFETY: the modeless window stays alive until this owner is dropped.
         unsafe {
-            if self.window.is_invalid() || !IsWindowVisible(self.window).as_bool() {
-                return false;
-            }
-            let used = IsDialogMessageW(self.window, message).as_bool();
-            if used && let Some(panel) = state(self.window) {
-                panel.reveal_focus();
-            }
-            used
+            !self.window.is_invalid()
+                && IsWindowVisible(self.window).as_bool()
+                && IsDialogMessageW(self.window, message).as_bool()
         }
     }
 }
-
 impl Drop for WheelPanel {
     fn drop(&mut self) {
         if !self.window.is_invalid() {
-            // SAFETY: only destroys the local dialog and its controls; never joins workers.
             unsafe {
                 let _ = DestroyWindow(self.window);
             }
         }
     }
 }
-
 struct Control {
     window: HWND,
     bounds: RECT,
 }
-
 struct Panel {
     window: HWND,
     owner: HWND,
     wheel: WheelHandle,
-    controls: Vec<Control>,
-    font: HFONT,
+    ui: Rc<RefCell<DiagnosticsUiState>>,
+    theme: DialogTheme,
+    heading: HFONT,
     dpi: u32,
-    scroll: i32,
-    devices: Vec<(String, String)>,
+    controls: Vec<Control>,
+    devices: Vec<WheelDevice>,
+    device_labels: Vec<String>,
     last: Option<WheelStatus>,
-    pending_until: Option<Instant>,
+    labels: HashMap<usize, String>,
+    enabled: HashMap<usize, bool>,
+    checks: HashMap<usize, bool>,
+    paint_key: String,
     note: String,
 }
-
 impl Panel {
+    fn px(&self, value: i32) -> i32 {
+        value * self.dpi as i32 / 96
+    }
     fn control(&self, id: usize) -> HWND {
-        // SAFETY: querying an application-owned child window.
         unsafe { GetDlgItem(Some(self.window), id as i32).unwrap_or_default() }
     }
-
-    fn text(&self, id: usize, text: &str) {
-        // SAFETY: the string is copied by our own standard STATIC control.
+    fn label(&mut self, id: usize, value: &str) {
+        if self.labels.get(&id).is_some_and(|old| old == value) {
+            return;
+        }
+        self.labels.insert(id, value.into());
         unsafe {
-            let _ = SetWindowTextW(self.control(id), PCWSTR(wide(text).as_ptr()));
+            let _ = SetWindowTextW(self.control(id), PCWSTR(wide(value).as_ptr()));
         }
     }
-
-    fn enabled(&self, id: usize, enabled: bool) {
-        // SAFETY: application-owned standard control on its UI thread.
+    fn enabled(&mut self, id: usize, value: bool) {
+        if self.enabled.get(&id) == Some(&value) {
+            return;
+        }
+        self.enabled.insert(id, value);
         unsafe {
-            let _ = EnableWindow(self.control(id), enabled);
+            let _ = EnableWindow(self.control(id), value);
         }
     }
-
-    fn selected(&self) -> Option<usize> {
-        // SAFETY: standard synchronous combobox message, no application worker called.
-        let selected = unsafe { SendMessageW(self.control(DEVICE), CB_GETCURSEL, None, None).0 };
-        usize::try_from(selected).ok()?.checked_sub(1)
+    fn checked(&mut self, id: usize, value: bool) {
+        if self.checks.get(&id) == Some(&value) {
+            return;
+        }
+        self.checks.insert(id, value);
+        unsafe {
+            SetWindowLongPtrW(self.control(id), GWLP_USERDATA, isize::from(value));
+            let _ = InvalidateRect(Some(self.control(id)), None, false);
+        }
     }
-
     fn refresh(&mut self) {
+        // Keep the last valid view during a transient snapshot-lock miss.
         if let Some(snapshot) = self.wheel.try_snapshot() {
             self.render(snapshot);
-        } else {
-            self.text(MESSAGE, "Recorder state is updating. Try again shortly.");
-            for id in [
-                REFRESH,
-                DEVICE,
-                AXIS,
-                ENABLE,
-                DISABLE,
-                MARK,
-                EXPORT,
-                USB,
-                RECOVER_USB,
-                REVEAL,
-            ] {
-                self.enabled(id, false);
-            }
         }
     }
-
     fn render(&mut self, snapshot: WheelStatus) {
-        let devices: Vec<_> = snapshot
-            .devices
-            .iter()
-            .map(|d| (d.id.clone(), d.name.clone()))
-            .collect();
-        if self.devices != devices {
-            let previous = self
-                .selected()
-                .and_then(|i| self.devices.get(i))
-                .map(|d| d.0.clone());
-            self.devices = devices;
-            // SAFETY: standard control copies these strings and contains no driver input.
-            unsafe {
-                let combo = self.control(DEVICE);
-                SendMessageW(combo, CB_RESETCONTENT, None, None);
-                combo_add(combo, "Select the wheel");
-                for (_, name) in &self.devices {
-                    combo_add(combo, name);
-                }
-                let selected = previous
-                    .and_then(|id| self.devices.iter().position(|d| d.0 == id))
-                    .map_or(0, |i| i + 1);
-                SendMessageW(combo, CB_SETCURSEL, Some(WPARAM(selected)), None);
+        let mut devices = snapshot.devices.clone();
+        for monitor in [&snapshot.wheel, &snapshot.pedals] {
+            if let Some(selected) = &monitor.config.device
+                && !devices.iter().any(|device| device.id == selected.id)
+            {
+                devices.push(selected.clone());
             }
         }
-        self.text(
-            INPUT,
-            &format!(
-                "Input: {}    Raw axis: {}    Retained incidents: {}",
-                snapshot.availability,
-                snapshot
-                    .raw_axis
-                    .map_or_else(|| "Unavailable".into(), |x| x.to_string()),
-                snapshot.incidents
-            ),
+        let labels: Vec<_> = devices
+            .iter()
+            .map(|device| {
+                if snapshot
+                    .devices
+                    .iter()
+                    .any(|connected| connected.id == device.id)
+                {
+                    device.name.clone()
+                } else {
+                    format!("{} (disconnected)", device.name)
+                }
+            })
+            .collect();
+        let busy = snapshot.busy && !snapshot.running;
+        if self.devices != devices || self.device_labels != labels {
+            self.devices = devices;
+            self.device_labels = labels;
+            for id in [WHEEL_DEVICE, PEDALS_DEVICE] {
+                unsafe {
+                    let combo = self.control(id);
+                    SendMessageW(combo, WM_SETREDRAW, Some(WPARAM(0)), None);
+                    SendMessageW(combo, CB_RESETCONTENT, None, None);
+                    SendMessageW(
+                        combo,
+                        CB_ADDSTRING,
+                        None,
+                        Some(LPARAM(wide("Select device").as_ptr() as isize)),
+                    );
+                    for label in &self.device_labels {
+                        SendMessageW(
+                            combo,
+                            CB_ADDSTRING,
+                            None,
+                            Some(LPARAM(wide(label).as_ptr() as isize)),
+                        );
+                    }
+                    SendMessageW(combo, WM_SETREDRAW, Some(WPARAM(1)), None);
+                    let _ = InvalidateRect(Some(combo), None, false);
+                }
+            }
+        }
+        for (role, check, combo) in [
+            (DeviceRole::Wheel, WHEEL_ENABLED, WHEEL_DEVICE),
+            (DeviceRole::Pedals, PEDALS_ENABLED, PEDALS_DEVICE),
+        ] {
+            let monitor = if role == DeviceRole::Wheel {
+                &snapshot.wheel
+            } else {
+                &snapshot.pedals
+            };
+            let index = monitor
+                .config
+                .device
+                .as_ref()
+                .and_then(|selected| {
+                    self.devices
+                        .iter()
+                        .position(|device| device.id == selected.id)
+                })
+                .map_or(0, |i| i + 1);
+            unsafe {
+                if SendMessageW(self.control(combo), CB_GETCURSEL, None, None).0 != index as isize {
+                    SendMessageW(self.control(combo), CB_SETCURSEL, Some(WPARAM(index)), None);
+                }
+            }
+            self.checked(check, monitor.config.enabled);
+            self.enabled(check, !busy);
+            self.enabled(combo, monitor.config.enabled && !busy);
+        }
+        let axis = snapshot
+            .wheel
+            .config
+            .axes
+            .first()
+            .copied()
+            .unwrap_or(0)
+            .min(5) as usize;
+        // SAFETY: the six native choices correspond directly to the recorder's axis indices.
+        unsafe {
+            if SendMessageW(self.control(WHEEL_AXIS), CB_GETCURSEL, None, None).0 != axis as isize {
+                SendMessageW(
+                    self.control(WHEEL_AXIS),
+                    CB_SETCURSEL,
+                    Some(WPARAM(axis)),
+                    None,
+                );
+            }
+        }
+        self.enabled(WHEEL_AXIS, snapshot.wheel.config.enabled && !busy);
+        self.checked(STARTUP, snapshot.auto_record);
+        let show_overlay = self.ui.borrow().preferences.show_overlay;
+        self.checked(SHOW_OVERLAY, show_overlay);
+        self.enabled(STARTUP, !busy);
+        self.enabled(SHOW_OVERLAY, true);
+        self.enabled(RUN, !busy);
+        self.label(
+            RUN,
+            if snapshot.running {
+                "Stop recording"
+            } else {
+                "Start recording"
+            },
         );
-        self.text(
-            USB_STATUS,
-            &format!(
-                "USB trace: {}\nStops with the recorder or Coach. No service is installed.",
-                snapshot.usb
-            ),
+        self.label(
+            REPORT,
+            if snapshot.report_pending {
+                "Saving incident…"
+            } else {
+                "Report diagnostic incident"
+            },
         );
-        let message = if self.note.is_empty() {
-            snapshot.message.clone()
-        } else {
-            format!("{} {}", snapshot.message, self.note)
-        };
-        self.text(MESSAGE, &message);
-        let busy = snapshot.busy
-            || self
-                .pending_until
-                .is_some_and(|deadline| Instant::now() < deadline);
-        self.enabled(REFRESH, !busy && !snapshot.running);
         self.enabled(
-            DEVICE,
-            !busy && !snapshot.running && !self.devices.is_empty(),
+            REPORT,
+            snapshot.has_capture && !snapshot.report_pending && !busy && snapshot.sample_count > 0,
         );
-        self.enabled(AXIS, !busy && !snapshot.running);
         self.enabled(
-            ENABLE,
-            !busy && !snapshot.running && self.selected().is_some(),
+            FILES,
+            snapshot.export_path.is_some() || snapshot.exports_directory.is_some(),
         );
-        self.enabled(DISABLE, !busy && snapshot.running);
-        self.enabled(MARK, !busy && snapshot.running);
+        self.label(
+            TRACE,
+            if needs_recovery(&snapshot) {
+                "Recover trace"
+            } else {
+                "Enable USB trace"
+            },
+        );
         self.enabled(
-            EXPORT,
-            !busy && snapshot.has_capture && (snapshot.running || snapshot.can_export),
+            TRACE,
+            !busy
+                && (snapshot.can_start_usb
+                    || (needs_recovery(&snapshot) && snapshot.can_recover_usb)),
         );
-        self.enabled(USB, !busy && snapshot.running && snapshot.can_start_usb);
-        self.enabled(
-            RECOVER_USB,
-            !busy && !snapshot.running && snapshot.can_recover_usb,
+        unsafe {
+            let _ = ShowWindow(
+                self.control(TRACE),
+                if snapshot.usb.contains("trace recording (") {
+                    SW_HIDE
+                } else {
+                    SW_SHOWNOACTIVATE
+                },
+            );
+        }
+        let key = format!(
+            "{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}",
+            snapshot.running,
+            health_label(snapshot.running, &snapshot.wheel),
+            health_label(snapshot.running, &snapshot.pedals),
+            snapshot.usb,
+            snapshot.message,
+            snapshot.report_pending,
+            self.note,
+            snapshot.export_path,
+            snapshot.report_error
         );
-        self.enabled(REVEAL, snapshot.export_path.is_some());
+        if self.paint_key != key {
+            self.paint_key = key;
+            unsafe {
+                let _ = InvalidateRect(Some(self.window), None, false);
+            }
+        }
         self.last = Some(snapshot);
     }
-
     fn send(&mut self, command: WheelCommand) {
-        if self.wheel.send(command) {
-            self.note.clear();
-            self.pending_until = Some(Instant::now() + Duration::from_millis(900));
+        self.note = if self.wheel.send(command) {
+            String::new()
         } else {
-            self.note = "Recorder action could not be queued. Try again shortly.".into();
-        }
+            "Recorder is busy. Try again.".into()
+        };
         self.refresh();
     }
-
+    fn configure(&mut self, role: DeviceRole, enabled: Option<bool>) {
+        let Some(snapshot) = &self.last else {
+            return;
+        };
+        let monitor = if role == DeviceRole::Wheel {
+            &snapshot.wheel
+        } else {
+            &snapshot.pedals
+        };
+        let combo = if role == DeviceRole::Wheel {
+            WHEEL_DEVICE
+        } else {
+            PEDALS_DEVICE
+        };
+        let mut config: DeviceMonitorConfig = monitor.config.clone();
+        if let Some(enabled) = enabled {
+            config.enabled = enabled;
+        } else {
+            let index = unsafe { SendMessageW(self.control(combo), CB_GETCURSEL, None, None).0 };
+            config.device = usize::try_from(index)
+                .ok()
+                .and_then(|i| i.checked_sub(1))
+                .and_then(|i| self.devices.get(i))
+                .cloned();
+        }
+        self.send(WheelCommand::ConfigureDevice { role, config });
+    }
     fn command(&mut self, id: usize) {
         match id {
-            REFRESH => self.send(WheelCommand::Refresh),
-            DEVICE | AXIS => self.refresh(),
-            ENABLE => {
-                let Some(index) = self.selected() else {
+            WHEEL_AXIS => {
+                let Some(snapshot) = &self.last else {
                     return;
                 };
-                let Some(device) = self
-                    .last
-                    .as_ref()
-                    .and_then(|s| s.devices.get(index))
-                    .cloned()
-                else {
+                // SAFETY: selection is from the six fixed axis entries in the owned control.
+                let axis =
+                    unsafe { SendMessageW(self.control(WHEEL_AXIS), CB_GETCURSEL, None, None).0 };
+                let Ok(axis) = u8::try_from(axis) else {
                     return;
                 };
-                // SAFETY: standard combobox selection is in the six fixed axis entries.
-                let axis = unsafe { SendMessageW(self.control(AXIS), CB_GETCURSEL, None, None).0 };
-                if let Ok(axis) = u8::try_from(axis) {
-                    self.send(WheelCommand::Enable {
-                        device,
-                        axis,
+                if axis > 5 {
+                    return;
+                }
+                let mut config = snapshot.wheel.config.clone();
+                config.axes = vec![axis];
+                // Keep the native selection visible while the asynchronous recorder applies it.
+                if !self.wheel.send(WheelCommand::ConfigureDevice {
+                    role: DeviceRole::Wheel,
+                    config,
+                }) {
+                    self.note = "Wheel axis could not be changed. Try again.".into();
+                    self.refresh();
+                }
+            }
+            WHEEL_ENABLED => self.configure(
+                DeviceRole::Wheel,
+                Some(!self.checks.get(&id).copied().unwrap_or(true)),
+            ),
+            PEDALS_ENABLED => self.configure(
+                DeviceRole::Pedals,
+                Some(!self.checks.get(&id).copied().unwrap_or(true)),
+            ),
+            WHEEL_DEVICE => self.configure(DeviceRole::Wheel, None),
+            PEDALS_DEVICE => self.configure(DeviceRole::Pedals, None),
+            STARTUP => self.send(WheelCommand::SetAutoRecord(
+                !self.checks.get(&id).copied().unwrap_or(true),
+            )),
+            SHOW_OVERLAY => {
+                let value = !self.ui.borrow().preferences.show_overlay;
+                {
+                    let mut ui = self.ui.borrow_mut();
+                    ui.preferences.show_overlay = value;
+                    ui.save();
+                }
+                self.checked(SHOW_OVERLAY, value);
+            }
+            RUN => {
+                if self.last.as_ref().is_some_and(|s| s.running) {
+                    self.send(WheelCommand::Stop);
+                } else {
+                    self.send(WheelCommand::Run {
                         window: self.owner.0 as isize,
                     });
                 }
             }
-            DISABLE => self.send(WheelCommand::Disable),
-            MARK => self.send(WheelCommand::MarkIncident),
-            EXPORT => self.send(WheelCommand::Export),
-            USB => self.send(WheelCommand::StartUsb),
-            RECOVER_USB => self.send(WheelCommand::RecoverUsb),
-            REVEAL => {
-                if let Some(path) = self.last.as_ref().and_then(|s| s.export_path.clone()) {
-                    reveal(path);
+            REPORT => self.send(WheelCommand::ReportDiagnosticIncident),
+            TRACE => {
+                if self.last.as_ref().is_some_and(needs_recovery) {
+                    self.send(WheelCommand::RecoverUsb);
+                } else {
+                    self.send(WheelCommand::StartUsb);
+                }
+            }
+            FILES => {
+                if let Some(snapshot) = &self.last {
+                    if let Some(path) = snapshot.export_path.clone() {
+                        open_files(path, true);
+                    } else if let Some(path) = snapshot.exports_directory.clone() {
+                        open_files(path, false);
+                    }
                 }
             }
             CLOSE => self.hide(),
             _ => {}
         }
     }
-
     fn hide(&self) {
-        // SAFETY: hide only this dialog; capture and USB lifetime are owned by the worker.
         unsafe {
             let _ = KillTimer(Some(self.window), POLL);
             let _ = ShowWindow(self.window, SW_HIDE);
         }
     }
-
-    fn px(&self, value: i32) -> i32 {
-        value * self.dpi as i32 / 96
-    }
-
     fn layout(&mut self) {
-        // SAFETY: owned font and controls; the previous font is removed after all controls switch.
-        unsafe {
-            let font = CreateFontW(
-                -self.px(14),
-                0,
-                0,
-                0,
-                400,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET,
-                OUT_DEFAULT_PRECIS,
-                CLIP_DEFAULT_PRECIS,
-                DEFAULT_QUALITY,
-                0,
-                PCWSTR(wide("Segoe UI").as_ptr()),
-            );
-            for control in &self.controls {
-                SendMessageW(
-                    control.window,
-                    WM_SETFONT,
-                    Some(WPARAM(font.0 as usize)),
-                    Some(LPARAM(1)),
-                );
-            }
-            if !self.font.is_invalid() {
-                let _ = DeleteObject(HGDIOBJ(self.font.0));
-            }
-            self.font = font;
-            self.reposition();
-        }
-    }
-
-    fn reposition(&mut self) {
-        // SAFETY: positions our own children and adjusts this window's native scrollbar.
-        unsafe {
-            let mut client = RECT::default();
-            let _ = GetClientRect(self.window, &mut client);
-            let total = self.px(HEIGHT);
-            self.scroll = self.scroll.clamp(0, (total - client.bottom).max(0));
-            for control in &self.controls {
+        for control in &self.controls {
+            self.theme.apply_font(control.window);
+            unsafe {
                 let b = control.bounds;
                 let _ = SetWindowPos(
                     control.window,
                     None,
                     self.px(b.left),
-                    self.px(b.top) - self.scroll,
+                    self.px(b.top),
                     self.px(b.right - b.left),
                     self.px(b.bottom - b.top),
                     SWP_NOACTIVATE | SWP_NOZORDER,
                 );
+                let id = GetDlgCtrlID(control.window) as usize;
+                if matches!(id, WHEEL_DEVICE | PEDALS_DEVICE | WHEEL_AXIS) {
+                    SendMessageW(
+                        control.window,
+                        CB_SETITEMHEIGHT,
+                        Some(WPARAM(usize::MAX)),
+                        Some(LPARAM(self.px(26) as isize)),
+                    );
+                    SendMessageW(
+                        control.window,
+                        CB_SETITEMHEIGHT,
+                        Some(WPARAM(0)),
+                        Some(LPARAM(self.px(26) as isize)),
+                    );
+                }
             }
-            let info = SCROLLINFO {
-                cbSize: std::mem::size_of::<SCROLLINFO>() as u32,
-                fMask: SIF_RANGE | SIF_PAGE | SIF_POS,
-                nMin: 0,
-                nMax: total - 1,
-                nPage: client.bottom.max(1) as u32,
-                nPos: self.scroll,
-                ..Default::default()
-            };
-            SetScrollInfo(self.window, SB_VERT, &info, true);
         }
-    }
-
-    fn scroll(&mut self, action: SCROLLBAR_COMMAND) {
-        let mut info = SCROLLINFO {
-            cbSize: std::mem::size_of::<SCROLLINFO>() as u32,
-            fMask: SIF_ALL,
-            ..Default::default()
-        };
-        // SAFETY: scrollbar query for this owned window.
-        unsafe {
-            let _ = GetScrollInfo(self.window, SB_VERT, &mut info);
-        }
-        self.scroll = match action {
-            SB_LINEUP => self.scroll - self.px(24),
-            SB_LINEDOWN => self.scroll + self.px(24),
-            SB_PAGEUP => self.scroll - info.nPage as i32,
-            SB_PAGEDOWN => self.scroll + info.nPage as i32,
-            SB_THUMBTRACK | SB_THUMBPOSITION => info.nTrackPos,
-            SB_TOP => 0,
-            SB_BOTTOM => info.nMax,
-            _ => self.scroll,
-        };
-        self.reposition();
-    }
-
-    fn reveal_focus(&mut self) {
-        // SAFETY: native dialog focus is an owned child, if present.
-        let focus = unsafe { GetFocus() };
-        let Some(control) = self.controls.iter().find(|c| c.window == focus) else {
-            return;
-        };
-        let top = self.px(control.bounds.top);
-        let bottom = top + self.px((control.bounds.bottom - control.bounds.top).min(34));
-        let mut client = RECT::default();
-        // SAFETY: querying this owned window's client rectangle.
-        unsafe {
-            let _ = GetClientRect(self.window, &mut client);
-        }
-        if top < self.scroll {
-            self.scroll = top;
-        } else if bottom > self.scroll + client.bottom {
-            self.scroll = bottom - client.bottom;
-        }
-        self.reposition();
     }
 }
-
-fn reveal(path: PathBuf) {
-    // Shell startup is outside the message loop and never reads/copies the archive.
+fn needs_recovery(status: &WheelStatus) -> bool {
+    status.usb.to_lowercase().contains("cleanup")
+        || status.usb.to_lowercase().contains("interrupted")
+        || (!status.running && status.message.to_lowercase().contains("recover"))
+}
+fn open_files(path: PathBuf, select: bool) {
     let _ = std::thread::Builder::new()
-        .name("wheel-bundle-reveal".into())
+        .name("diagnostics-open-files".into())
         .spawn(move || {
-            let _ = std::process::Command::new("explorer.exe")
-                .arg("/select,")
-                .arg(path)
-                .spawn();
+            if !select && let Err(error) = std::fs::create_dir_all(&path) {
+                crate::warn!("diagnostic exports folder could not be opened: {error}");
+                return;
+            }
+            let mut command = std::process::Command::new("explorer.exe");
+            if select {
+                command.arg("/select,");
+            }
+            let _ = command.arg(path).spawn();
         });
 }
-
-unsafe fn combo_add(window: HWND, text: &str) {
-    // SAFETY: standard combobox copies the NUL-terminated text synchronously.
-    unsafe {
-        SendMessageW(
-            window,
-            CB_ADDSTRING,
-            None,
-            Some(LPARAM(wide(text).as_ptr() as isize)),
-        );
+pub(super) fn capture_indicator(status: &WheelStatus) -> String {
+    if !status.running {
+        "DIAGNOSTICS STOPPED".into()
+    } else if status.last_sample_age_ms.is_none_or(|age| age > 2_000) {
+        "DIAGNOSTICS WAITING FOR INPUT".into()
+    } else {
+        "DIAGNOSTICS RUNNING".into()
     }
 }
-
-unsafe fn state(window: HWND) -> Option<&'static mut Panel> {
-    // SAFETY: set once after creation, cleared and freed on WM_NCDESTROY, UI thread only.
-    unsafe { (GetWindowLongPtrW(window, GWLP_USERDATA) as *mut Panel).as_mut() }
-}
-
-unsafe fn create(owner: HWND, wheel: WheelHandle) -> windows::core::Result<HWND> {
-    // SAFETY: class/child creation and owned Box stay on this UI thread.
+unsafe fn create(
+    owner: HWND,
+    wheel: WheelHandle,
+    ui: Rc<RefCell<DiagnosticsUiState>>,
+) -> windows::core::Result<HWND> {
+    let _dpi = DpiAwarenessGuard::per_monitor_v2()?;
+    // SAFETY: standard native class, owned controls and one boxed state on this UI thread.
     unsafe {
-        let previous = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        let result = create_inner(owner, wheel);
-        SetThreadDpiAwarenessContext(previous);
-        result
-    }
-}
-
-unsafe fn create_inner(owner: HWND, wheel: WheelHandle) -> windows::core::Result<HWND> {
-    // SAFETY: standard window creation; Windows copies names before returning.
-    unsafe {
-        let instance: HINSTANCE = GetModuleHandleW(PCWSTR::null())?.into();
-        let class = WNDCLASSEXW {
-            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+        let instance = GetModuleHandleW(PCWSTR::null())?;
+        let class = wide(CLASS);
+        RegisterClassW(&WNDCLASSW {
+            hInstance: instance.into(),
             lpfnWndProc: Some(window_proc),
-            hInstance: instance,
+            lpszClassName: PCWSTR(class.as_ptr()),
             hCursor: LoadCursorW(None, IDC_ARROW)?,
-            hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as usize as *mut _),
-            lpszClassName: PCWSTR(wide(CLASS).as_ptr()),
             ..Default::default()
-        };
-        RegisterClassExW(&class);
+        });
+        let style = WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
         let window = CreateWindowExW(
             WS_EX_CONTROLPARENT,
-            PCWSTR(wide(CLASS).as_ptr()),
-            PCWSTR(wide("Wheel interruption recorder — iRacing Coach").as_ptr()),
-            WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
+            PCWSTR(class.as_ptr()),
+            PCWSTR(wide("USB diagnostics — iRacing Coach").as_ptr()),
+            style,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             WIDTH,
             HEIGHT,
             Some(owner),
             None,
-            Some(instance),
+            Some(instance.into()),
             None,
         )?;
+        apply_titlebar(window);
+        let dpi = GetDpiForWindow(window).max(96);
+        let theme = DialogTheme::new(dpi);
+        let _ = SetPropW(
+            window,
+            PCWSTR(wide("CoachDiagnosticsDpi").as_ptr()),
+            Some(HANDLE(dpi as usize as *mut _)),
+        );
+        let heading = CreateFontW(
+            -((24 * dpi / 96) as i32),
+            0,
+            0,
+            0,
+            600,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY,
+            0,
+            PCWSTR(wide("Segoe UI").as_ptr()),
+        );
         let mut panel = Box::new(Panel {
             window,
             owner,
             wheel,
+            ui,
+            theme,
+            heading,
+            dpi,
             controls: Vec::new(),
-            font: HFONT::default(),
-            dpi: GetDpiForWindow(window).max(96),
-            scroll: 0,
             devices: Vec::new(),
+            device_labels: Vec::new(),
             last: None,
-            pending_until: None,
+            labels: HashMap::new(),
+            enabled: HashMap::new(),
+            checks: HashMap::new(),
+            paint_key: String::new(),
             note: String::new(),
         });
-        let controls = [
+        for (id, label, x, y, w, h, combo) in [
+            (WHEEL_ENABLED, "Monitor wheel", 38, 106, 28, 28, false),
+            (WHEEL_DEVICE, "", 178, 96, 314, 240, true),
+            (WHEEL_AXIS, "", 360, 138, 132, 200, true),
+            (PEDALS_ENABLED, "Monitor pedals", 38, 218, 28, 28, false),
+            (PEDALS_DEVICE, "", 178, 216, 314, 240, true),
+            (STARTUP, "Run on startup", 24, 298, 258, 30, false),
             (
-                "STATIC",
-                "Wheel recorder  -  start before racing, export when parked",
-                0,
-                16,
-                14,
-                664,
-                26,
-            ),
-            (
-                "STATIC",
-                "Keeps the last 60 minutes. Input interruptions are marked automatically.\nYou can close this window and keep racing; capture continues in the tray.",
-                0,
-                16,
-                48,
-                664,
-                42,
-            ),
-            ("STATIC", "1. Select your wheel", 0, 16, 104, 446, 20),
-            ("BUTTON", "&Refresh", REFRESH, 552, 96, 128, 32),
-            ("COMBOBOX", "", DEVICE, 16, 132, 446, 240),
-            ("STATIC", "Steering &axis", 0, 480, 104, 200, 20),
-            ("COMBOBOX", "", AXIS, 480, 132, 200, 240),
-            ("BUTTON", "&Start recording", ENABLE, 16, 178, 170, 38),
-            ("BUTTON", "&Stop", DISABLE, 198, 178, 114, 38),
-            ("BUTTON", "&Mark issue now", MARK, 324, 178, 174, 38),
-            ("STATIC", "", INPUT, 16, 232, 664, 26),
-            ("STATIC", "", MESSAGE, 16, 266, 664, 46),
-            ("BUTTON", "Stop and &save capture", EXPORT, 16, 324, 220, 38),
-            ("BUTTON", "&Open saved capture", REVEAL, 248, 324, 206, 38),
-            (
-                "STATIC",
-                "Saved capture includes the hour's axis history and up to 8 issue windows (10 s before,\n20 s after). A held axis is normal; input errors do not prove the cause of an interruption.",
-                0,
-                16,
-                374,
-                664,
-                42,
-            ),
-            (
-                "STATIC",
-                "Optional USB details  -  administrator permission required",
-                0,
-                16,
-                432,
-                664,
+                SHOW_OVERLAY,
+                "Show diagnostic overlay",
                 24,
+                338,
+                300,
+                30,
+                false,
             ),
-            ("BUTTON", "Start &USB trace", USB, 16, 464, 200, 32),
+            (TRACE, "Enable USB trace", 354, 338, 156, 30, false),
+            (RUN, "Start recording", 522, 298, 174, 38, false),
             (
-                "BUTTON",
-                "&Recover interrupted trace",
-                RECOVER_USB,
-                228,
-                464,
-                260,
-                32,
+                REPORT,
+                "Report diagnostic incident",
+                24,
+                390,
+                344,
+                44,
+                false,
             ),
-            ("STATIC", "", USB_STATUS, 16, 508, 664, 46),
-            (
-                "STATIC",
-                "Local only. USB details can include other device identifiers. Review before sharing.",
-                0,
-                16,
-                564,
-                538,
-                32,
-            ),
-            ("BUTTON", "&Close", CLOSE, 566, 564, 114, 32),
-        ];
-        for (kind, text, id, x, y, w, h) in controls {
-            let extra = match kind {
-                "BUTTON" => WS_TABSTOP,
-                "COMBOBOX" => WS_TABSTOP | WS_VSCROLL | WINDOW_STYLE(CBS_DROPDOWNLIST as u32),
-                _ => WINDOW_STYLE(0),
+            (FILES, "Open files", 384, 390, 148, 44, false),
+            (CLOSE, "Close", 548, 390, 148, 44, false),
+        ] {
+            let kind = if combo { "COMBOBOX" } else { "BUTTON" };
+            let extra = if combo {
+                WINDOW_STYLE((CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS) as u32)
+                    | WS_VSCROLL
+            } else {
+                WINDOW_STYLE(BS_OWNERDRAW as u32)
             };
-            match CreateWindowExW(
+            let child = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 PCWSTR(wide(kind).as_ptr()),
-                PCWSTR(wide(text).as_ptr()),
-                WS_CHILD | WS_VISIBLE | extra,
+                PCWSTR(wide(label).as_ptr()),
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | extra,
                 x,
                 y,
                 w,
                 h,
                 Some(window),
                 Some(HMENU(id as *mut _)),
-                Some(instance),
+                Some(instance.into()),
                 None,
-            ) {
-                Ok(child) => panel.controls.push(Control {
-                    window: child,
-                    bounds: RECT {
-                        left: x,
-                        top: y,
-                        right: x + w,
-                        bottom: y + h,
-                    },
-                }),
-                Err(error) => {
-                    let _ = DestroyWindow(window);
-                    return Err(error);
+            )?;
+            style_control(child);
+            if combo {
+                let labels = if id == WHEEL_AXIS {
+                    &AXIS_LABELS[..]
+                } else {
+                    &["Select device"][..]
+                };
+                for label in labels {
+                    SendMessageW(
+                        child,
+                        CB_ADDSTRING,
+                        None,
+                        Some(LPARAM(wide(label).as_ptr() as isize)),
+                    );
                 }
+                SendMessageW(child, CB_SETCURSEL, Some(WPARAM(0)), None);
+                let _ = SetWindowSubclass(child, Some(combo_proc), 1, 0);
             }
+            panel.controls.push(Control {
+                window: child,
+                bounds: RECT {
+                    left: x,
+                    top: y,
+                    right: x + w,
+                    bottom: y + h,
+                },
+            });
         }
-        combo_add(panel.control(DEVICE), "Select the wheel");
-        SendMessageW(panel.control(DEVICE), CB_SETCURSEL, Some(WPARAM(0)), None);
-        for axis in ["X (common steering)", "Y", "Z", "Rx", "Ry", "Rz"] {
-            combo_add(panel.control(AXIS), axis);
-        }
-        SendMessageW(panel.control(AXIS), CB_SETCURSEL, Some(WPARAM(0)), None);
-        let dpi = panel.dpi;
-        let mut bounds = RECT {
+        panel.layout();
+        let mut outer = RECT {
             left: 0,
             top: 0,
             right: panel.px(WIDTH),
             bottom: panel.px(HEIGHT),
         };
-        let _ = AdjustWindowRectExForDpi(
-            &mut bounds,
-            WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VSCROLL,
-            false,
-            WS_EX_CONTROLPARENT,
-            dpi,
-        );
-        let mut work = RECT::default();
-        let _ = SystemParametersInfoW(
-            SPI_GETWORKAREA,
-            0,
-            Some((&mut work as *mut RECT).cast()),
-            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-        );
-        let height = (bounds.bottom - bounds.top).min((work.bottom - work.top - 24).max(240));
-        let width = bounds.right - bounds.left;
+        let _ = AdjustWindowRectExForDpi(&mut outer, style, false, WS_EX_CONTROLPARENT, dpi);
         let _ = SetWindowPos(
             window,
             None,
-            work.left + ((work.right - work.left - width) / 2).max(0),
-            work.top + 12,
-            width,
-            height,
-            SWP_NOACTIVATE | SWP_NOZORDER,
+            0,
+            0,
+            outer.right - outer.left,
+            outer.bottom - outer.top,
+            SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER,
         );
-        panel.layout();
-        panel.refresh();
         SetWindowLongPtrW(window, GWLP_USERDATA, Box::into_raw(panel) as isize);
         Ok(window)
     }
 }
+unsafe fn state(window: HWND) -> Option<&'static mut Panel> {
+    unsafe { (GetWindowLongPtrW(window, GWLP_USERDATA) as *mut Panel).as_mut() }
+}
+// Native synchronous drawing notifications do not borrow Panel: they can arrive during render().
+unsafe fn control_color(dc: HDC) -> LRESULT {
+    use std::sync::OnceLock;
+    static BRUSH: OnceLock<usize> = OnceLock::new();
+    unsafe {
+        SetTextColor(dc, colorref(palette().text));
+        SetBkColor(dc, colorref(palette().surface));
+        LRESULT(
+            *BRUSH.get_or_init(|| CreateSolidBrush(colorref(palette().surface)).0 as usize)
+                as isize,
+        )
+    }
+}
+unsafe fn control_dpi(window: HWND) -> u32 {
+    unsafe {
+        let dpi = GetPropW(window, PCWSTR(wide("CoachDiagnosticsDpi").as_ptr())).0 as usize as u32;
+        if dpi >= 96 {
+            dpi
+        } else {
+            GetDpiForWindow(window).max(96)
+        }
+    }
+}
 
+// Preserve the native combobox's keyboard, accessibility and drop-down behavior; paint its
+// closed field and arrow together so Windows' light classic frame never flashes through.
+unsafe extern "system" fn combo_proc(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _: usize,
+    _: usize,
+) -> LRESULT {
+    unsafe {
+        if message == WM_ERASEBKGND {
+            return LRESULT(1);
+        }
+        if message == WM_NCDESTROY {
+            let _ = RemoveWindowSubclass(window, Some(combo_proc), 1);
+        }
+        if message != WM_PAINT {
+            return DefSubclassProc(window, message, wparam, lparam);
+        }
+        let parent = GetParent(window).unwrap_or_default();
+        let dpi = control_dpi(parent);
+        let px = |v: i32| v * dpi as i32 / 96;
+        let mut ps = PAINTSTRUCT::default();
+        let dc = BeginPaint(window, &mut ps);
+        let mut bounds = RECT::default();
+        let _ = GetClientRect(window, &mut bounds);
+        let memory = CreateCompatibleDC(Some(dc));
+        let bitmap = CreateCompatibleBitmap(dc, bounds.right.max(1), bounds.bottom.max(1));
+        let old_bitmap = SelectObject(memory, HGDIOBJ(bitmap.0));
+        fill(memory, bounds, palette().surface);
+        rounded(
+            memory,
+            RECT {
+                right: bounds.right - 1,
+                bottom: bounds.bottom - 1,
+                ..bounds
+            },
+            palette().app,
+            palette().border,
+            px(6),
+        );
+        let index = SendMessageW(window, CB_GETCURSEL, None, None).0.max(0) as usize;
+        let len = SendMessageW(window, CB_GETLBTEXTLEN, Some(WPARAM(index)), None).0;
+        let mut value = vec![0u16; (len.max(0) as usize).min(4096) + 1];
+        let label = if (0..4096).contains(&len) {
+            SendMessageW(
+                window,
+                CB_GETLBTEXT,
+                Some(WPARAM(index)),
+                Some(LPARAM(value.as_mut_ptr() as isize)),
+            );
+            String::from_utf16_lossy(&value[..len as usize])
+        } else {
+            "Select device".into()
+        };
+        let enabled =
+            windows::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(window).as_bool();
+        let font = HFONT(SendMessageW(window, WM_GETFONT, None, None).0 as *mut _);
+        text(
+            memory,
+            font,
+            &label,
+            RECT {
+                left: px(11),
+                top: 0,
+                right: bounds.right - px(30),
+                bottom: bounds.bottom,
+            },
+            if enabled {
+                palette().text
+            } else {
+                palette().muted
+            },
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+        let pen = CreatePen(PS_SOLID, px(1).max(1), colorref(palette().muted));
+        let old_pen = SelectObject(memory, HGDIOBJ(pen.0));
+        let middle = bounds.bottom / 2;
+        let _ = MoveToEx(memory, bounds.right - px(21), middle - px(2), None);
+        let _ = LineTo(memory, bounds.right - px(16), middle + px(3));
+        let _ = LineTo(memory, bounds.right - px(11), middle - px(2));
+        SelectObject(memory, old_pen);
+        let _ = DeleteObject(HGDIOBJ(pen.0));
+        if windows::Win32::UI::Input::KeyboardAndMouse::GetFocus() == window {
+            let focus = RECT {
+                left: px(4),
+                top: px(4),
+                right: bounds.right - px(4),
+                bottom: bounds.bottom - px(4),
+            };
+            let _ = DrawFocusRect(memory, &focus);
+        }
+        let _ = BitBlt(
+            dc,
+            0,
+            0,
+            bounds.right,
+            bounds.bottom,
+            Some(memory),
+            0,
+            0,
+            SRCCOPY,
+        );
+        SelectObject(memory, old_bitmap);
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
+        let _ = DeleteDC(memory);
+        let _ = EndPaint(window, &ps);
+        LRESULT(0)
+    }
+}
+unsafe fn draw_control(window: HWND, item: &DRAWITEMSTRUCT) {
+    unsafe {
+        let theme = DialogTheme::new(control_dpi(window));
+        let dpi = control_dpi(window) as i32;
+        let px = |v: i32| v * dpi / 96;
+        let id = item.CtlID as usize;
+        if matches!(id, WHEEL_DEVICE | PEDALS_DEVICE | WHEEL_AXIS) {
+            fill(
+                item.hDC,
+                item.rcItem,
+                if item.itemState.0 & ODS_SELECTED.0 != 0 {
+                    palette().surface_hover
+                } else {
+                    palette().surface
+                },
+            );
+            let index = if item.itemID == u32::MAX {
+                SendMessageW(item.hwndItem, CB_GETCURSEL, None, None)
+                    .0
+                    .max(0) as usize
+            } else {
+                item.itemID as usize
+            };
+            let len = SendMessageW(item.hwndItem, CB_GETLBTEXTLEN, Some(WPARAM(index)), None).0;
+            let mut value = vec![0u16; (len.max(0) as usize).min(4096) + 1];
+            let label = if (0..4096).contains(&len) {
+                SendMessageW(
+                    item.hwndItem,
+                    CB_GETLBTEXT,
+                    Some(WPARAM(index)),
+                    Some(LPARAM(value.as_mut_ptr() as isize)),
+                );
+                String::from_utf16_lossy(&value[..len as usize])
+            } else {
+                "Select device".into()
+            };
+            let mut bounds = item.rcItem;
+            bounds.left += px(10);
+            bounds.right -= px(6);
+            text(
+                item.hDC,
+                theme.font,
+                &label,
+                bounds,
+                if item.itemState.0 & ODS_DISABLED.0 != 0 {
+                    palette().muted
+                } else {
+                    palette().text
+                },
+                DT_LEFT | DT_SINGLELINE | DT_VCENTER,
+            );
+            if item.itemState.0 & ODS_FOCUS.0 != 0 {
+                let _ = DrawFocusRect(item.hDC, &item.rcItem);
+            }
+        } else if matches!(id, WHEEL_ENABLED | PEDALS_ENABLED | STARTUP | SHOW_OVERLAY) {
+            let disabled = item.itemState.0 & ODS_DISABLED.0 != 0;
+            let checked = GetWindowLongPtrW(item.hwndItem, GWLP_USERDATA) != 0;
+            let row = matches!(id, WHEEL_ENABLED | PEDALS_ENABLED);
+            fill(
+                item.hDC,
+                item.rcItem,
+                if row {
+                    palette().surface
+                } else {
+                    palette().app
+                },
+            );
+            let top = item.rcItem.top + (item.rcItem.bottom - item.rcItem.top - px(19)) / 2;
+            let check = RECT {
+                left: item.rcItem.left + px(3),
+                top,
+                right: item.rcItem.left + px(22),
+                bottom: top + px(19),
+            };
+            rounded(
+                item.hDC,
+                check,
+                if checked && !disabled {
+                    palette().accent
+                } else {
+                    palette().surface
+                },
+                if disabled {
+                    palette().surface_hover
+                } else {
+                    palette().border
+                },
+                px(4),
+            );
+            if checked {
+                let pen = CreatePen(
+                    PS_SOLID,
+                    px(2).max(1),
+                    colorref(if disabled {
+                        palette().muted
+                    } else {
+                        palette().app
+                    }),
+                );
+                let old = SelectObject(item.hDC, HGDIOBJ(pen.0));
+                let _ = MoveToEx(item.hDC, check.left + px(4), check.top + px(9), None);
+                let _ = LineTo(item.hDC, check.left + px(8), check.top + px(13));
+                let _ = LineTo(item.hDC, check.left + px(15), check.top + px(5));
+                SelectObject(item.hDC, old);
+                let _ = DeleteObject(HGDIOBJ(pen.0));
+            }
+            if !row {
+                let mut value = [0u16; 128];
+                let len = GetWindowTextW(item.hwndItem, &mut value).max(0) as usize;
+                text(
+                    item.hDC,
+                    theme.font,
+                    &String::from_utf16_lossy(&value[..len]),
+                    RECT {
+                        left: check.right + px(10),
+                        ..item.rcItem
+                    },
+                    if disabled {
+                        palette().muted
+                    } else {
+                        palette().text
+                    },
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
+            }
+            if item.itemState.0 & ODS_FOCUS.0 != 0 {
+                let _ = DrawFocusRect(item.hDC, &item.rcItem);
+            }
+        } else {
+            theme.paint_button(item, id == REPORT);
+        }
+    }
+}
 unsafe extern "system" fn window_proc(
     window: HWND,
     message: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // SAFETY: our modeless dialog class; state pointer is confined to this UI thread.
     unsafe {
-        if message == WM_COMMAND
-            && matches!(wparam.0 & 0xFFFF, DEVICE | AXIS)
-            && (wparam.0 >> 16) & 0xFFFF != CBN_SELCHANGE as usize
-        {
-            // Disabling a focused combo synchronously notifies its parent. Focus/dropdown
-            // notifications are not a selection change and must not re-enter Panel::render.
-            return LRESULT(0);
-        }
-        if message == WM_NCDESTROY {
-            let pointer = GetWindowLongPtrW(window, GWLP_USERDATA) as *mut Panel;
-            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-            if !pointer.is_null() {
-                let panel = Box::from_raw(pointer);
-                if !panel.font.is_invalid() {
-                    let _ = DeleteObject(HGDIOBJ(panel.font.0));
-                }
+        match message {
+            WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => {
+                return control_color(HDC(wparam.0 as *mut _));
             }
-        } else if message == WM_SIZE {
-            // SetWindowPos/SetScrollInfo can synchronously re-enter this procedure. Defer layout
-            // so a nested message never borrows Panel while its outer handler still uses it.
-            if wparam.0 == SIZE_MINIMIZED as usize {
-                let _ = KillTimer(Some(window), POLL);
-            } else {
-                if IsWindowVisible(window).as_bool() {
-                    SetTimer(Some(window), POLL, 1_000, None);
-                }
-                let _ = PostMessageW(Some(window), REPOSITION, WPARAM(0), LPARAM(0));
+            WM_DRAWITEM => {
+                draw_control(window, &*(lparam.0 as *const DRAWITEMSTRUCT));
+                return LRESULT(1);
             }
-            return LRESULT(0);
-        } else if matches!(
-            message,
+            WM_MEASUREITEM => {
+                let item = &mut *(lparam.0 as *mut MEASUREITEMSTRUCT);
+                item.itemHeight = 26 * control_dpi(window) / 96;
+                return LRESULT(1);
+            }
+            WM_ERASEBKGND => return LRESULT(1),
             WM_COMMAND
-                | WM_TIMER
-                | WM_CLOSE
-                | REPOSITION
-                | WM_VSCROLL
-                | WM_MOUSEWHEEL
-                | WM_DPICHANGED
-                | WM_DESTROY
-        ) && let Some(panel) = state(window)
-        {
-            match message {
-                WM_COMMAND => {
-                    panel.command(wparam.0 & 0xFFFF);
-                    return LRESULT(0);
-                }
-                WM_TIMER if wparam.0 == POLL => {
-                    if IsWindowVisible(window).as_bool() && !IsIconic(window).as_bool() {
-                        panel.refresh();
-                    }
-                    return LRESULT(0);
-                }
-                WM_CLOSE => {
-                    panel.hide();
-                    return LRESULT(0);
-                }
-                REPOSITION => {
-                    panel.reposition();
-                    return LRESULT(0);
-                }
-                WM_VSCROLL => {
-                    panel.scroll(SCROLLBAR_COMMAND((wparam.0 & 0xFFFF) as i32));
-                    return LRESULT(0);
-                }
-                WM_MOUSEWHEEL => {
-                    panel.scroll(if ((wparam.0 >> 16) as i16) > 0 {
-                        SB_LINEUP
-                    } else {
-                        SB_LINEDOWN
-                    });
-                    return LRESULT(0);
-                }
-                WM_DPICHANGED => {
-                    panel.dpi = (wparam.0 & 0xFFFF) as u32;
-                    let suggested = &*(lparam.0 as *const RECT);
-                    let _ = SetWindowPos(
-                        window,
-                        None,
-                        suggested.left,
-                        suggested.top,
-                        suggested.right - suggested.left,
-                        suggested.bottom - suggested.top,
-                        SWP_NOACTIVATE | SWP_NOZORDER,
-                    );
-                    panel.layout();
-                    return LRESULT(0);
-                }
-                WM_DESTROY => {
-                    let _ = KillTimer(Some(window), POLL);
-                }
-                _ => {}
+                if matches!(wparam.0 & 0xffff, WHEEL_DEVICE | PEDALS_DEVICE | WHEEL_AXIS)
+                    && (wparam.0 >> 16) & 0xffff != CBN_SELCHANGE as usize =>
+            {
+                return LRESULT(0);
+            }
+            WM_PAINT | WM_TIMER | WM_COMMAND | WM_CLOSE | WM_DPICHANGED | WM_NCDESTROY => {}
+            _ => return DefWindowProcW(window, message, wparam, lparam),
+        }
+        let Some(panel) = state(window) else {
+            return DefWindowProcW(window, message, wparam, lparam);
+        };
+        match message {
+            WM_PAINT => {
+                paint(panel);
+                LRESULT(0)
+            }
+            WM_TIMER if wparam.0 == POLL => {
+                panel.refresh();
+                LRESULT(0)
+            }
+            WM_COMMAND => {
+                panel.command(wparam.0 & 0xffff);
+                LRESULT(0)
+            }
+            WM_CLOSE => {
+                panel.hide();
+                LRESULT(0)
+            }
+            WM_DPICHANGED => {
+                panel.dpi = (wparam.0 & 0xffff) as u32;
+                let _ = SetPropW(
+                    window,
+                    PCWSTR(wide("CoachDiagnosticsDpi").as_ptr()),
+                    Some(HANDLE(panel.dpi as usize as *mut _)),
+                );
+                let old_theme = std::mem::replace(&mut panel.theme, DialogTheme::new(panel.dpi));
+                let old_heading = panel.heading;
+                panel.heading = CreateFontW(
+                    -panel.px(24),
+                    0,
+                    0,
+                    0,
+                    600,
+                    0,
+                    0,
+                    0,
+                    DEFAULT_CHARSET,
+                    OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS,
+                    CLEARTYPE_QUALITY,
+                    0,
+                    PCWSTR(wide("Segoe UI").as_ptr()),
+                );
+                panel.layout();
+                drop(old_theme);
+                let _ = DeleteObject(HGDIOBJ(old_heading.0));
+                let rect = &*(lparam.0 as *const RECT);
+                let _ = SetWindowPos(
+                    window,
+                    None,
+                    rect.left,
+                    rect.top,
+                    rect.right - rect.left,
+                    rect.bottom - rect.top,
+                    SWP_NOACTIVATE | SWP_NOZORDER,
+                );
+                let _ = InvalidateRect(Some(window), None, false);
+                LRESULT(0)
+            }
+            WM_NCDESTROY => {
+                let pointer = GetWindowLongPtrW(window, GWLP_USERDATA) as *mut Panel;
+                SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+                let _ = RemovePropW(window, PCWSTR(wide("CoachDiagnosticsDpi").as_ptr()));
+                let _ = DeleteObject(HGDIOBJ((*pointer).heading.0));
+                drop(Box::from_raw(pointer));
+                DefWindowProcW(window, message, wparam, lparam)
+            }
+            _ => DefWindowProcW(window, message, wparam, lparam),
+        }
+    }
+}
+unsafe fn paint(panel: &Panel) {
+    unsafe {
+        let mut ps = PAINTSTRUCT::default();
+        let dc = BeginPaint(panel.window, &mut ps);
+        let mut bounds = RECT::default();
+        let _ = GetClientRect(panel.window, &mut bounds);
+        let memory = CreateCompatibleDC(Some(dc));
+        let bitmap = CreateCompatibleBitmap(dc, bounds.right.max(1), bounds.bottom.max(1));
+        let old = SelectObject(memory, HGDIOBJ(bitmap.0));
+        fill(memory, bounds, palette().app);
+        let rect = |x, y, w, h| RECT {
+            left: panel.px(x),
+            top: panel.px(y),
+            right: panel.px(x + w),
+            bottom: panel.px(y + h),
+        };
+        text(
+            memory,
+            panel.heading,
+            "USB diagnostics",
+            rect(24, 20, 390, 38),
+            palette().text,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+        let running = panel.last.as_ref().is_some_and(|s| s.running);
+        let color = if running {
+            palette().success
+        } else {
+            palette().muted
+        };
+        rounded(
+            memory,
+            rect(548, 24, 148, 32),
+            palette().surface,
+            palette().border,
+            panel.px(8),
+        );
+        text(
+            memory,
+            panel.theme.font,
+            if running {
+                "●  Running"
+            } else {
+                "●  Stopped"
+            },
+            rect(558, 24, 128, 32),
+            color,
+            DT_CENTER | DT_SINGLELINE | DT_VCENTER,
+        );
+        for (pedals, y, title) in [(false, 82, "Wheel"), (true, 194, "Pedals")] {
+            rounded(
+                memory,
+                rect(24, y, 672, if pedals { 76 } else { 96 }),
+                palette().surface,
+                palette().border,
+                panel.px(10),
+            );
+            if let Some(status) = &panel.last {
+                let monitor = if pedals {
+                    &status.pedals
+                } else {
+                    &status.wheel
+                };
+                let color = health_color(health(status.running, monitor));
+                device_symbol(
+                    memory,
+                    panel.px(92),
+                    panel.px(y + 28),
+                    panel.px(14),
+                    pedals,
+                    color,
+                );
+                text(
+                    memory,
+                    panel.theme.font,
+                    title,
+                    rect(74, y + 48, 82, 20),
+                    palette().text,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
+                text(
+                    memory,
+                    panel.theme.font,
+                    health_label(status.running, monitor),
+                    rect(518, y + 20, 160, 26),
+                    color,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+                );
             }
         }
-        DefWindowProcW(window, message, wparam, lparam)
+        text(
+            memory,
+            panel.theme.font,
+            "Steering axis",
+            rect(178, 138, 166, 28),
+            palette().muted,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+        );
+        if let Some(status) = &panel.last {
+            let usb = if status.usb.contains("trace recording (") {
+                "USB trace on"
+            } else if status.usb.to_lowercase().contains("pending")
+                || status.usb.contains("Starting")
+            {
+                "USB permission pending"
+            } else {
+                "USB trace off"
+            };
+            text(
+                memory,
+                panel.theme.font,
+                usb,
+                rect(516, 342, 180, 24),
+                if usb == "USB trace on" {
+                    palette().muted
+                } else {
+                    palette().warning
+                },
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE,
+            );
+            let ui_error = panel.ui.borrow().error.clone();
+            let detail = if !panel.note.is_empty() {
+                panel.note.as_str()
+            } else if let Some(error) = &ui_error {
+                error.as_str()
+            } else if needs_recovery(status) && status.running {
+                "Stop recording to recover the USB trace."
+            } else if !status.running && status.has_capture {
+                status.message.as_str()
+            } else if usb != "USB trace on" {
+                status.usb.as_str()
+            } else {
+                ""
+            };
+            text(
+                memory,
+                panel.theme.font,
+                detail,
+                rect(24, 368, 672, 18),
+                palette().muted,
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+            let saved = if let Some(error) = &status.report_error {
+                format!("Save failed: {error}")
+            } else if status.report_pending {
+                "Saving the preceding 5 minutes…".into()
+            } else if let Some(path) = &status.export_path {
+                let when = status.exported_utc.as_deref().unwrap_or("");
+                format!(
+                    "Saved {} UTC · {:.1} MB · {}",
+                    when.get(11..19).unwrap_or(when),
+                    status.export_bytes.unwrap_or(0) as f64 / 1_048_576.0,
+                    path.file_name().unwrap_or_default().to_string_lossy()
+                )
+            } else {
+                "Report saves the preceding 5 minutes. Recording keeps running.".into()
+            };
+            text(
+                memory,
+                panel.theme.font,
+                &saved,
+                rect(24, 448, 672, 24),
+                if status.report_error.is_some() {
+                    palette().danger
+                } else {
+                    palette().muted
+                },
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE,
+            );
+        }
+        let _ = BitBlt(
+            dc,
+            ps.rcPaint.left,
+            ps.rcPaint.top,
+            ps.rcPaint.right - ps.rcPaint.left,
+            ps.rcPaint.bottom - ps.rcPaint.top,
+            Some(memory),
+            ps.rcPaint.left,
+            ps.rcPaint.top,
+            SRCCOPY,
+        );
+        SelectObject(memory, old);
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
+        let _ = DeleteDC(memory);
+        let _ = EndPaint(panel.window, &ps);
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
-    use crate::wheel::{WheelDevice, WheelInputSource, WheelReading, WheelUsbTrace};
-    use std::path::Path;
-    use std::sync::{Arc, Condvar, Mutex};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{IsWindowEnabled, VK_ESCAPE, VK_TAB};
-
+    use crate::wheel::{WheelInputSource, WheelReading, WheelUsbTrace};
+    use std::{path::Path, sync::Arc, time::Duration};
+    use windows::Win32::UI::Input::KeyboardAndMouse::GetFocus;
     struct NoInput;
     impl WheelInputSource for NoInput {
         fn enumerate(&mut self) -> Result<Vec<WheelDevice>, String> {
             Ok(Vec::new())
         }
         fn select(&mut self, _: &str, _: u8, _: isize) -> Result<(), String> {
-            panic!("UI smoke must not acquire input")
+            panic!("UI smoke never acquires input")
         }
         fn read(&mut self) -> WheelReading {
-            panic!("UI smoke must not read input")
+            panic!("UI smoke never reads input")
         }
     }
     struct NoUsb;
@@ -780,35 +1291,29 @@ mod tests {
             true
         }
         fn start(&mut self, _: &Path) -> Result<(), String> {
-            panic!("UI smoke must not start USB tracing")
+            panic!("UI smoke never starts USB")
         }
         fn heartbeat(&mut self) {}
         fn stop(&mut self) -> Result<(), String> {
             Ok(())
         }
     }
-
-    fn handle(factory: crate::wheel::SourceFactory) -> WheelHandle {
-        let root = std::env::temp_dir().join(format!(
-            "coach-wheel-ui-{}-{}",
-            std::process::id(),
-            crate::util::uuid_v4()
-        ));
+    pub(crate) fn handle() -> WheelHandle {
+        let root =
+            std::env::temp_dir().join(format!("coach-diagnostics-ui-{}", crate::util::uuid_v4()));
         WheelHandle::new(
             root.join("captures"),
             root.join("exports"),
-            factory,
+            Arc::new(|| Box::new(NoInput)),
             Box::new(NoUsb),
         )
     }
-
-    fn owner() -> HWND {
-        // SAFETY: isolated test-thread window, never the installed collector's window.
+    unsafe fn owner() -> HWND {
         unsafe {
             CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 PCWSTR(wide("STATIC").as_ptr()),
-                PCWSTR(wide("Coach wheel UI smoke owner").as_ptr()),
+                PCWSTR(wide("Diagnostics software-only test").as_ptr()),
                 WINDOW_STYLE(0),
                 0,
                 0,
@@ -822,426 +1327,198 @@ mod tests {
             .unwrap()
         }
     }
-
-    fn enabled(panel: &Panel, id: usize) -> bool {
-        // SAFETY: querying an isolated test control.
-        unsafe { IsWindowEnabled(panel.control(id)).as_bool() }
-    }
-
     #[test]
-    fn native_dialog_default_off_selection_keyboard_dpi_and_busy_controls() {
-        let wheel = handle(Arc::new(|| Box::new(NoInput)));
-        let owner = owner();
+    fn panel_and_native_controls_keep_per_monitor_v2_awareness_after_creation_scope() {
+        use windows::Win32::UI::HiDpi::{
+            AreDpiAwarenessContextsEqual, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            GetThreadDpiAwarenessContext, GetWindowDpiAwarenessContext,
+        };
+        let wheel = handle();
+        let owner = unsafe { owner() };
+        let mut window = WheelPanel::default();
+        // Create the real native panel hidden: this checks actual Windows window awareness and
+        // the current monitor's DPI without taking focus or claiming mixed-monitor validation.
+        unsafe {
+            let caller_context = GetThreadDpiAwarenessContext();
+            window.window = create(owner, wheel.clone(), window.ui.clone()).unwrap();
+            assert!(
+                AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(), caller_context,)
+                    .as_bool()
+            );
+            assert!(
+                AreDpiAwarenessContextsEqual(
+                    GetWindowDpiAwarenessContext(window.window),
+                    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+                )
+                .as_bool()
+            );
+            let native_dpi = GetDpiForWindow(window.window);
+            assert!(native_dpi >= 96);
+            let panel = state(window.window).unwrap();
+            assert_eq!(panel.dpi, native_dpi);
+            for control in &panel.controls {
+                assert!(
+                    AreDpiAwarenessContextsEqual(
+                        GetWindowDpiAwarenessContext(control.window),
+                        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+                    )
+                    .as_bool()
+                );
+                assert_eq!(GetDpiForWindow(control.window), native_dpi);
+            }
+            assert!(!IsWindowVisible(window.window).as_bool());
+        }
+        drop(window);
+        unsafe {
+            let _ = DestroyWindow(owner);
+        }
+        assert!(wheel.shutdown_wait(Duration::from_secs(2)));
+    }
+    #[test]
+    fn dark_panel_keyboard_changed_only_updates_and_synthetic_150_percent_layout() {
+        let wheel = handle();
+        let owner = unsafe { owner() };
         let mut window = WheelPanel::default();
         window.show(owner, &wheel).unwrap();
-        // SAFETY: our isolated dialog on this test's GUI thread; no native input/ETW actions.
         unsafe {
             let panel = state(window.window).unwrap();
-            assert!(enabled(panel, REFRESH));
-            assert!(!enabled(panel, DEVICE));
-            for id in [ENABLE, DISABLE, MARK, EXPORT, USB, REVEAL] {
-                assert!(!enabled(panel, id));
+            let mut snapshot = wheel.try_snapshot().unwrap();
+            snapshot.devices = vec![
+                WheelDevice {
+                    id: "fake-wheel".into(),
+                    name: "SIMAGIC Alpha EVO Wheelbase".into(),
+                    product_guid: None,
+                },
+                WheelDevice {
+                    id: "fake-pedals".into(),
+                    name: "SIMAGIC P1000 Pedals".into(),
+                    product_guid: None,
+                },
+            ];
+            snapshot.wheel.config.device = Some(snapshot.devices[0].clone());
+            snapshot.pedals.config.device = Some(snapshot.devices[1].clone());
+            snapshot.wheel.config.axes = vec![2];
+            panel.render(snapshot.clone());
+            assert_eq!(
+                SendMessageW(panel.control(WHEEL_AXIS), CB_GETCOUNT, None, None).0,
+                6
+            );
+            assert_eq!(
+                SendMessageW(panel.control(WHEEL_AXIS), CB_GETCURSEL, None, None).0,
+                2
+            );
+            SendMessageW(
+                panel.control(WHEEL_AXIS),
+                CB_SETCURSEL,
+                Some(WPARAM(4)),
+                None,
+            );
+            SendMessageW(
+                window.window,
+                WM_COMMAND,
+                Some(WPARAM(WHEEL_AXIS | ((CBN_SELCHANGE as usize) << 16))),
+                None,
+            );
+            let applied = std::time::Instant::now();
+            while wheel
+                .try_snapshot()
+                .is_none_or(|status| status.wheel.config.axes != [4])
+            {
+                assert!(
+                    applied.elapsed() < Duration::from_secs(2),
+                    "axis choice did not reach recorder"
+                );
+                std::thread::sleep(Duration::from_millis(10));
             }
-            assert!(!wheel.try_snapshot().unwrap().running);
+            assert!(
+                !wheel.try_snapshot().unwrap().running,
+                "selecting an axis does not start hardware monitoring"
+            );
+            snapshot.wheel.config.axes = vec![4];
+            snapshot.running = true;
+            snapshot.has_capture = true;
+            snapshot.last_sample_age_ms = Some(20);
+            snapshot.sample_count = 1234;
+            snapshot.wheel.availability = "Available".into();
+            snapshot.wheel.last_sample_age_ms = Some(20);
+            snapshot.wheel.axes.push(crate::wheel::AxisStatus {
+                axis: 4,
+                value: Some(32767),
+                ..Default::default()
+            });
+            snapshot.pedals.availability = "Available".into();
+            snapshot.pedals.last_sample_age_ms = Some(20);
+            snapshot.pedals.axes.push(crate::wheel::AxisStatus {
+                axis: 0,
+                value: Some(1024),
+                ..Default::default()
+            });
+            snapshot.usb = "USB state trace recording (3/3 USB 3 stack providers).".into();
+            panel.render(snapshot.clone());
+            assert_eq!(
+                SendMessageW(panel.control(WHEEL_AXIS), CB_GETCURSEL, None, None).0,
+                4
+            );
+            let labels = panel.labels.clone();
+            let enabled = panel.enabled.clone();
+            let checks = panel.checks.clone();
+            panel.render(snapshot.clone());
+            assert_eq!(panel.labels, labels);
+            assert_eq!(panel.enabled, enabled);
+            assert_eq!(panel.checks, checks);
+            let _ = SetFocus(Some(panel.control(STARTUP)));
             let tab = MSG {
-                hwnd: panel.control(REFRESH),
+                hwnd: panel.control(STARTUP),
                 message: WM_KEYDOWN,
-                wParam: WPARAM(VK_TAB.0 as usize),
+                wParam: WPARAM(windows::Win32::UI::Input::KeyboardAndMouse::VK_TAB.0 as usize),
                 ..Default::default()
             };
-            let axis_window = panel.control(AXIS);
             assert!(window.translate(&tab));
-            assert_eq!(GetFocus(), axis_window);
-            let panel = state(window.window).unwrap();
-
-            let mut ready = WheelStatus::default();
-            ready.devices.push(WheelDevice {
-                id: "software-only".into(),
-                name: "Software smoke wheel (no input)".into(),
-                product_guid: None,
-            });
-            ready.message =
-                "Choose the wheel and axis. This is a software-only smoke state.".into();
-            panel.render(ready.clone());
-            assert!(enabled(panel, DEVICE));
-            assert!(!enabled(panel, ENABLE));
-            SendMessageW(panel.control(DEVICE), CB_SETCURSEL, Some(WPARAM(1)), None);
-            panel.render(ready.clone());
-            assert!(enabled(panel, ENABLE));
-            let mut interrupted = ready.clone();
-            interrupted.can_recover_usb = true;
-            interrupted.message =
-                "Capture refused: rolling storage is full of unresolved USB traces.".into();
-            interrupted.usb = "Cleanup needs an administrator prompt.".into();
-            panel.render(interrupted.clone());
-            assert!(
-                enabled(panel, RECOVER_USB),
-                "explicit USB recovery must remain reachable while capture is Off and storage is full"
-            );
-            for id in [DISABLE, MARK, EXPORT, USB] {
-                assert!(!enabled(panel, id));
-            }
-            let _ = SetFocus(Some(panel.control(DEVICE)));
-            interrupted.busy = true;
-            panel.render(interrupted);
-            for id in [ENABLE, USB, RECOVER_USB] {
-                assert!(
-                    !enabled(panel, id),
-                    "pending recovery must not permit capture or another USB operation"
-                );
-            }
-            assert_eq!(
-                panel.selected(),
-                Some(0),
-                "disabling a focused combo must preserve selection without a nested refresh"
-            );
-            panel.render(ready.clone());
+            assert_eq!(GetFocus(), panel.control(SHOW_OVERLAY));
             if let Ok(path) = std::env::var("COACH_WHEEL_UI_SNAPSHOT") {
                 save_bitmap(window.window, Path::new(&path));
             }
-
-            panel.dpi = 144;
-            let _ = SetWindowPos(
+            // This deliberately injected DPI message checks layout/rendering at 150%. It does
+            // not simulate a physical move between monitors; actual awareness is checked below.
+            let mut outer = RECT {
+                left: 0,
+                top: 0,
+                right: WIDTH * 3 / 2,
+                bottom: HEIGHT * 3 / 2,
+            };
+            let _ = AdjustWindowRectExForDpi(
+                &mut outer,
+                WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
+                false,
+                WS_EX_CONTROLPARENT,
+                144,
+            );
+            SendMessageW(
                 window.window,
-                None,
-                0,
-                0,
-                1_064,
-                500,
-                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                WM_DPICHANGED,
+                Some(WPARAM(144 | (144 << 16))),
+                Some(LPARAM((&outer as *const RECT) as isize)),
             );
-            panel.layout();
-            assert_eq!(panel.px(14), 21);
-            let _ = SetFocus(Some(panel.control(CLOSE)));
-            panel.reveal_focus();
-            assert!(
-                panel.scroll > 0,
-                "high-DPI off-screen keyboard focus must scroll into view"
-            );
-            let mut active = ready;
-            active.running = true;
-            active.can_start_usb = true;
-            active.can_recover_usb = true;
-            active.has_capture = true;
-            active.raw_axis = Some(32_000);
-            active.availability = "Available".into();
-            panel.render(active.clone());
-            assert!(enabled(panel, MARK));
-            assert!(enabled(panel, DISABLE));
-            assert!(
-                enabled(panel, EXPORT),
-                "Stop and export must work during capture"
-            );
-            assert!(enabled(panel, USB));
-            assert!(
-                !enabled(panel, RECOVER_USB),
-                "recovery-only operation must not interrupt an active capture"
-            );
-            assert!(!enabled(panel, REFRESH));
-            active.busy = true;
-            panel.render(active);
-            for id in [REFRESH, ENABLE, DISABLE, MARK, EXPORT, USB, RECOVER_USB] {
-                assert!(!enabled(panel, id));
+            assert_eq!(panel.px(20), 30);
+            if let Ok(path) = std::env::var("COACH_WHEEL_UI_SNAPSHOT_150") {
+                save_bitmap(window.window, Path::new(&path));
             }
-            assert!(enabled(panel, CLOSE));
             let escape = MSG {
                 hwnd: panel.control(CLOSE),
                 message: WM_KEYDOWN,
-                wParam: WPARAM(VK_ESCAPE.0 as usize),
+                wParam: WPARAM(windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE.0 as usize),
                 ..Default::default()
             };
             assert!(window.translate(&escape));
             assert!(!IsWindowVisible(window.window).as_bool());
-            assert!(
-                !wheel.try_snapshot().unwrap().running,
-                "rendering fake state must never acquire a device"
-            );
         }
         drop(window);
-        // SAFETY: isolated test owner teardown; recorder cleanup occurs outside the GUI handlers.
         unsafe {
             let _ = DestroyWindow(owner);
         }
         assert!(wheel.shutdown_wait(Duration::from_secs(2)));
     }
-
-    struct SlowRefresh(Arc<(Mutex<bool>, Condvar)>);
-    impl WheelInputSource for SlowRefresh {
-        fn enumerate(&mut self) -> Result<Vec<WheelDevice>, String> {
-            let (lock, cv) = &*self.0;
-            let mut released = lock.lock().unwrap();
-            while !*released {
-                released = cv.wait(released).unwrap();
-            }
-            Ok(Vec::new())
-        }
-        fn select(&mut self, _: &str, _: u8, _: isize) -> Result<(), String> {
-            panic!("no acquisition in smoke")
-        }
-        fn read(&mut self) -> WheelReading {
-            panic!("no input in smoke")
-        }
-    }
-
-    #[test]
-    fn native_dialog_closes_while_fake_enumeration_is_blocked() {
-        let gate = Arc::new((Mutex::new(false), Condvar::new()));
-        let factory_gate = gate.clone();
-        let wheel = handle(Arc::new(move || {
-            Box::new(SlowRefresh(factory_gate.clone()))
-        }));
-        let owner = owner();
-        let mut window = WheelPanel::default();
-        window.show(owner, &wheel).unwrap();
-        let queued = Instant::now();
-        // SAFETY: owned dialog commands only; Refresh runs exclusively in a fake worker.
-        unsafe {
-            state(window.window).unwrap().command(REFRESH);
-        }
-        assert!(queued.elapsed() < Duration::from_millis(250));
-        let wait = Instant::now();
-        while !wheel.try_snapshot().is_some_and(|s| s.busy)
-            && wait.elapsed() < Duration::from_secs(2)
-        {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(wheel.try_snapshot().unwrap().busy);
-        let close = Instant::now();
-        // SAFETY: hiding does not send a stop, wait, export, UAC or thread-join operation.
-        unsafe {
-            state(window.window).unwrap().hide();
-        }
-        assert!(close.elapsed() < Duration::from_millis(250));
-        assert!(wheel.try_snapshot().unwrap().busy);
-        {
-            let (lock, cv) = &*gate;
-            *lock.lock().unwrap() = true;
-            cv.notify_all();
-        }
-        let wait = Instant::now();
-        while wheel.try_snapshot().is_none_or(|s| s.busy) && wait.elapsed() < Duration::from_secs(2)
-        {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(!wheel.try_snapshot().unwrap().busy);
-        assert!(wheel.try_snapshot().unwrap().devices.is_empty());
-        drop(window);
-        // SAFETY: isolated test owner teardown.
-        unsafe {
-            let _ = DestroyWindow(owner);
-        }
-        assert!(wheel.shutdown_wait(Duration::from_secs(2)));
-    }
-
-    struct BlockedRecovery {
-        gate: Arc<(Mutex<bool>, Condvar)>,
-        calls: Arc<std::sync::atomic::AtomicUsize>,
-    }
-    impl WheelUsbTrace for BlockedRecovery {
-        fn status(&mut self) -> String {
-            "Software recovery complete; no trace started.".into()
-        }
-        fn safe_to_export(&mut self) -> bool {
-            true
-        }
-        fn start(&mut self, _: &Path) -> Result<(), String> {
-            panic!("recovery must never start a USB trace")
-        }
-        fn heartbeat(&mut self) {}
-        fn stop(&mut self) -> Result<(), String> {
-            Ok(())
-        }
-        fn recover(&mut self) -> Result<(), String> {
-            self.calls
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let (lock, cv) = &*self.gate;
-            let mut released = lock.lock().unwrap();
-            while !*released {
-                released = cv.wait(released).unwrap();
-            }
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn explicit_recovery_while_off_never_starts_capture_and_does_not_block_close() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        let root = std::env::temp_dir().join(format!(
-            "coach-wheel-ui-recovery-{}",
-            crate::util::uuid_v4()
-        ));
-        let gate = Arc::new((Mutex::new(false), Condvar::new()));
-        let calls = Arc::new(AtomicUsize::new(0));
-        let wheel = WheelHandle::new(
-            root.join("captures"),
-            root.join("exports"),
-            Arc::new(|| Box::new(NoInput)),
-            Box::new(BlockedRecovery {
-                gate: gate.clone(),
-                calls: calls.clone(),
-            }),
-        );
-        let owner = owner();
-        let mut window = WheelPanel::default();
-        window.show(owner, &wheel).unwrap();
-        let queued = Instant::now();
-        // SAFETY: the explicit control talks only to our blocked software recovery actor.
-        unsafe {
-            let panel = state(window.window).unwrap();
-            assert!(enabled(panel, RECOVER_USB));
-            assert!(!enabled(panel, USB));
-            panel.command(RECOVER_USB);
-        }
-        assert!(queued.elapsed() < Duration::from_millis(250));
-        let wait = Instant::now();
-        while (!wheel.try_snapshot().is_some_and(|s| s.busy) || calls.load(Ordering::Relaxed) != 1)
-            && wait.elapsed() < Duration::from_secs(2)
-        {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        let mut pending = wheel.try_snapshot().unwrap();
-        assert!(pending.busy);
-        assert!(!pending.running);
-        assert!(!pending.has_capture);
-        assert!(!pending.can_start_usb);
-        assert!(!pending.can_recover_usb);
-        let device = WheelDevice {
-            id: "software-only".into(),
-            name: "Software smoke wheel (no input)".into(),
-            product_guid: None,
-        };
-        pending.devices.push(device.clone());
-        // SAFETY: simulated selection verifies the pending-state guard even after local throttling.
-        unsafe {
-            let panel = state(window.window).unwrap();
-            panel.pending_until = None;
-            panel.render(pending.clone());
-            SendMessageW(panel.control(DEVICE), CB_SETCURSEL, Some(WPARAM(1)), None);
-            panel.render(pending);
-            for id in [ENABLE, USB, RECOVER_USB] {
-                assert!(!enabled(panel, id));
-            }
-        }
-        assert!(wheel.send(WheelCommand::Enable {
-            device,
-            axis: 0,
-            window: owner.0 as isize,
-        }));
-        let wait = Instant::now();
-        while !wheel
-            .try_snapshot()
-            .is_some_and(|s| s.message.contains("cannot restart"))
-            && wait.elapsed() < Duration::from_secs(2)
-        {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(
-            wheel
-                .try_snapshot()
-                .unwrap()
-                .message
-                .contains("cannot restart")
-        );
-        assert!(
-            !root.exists(),
-            "recovery must not reserve or create a capture"
-        );
-        assert_eq!(calls.load(Ordering::Relaxed), 1);
-        let close = Instant::now();
-        drop(window);
-        assert!(close.elapsed() < Duration::from_millis(250));
-        assert!(wheel.try_snapshot().unwrap().busy);
-        {
-            let (lock, cv) = &*gate;
-            *lock.lock().unwrap() = true;
-            cv.notify_all();
-        }
-        // SAFETY: isolated test owner teardown; worker shutdown is outside the GUI handler.
-        unsafe {
-            let _ = DestroyWindow(owner);
-        }
-        assert!(wheel.shutdown_wait(Duration::from_secs(2)));
-        assert!(!root.exists());
-    }
-
-    struct FakeWheel(Arc<std::sync::atomic::AtomicUsize>);
-    impl WheelInputSource for FakeWheel {
-        fn enumerate(&mut self) -> Result<Vec<WheelDevice>, String> {
-            Ok(vec![WheelDevice {
-                id: "software-only".into(),
-                name: "Software smoke wheel".into(),
-                product_guid: None,
-            }])
-        }
-        fn select(&mut self, _: &str, _: u8, _: isize) -> Result<(), String> {
-            Ok(())
-        }
-        fn read(&mut self) -> WheelReading {
-            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            WheelReading {
-                availability: "Available".into(),
-                axis: Some(12_000),
-                native_error: None,
-            }
-        }
-    }
-
-    #[test]
-    fn fake_capture_continues_after_panel_close_and_ui_destroy() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        let reads = Arc::new(AtomicUsize::new(0));
-        let reader_reads = reads.clone();
-        let wheel = handle(Arc::new(move || Box::new(FakeWheel(reader_reads.clone()))));
-        let owner = owner();
-        let mut window = WheelPanel::default();
-        window.show(owner, &wheel).unwrap();
-        assert!(wheel.send(WheelCommand::Refresh));
-        let wait = Instant::now();
-        while wheel.try_snapshot().is_none_or(|s| s.devices.is_empty())
-            && wait.elapsed() < Duration::from_secs(2)
-        {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        // SAFETY: real dialog commands route only to our injected fake input source and NoUsb.
-        unsafe {
-            let panel = state(window.window).unwrap();
-            panel.refresh();
-            SendMessageW(panel.control(DEVICE), CB_SETCURSEL, Some(WPARAM(1)), None);
-            panel.command(ENABLE);
-        }
-        let wait = Instant::now();
-        while reads.load(Ordering::Relaxed) == 0 && wait.elapsed() < Duration::from_secs(2) {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        assert!(wheel.try_snapshot().unwrap().running);
-        // SAFETY: close hides only the isolated UI; no device acquisition/ETW occurs in this test.
-        unsafe {
-            state(window.window).unwrap().hide();
-        }
-        let before = reads.load(Ordering::Relaxed);
-        std::thread::sleep(Duration::from_millis(250));
-        assert!(
-            reads.load(Ordering::Relaxed) > before,
-            "hidden panel must not stop capture"
-        );
-        drop(window);
-        // SAFETY: only the isolated software owner is destroyed; fake worker continues independently.
-        unsafe {
-            let _ = DestroyWindow(owner);
-        }
-        let before = reads.load(Ordering::Relaxed);
-        std::thread::sleep(Duration::from_millis(250));
-        assert!(
-            reads.load(Ordering::Relaxed) > before,
-            "UI teardown must not join or stop reader"
-        );
-        assert!(
-            wheel.shutdown_wait(Duration::from_secs(2)),
-            "process lifecycle stops fake reader after the UI loop"
-        );
-    }
-
-    unsafe fn save_bitmap(window: HWND, path: &Path) {
+    pub(crate) unsafe fn save_bitmap(window: HWND, path: &Path) {
         use windows::Win32::Graphics::Gdi::*;
         // SAFETY: captures only the isolated test window; GDI allocations are restored/released.
         unsafe {

@@ -15,7 +15,7 @@
   --ds-loss: var(--race-loss);
   --ds-pit: var(--race-pit);
   --ds-lit: var(--color-interaction);
-  --ds-ink: #081017;
+  --ds-ink: var(--color-app);
   --ds-disp: var(--font-display);
   --ds-card: linear-gradient(180deg, var(--color-surface1), color-mix(in srgb, var(--color-surface1) 72%, var(--color-app)));
   --ds-line: color-mix(in srgb, var(--color-border-subtle) 65%, var(--color-app));
@@ -25,10 +25,9 @@
 /* ---- display type ------------------------------------------------------------- */
 .ds h1 {
   font-family: var(--ds-disp);
-  font-stretch: condensed;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-transform: none;
 }
 .ds .num,
 .ds .date,
@@ -57,12 +56,11 @@
   border-radius: var(--radius-pill);
   background: var(--color-surface2);
   color: var(--color-text-primary);
-  font-family: var(--ds-disp);
-  font-stretch: condensed;
+  font-family: var(--font-ui);
   font-size: var(--text-control);
   font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   white-space: nowrap;
   text-decoration: none;
 }
@@ -418,12 +416,11 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-pill);
   background: var(--color-surface2);
-  font-family: var(--ds-disp);
-  font-stretch: condensed;
+  font-family: var(--font-ui);
   font-size: var(--text-control);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   white-space: nowrap;
 }
 .ds .s-versions {
@@ -459,12 +456,11 @@
   border-radius: var(--radius-pill);
   background: var(--color-surface2);
   color: var(--color-text-primary);
-  font-family: var(--ds-disp);
-  font-stretch: condensed;
+  font-family: var(--font-ui);
   font-size: var(--text-control);
   font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
   white-space: nowrap;
   text-decoration: none;
 }

@@ -106,23 +106,31 @@ function useCurrentDriver(route: ParsedRoute) {
   return { list, current, driver: list.find((d) => d.customer_id === current) };
 }
 
+function NavIcon({ page }: { page: "sessions" | "setups" | "live" }) {
+  return <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {page === "sessions" ? <><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M8 3v4m8-4v4M4 10h16M8 14h3m-3 3h6" /></> : page === "setups" ? <><path d="M3 7h9m6 0h3M3 17h3m6 0h9" /><circle cx="15" cy="7" r="3" /><circle cx="9" cy="17" r="3" /></> : <path d="M2 13h5l3-8 4 14 3-6h5" />}
+  </svg>;
+}
+
 function TopBar({ route, who }: { route: ParsedRoute; who: CurrentDriver }) {
   const { list, current, driver } = who;
   const page = route.page === "investigation" ? "sessions" : route.page === "setup" || route.page === "setupFile" || route.page === "baseline" || route.page === "tuning" ? "setups" : route.page;
   const link = (name: "sessions" | "setups" | "live", label: string) =>
     current === null ? null : (
       <a class={page === name ? "nav-link active" : "nav-link"} href={href({ page: name, customerId: current })} aria-current={page === name ? "page" : undefined}>
-        {label}
+        <NavIcon page={name} />
+        <span class="nav-label">{label}</span>
         {name === "live" && driver?.live ? <span class="live-dot" role="img" aria-label="Live now" title="Live now" /> : null}
       </a>
     );
   return (
-    <header class="topbar">
-      <a class="brand" href={href({ page: "drivers" })}>
-        <svg width="28" height="17" viewBox="0 0 28 17" aria-hidden="true">
-          <path d="M5 13V6.5C5 4 7 3 9 3h9c2.6 0 4.5 1 5.3 2.7.8 1.800.2 3.600-1.500 4.600L16 13.600c-1 .6-2 .4-3-.2L5 13z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+    <header class={`topbar${list.length > 1 ? " topbar-multi" : ""}`}>
+      <a class="brand" href={href({ page: "drivers" })} aria-label="iRacing Coach">
+        <svg class="brand-mark" width="32" height="32" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path class="mark-ring" d="M18.5 7.55A8.5 8.5 0 1 0 18.5 18.45M12 4.5V2.25M9.75 2.25h4.5" />
+          <path class="mark-hand" d="M12 13l3.2-4.6" />
         </svg>
-        iRacing Coach
+        <span class="brand-word"><span class="brand-eyebrow">iRacing</span><span class="brand-name">Coach</span></span>
       </a>
       <nav aria-label="Main">
         {link("sessions", "Sessions")}
@@ -145,7 +153,7 @@ function TopBar({ route, who }: { route: ParsedRoute; who: CurrentDriver }) {
           </select>
         </label>
       ) : driver ? (
-        <span class="driver-name">{driver.name}</span>
+        <span class="driver-name"><span class="driver-eyebrow">Driver</span><span title={driver.name}>{driver.name}</span></span>
       ) : null}
     </header>
   );
