@@ -15,6 +15,7 @@ use coach_server::adapters::{
 };
 use coach_server::faults::Faults;
 use coach_server::{App, AppState, Config, Parts, api};
+use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -435,6 +436,47 @@ pub fn base_config(dir: &Path, python: Option<&str>) -> Config {
 }
 
 impl Env {
+    /// Canonical catalog paths, with a legacy fallback before the archive intent exists.
+    pub fn nas_payload(&self, sha: &str) -> PathBuf {
+        let key = sha.to_string();
+        let path: Option<String> = self.query(move |c| {
+            c.query_row(
+                "SELECT relative_path FROM nas_library_objects WHERE sha256=?1",
+                [key],
+                |r| r.get(0),
+            )
+            .optional()
+        });
+        path.map(|p| self.nas().join(p)).unwrap_or_else(|| {
+            self.nas()
+                .join("raw")
+                .join(&sha[..2])
+                .join(format!("{sha}.ibt"))
+        })
+    }
+    pub fn nas_manifest(&self, sha: &str) -> PathBuf {
+        let key = sha.to_string();
+        let kind: Option<String> = self.query(move |c| {
+            c.query_row(
+                "SELECT kind FROM nas_library_objects WHERE sha256=?1",
+                [key],
+                |r| r.get(0),
+            )
+            .optional()
+        });
+        kind.map(|k| {
+            self.nas()
+                .join("library/.catalog")
+                .join(k)
+                .join(format!("{sha}.manifest.json"))
+        })
+        .unwrap_or_else(|| {
+            self.nas()
+                .join("raw")
+                .join(&sha[..2])
+                .join(format!("{sha}.manifest.json"))
+        })
+    }
     pub async fn new() -> Env {
         Env::with(Opts::default()).await
     }

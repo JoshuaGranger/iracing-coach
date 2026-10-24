@@ -236,6 +236,7 @@ pub async fn retry_archives(app: &AppState, now: i64) -> Result<usize> {
                 "SELECT b.sha256, b.nas_attempts,
                         (SELECT j.finished_at FROM jobs j WHERE j.idempotency_key = 'archive:' || b.sha256)
                  FROM blobs b WHERE b.nas_state IN ('pending', 'failed') AND b.spool_present = 1
+                   AND NOT EXISTS(SELECT 1 FROM nas_library_objects n WHERE n.sha256=b.sha256 AND n.state='deleted')
                    AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.idempotency_key = 'archive:' || b.sha256
                                    AND j.state IN ('queued', 'running'))
                    AND (b.kind <> 'ibt' OR EXISTS (SELECT 1 FROM recordings r WHERE r.sha256 = b.sha256 AND r.ingest_state <> 'verified'))",
@@ -294,6 +295,13 @@ pub async fn tick(app: &AppState, now: i64) -> Result<Value> {
         }
     };
     app.archiver.probe().await;
+    let library = match crate::nas_library::reconcile(app).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(error=%e,"NAS library sync incomplete");
+            json!({"error":e.to_string()})
+        }
+    };
 
     let mut snapshot = Value::Null;
     let last: Option<(i64, Option<String>)> = app
@@ -341,7 +349,7 @@ pub async fn tick(app: &AppState, now: i64) -> Result<Value> {
         snapshot = json!({"generation": generation, "created": created, "nas": nas});
     }
     Ok(
-        json!({"idle_uploads_removed": idle, "archives_requeued": retried, "recordings_ingested": ingested, "snapshot": snapshot}),
+        json!({"idle_uploads_removed": idle, "archives_requeued": retried, "recordings_ingested": ingested, "snapshot": snapshot,"library":library}),
     )
 }
 

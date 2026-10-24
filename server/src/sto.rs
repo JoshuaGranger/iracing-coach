@@ -26,7 +26,7 @@ fn source_id(customer: i64, car: &str, path: &str, sha: &str) -> String {
     )
 }
 
-fn sources(conn: &Connection, customer: i64) -> Result<Vec<Value>> {
+pub(crate) fn sources(conn: &Connection, customer: i64) -> Result<Vec<Value>> {
     let mut stmt = conn.prepare("SELECT car_folder, relative_path, blob_sha256, last_seen_at, present FROM setup_files WHERE customer_id = ?1 AND format = 'sto' ORDER BY car_folder, relative_path, last_seen_at DESC")?;
     Ok(stmt.query_map([customer], |r| {
         let (car, name, sha): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
@@ -40,7 +40,7 @@ fn working_id(id: &str) -> Option<i64> {
         .filter(|n| *n > 0)
 }
 
-fn working(conn: &Connection, customer: i64, id: i64) -> Result<Option<Value>> {
+pub(crate) fn working(conn: &Connection, customer: i64, id: i64) -> Result<Option<Value>> {
     Ok(conn.query_row("SELECT f.name,f.car_folder,f.current_version,f.updated_at,r.sha256,f.parent_file_id,f.parent_version FROM sto_working_files f JOIN sto_revisions r ON r.file_id=f.file_id AND r.version=f.current_version WHERE f.customer_id=?1 AND f.file_id=?2",params![customer,id],|r| Ok(json!({"id":format!("coach:{id}"),"name":r.get::<_,String>(0)?,"car_folder":r.get::<_,String>(1)?,"locked":false,"current_version":r.get::<_,i64>(2)?,"version_count":r.get::<_,i64>(2)?,"updated_at":r.get::<_,String>(3)?,"sha256":r.get::<_,String>(4)?,"parent_file_id":r.get::<_,String>(5)?,"parent_version":r.get::<_,i64>(6)?,"present":true}))) .optional()?)
 }
 
@@ -169,6 +169,7 @@ async fn content(
         .find(|r| r["version"] == v)
         .and_then(|r| r["sha256"].as_str())
         .unwrap_or_default();
+    crate::nas_library::guard(app, expected).await?;
     if sha256_hex(&bytes) != expected {
         return Err(Error::unprocessable(
             "invalid_sto",

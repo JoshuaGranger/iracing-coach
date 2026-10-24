@@ -57,6 +57,11 @@ pub struct ArchiveSpec {
 }
 
 enum Cmd {
+    Library(
+        crate::nas_library::fs::Request,
+        crate::nas_library::fs::Gate,
+        mpsc::SyncSender<Result<crate::nas_library::fs::Reply>>,
+    ),
     Probe(mpsc::SyncSender<NasState>),
     Archive(ArchiveSpec, mpsc::SyncSender<Result<()>>),
     Restage {
@@ -96,6 +101,15 @@ fn state_from_error(e: &std::io::Error, writing: bool) -> NasState {
 impl Archiver {
     /// Starts the archiver thread, creates the layout and runs crash recovery.
     pub fn start(nas_root: PathBuf, faults: Arc<Faults>, stall_after: Duration) -> Arc<Archiver> {
+        Self::start_pinned(nas_root, faults, stall_after, None)
+    }
+
+    pub fn start_pinned(
+        nas_root: PathBuf,
+        faults: Arc<Faults>,
+        stall_after: Duration,
+        identity: Option<String>,
+    ) -> Arc<Archiver> {
         let (tx, rx) = mpsc::channel::<Cmd>();
         let archiver = Arc::new(Archiver {
             tx: Mutex::new(tx),
@@ -110,9 +124,10 @@ impl Archiver {
         std::thread::Builder::new()
             .name("archiver".into())
             .spawn(move || {
-                let core = Core {
+                let mut core = Core {
                     root: worker.nas_root.clone(),
                     faults,
+                    identity,
                 };
                 let _ = worker.run_op(|| core.recover());
                 let _ = ready_tx.send(());
@@ -129,6 +144,20 @@ impl Archiver {
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     };
                     match cmd {
+                        Cmd::Library(request, gate, reply) => {
+                            let r = worker.run_op(|| {
+                                crate::nas_library::fs::execute(
+                                    &core.root,
+                                    &core.faults,
+                                    request,
+                                    gate,
+                                )
+                            });
+                            if let Ok(crate::nas_library::fs::Reply::Identity(identity)) = &r {
+                                core.identity = Some(identity.clone());
+                            }
+                            let _ = reply.send(r);
+                        }
                         Cmd::Probe(reply) => {
                             let _ = worker.run_op(|| core.probe());
                             let _ = reply.send(worker.state());
@@ -238,6 +267,14 @@ impl Archiver {
         self.ask(|reply| Cmd::Archive(spec, reply)).await?
     }
 
+    pub async fn library(
+        &self,
+        request: crate::nas_library::fs::Request,
+        gate: crate::nas_library::fs::Gate,
+    ) -> Result<crate::nas_library::fs::Reply> {
+        self.ask(|reply| Cmd::Library(request, gate, reply)).await?
+    }
+
     pub async fn restage(
         &self,
         sha256: &str,
@@ -275,6 +312,7 @@ impl Archiver {
 struct Core {
     root: PathBuf,
     faults: Arc<Faults>,
+    identity: Option<String>,
 }
 
 fn object_dir(kind: ArchiveKind) -> &'static str {
@@ -308,6 +346,12 @@ fn verified_hash(path: &Path) -> std::io::Result<(String, u64)> {
 }
 
 impl Core {
+    fn check_identity(&self) -> Result<()> {
+        if let Some(identity) = &self.identity {
+            crate::nas_library::fs::identity(&self.root, Some(identity))?;
+        }
+        Ok(())
+    }
     fn tmp_dir(&self) -> PathBuf {
         self.root.join(".tmp")
     }
@@ -322,6 +366,9 @@ impl Core {
 
     /// Layout, FORMAT file, leftover temp cleanup (nas-layout.md section 6).
     fn recover(&self) -> Result<()> {
+        if let Some(identity) = &self.identity {
+            crate::nas_library::fs::identity(&self.root, Some(identity))?;
+        }
         fs::create_dir_all(&self.root)?;
         for dir in [
             "raw",
@@ -357,6 +404,9 @@ impl Core {
     }
 
     fn probe(&self) -> Result<()> {
+        if let Some(identity) = &self.identity {
+            crate::nas_library::fs::identity(&self.root, Some(identity))?;
+        }
         fs::create_dir_all(self.root.join(".probe"))?;
         let probe = self
             .root
@@ -412,6 +462,7 @@ impl Core {
 
     /// nas-layout.md section 3.
     fn archive(&self, spec: &ArchiveSpec) -> Result<()> {
+        self.check_identity()?;
         let sha = spec.sha256.as_str();
         let (data, manifest) = self.final_paths(spec.kind, sha, &spec.extension);
         // 1. already archived
@@ -493,6 +544,7 @@ impl Core {
         tmp_dir: &Path,
         mtime: Option<i64>,
     ) -> Result<()> {
+        self.check_identity()?;
         let (data, manifest) = self.final_paths(kind, sha, ext);
         if !manifest.exists() {
             return Err(Error::not_found(format!(
@@ -535,6 +587,7 @@ impl Core {
 
     /// nas-layout.md section 5 step 3.
     fn backup(&self, generation: &Path, day: &str) -> Result<bool> {
+        self.check_identity()?;
         let final_dir = self.root.join("backups").join(day);
         if self.backup_complete(&final_dir) {
             return Ok(false);
@@ -646,5 +699,48 @@ pub fn read_manifests(nas_root: &Path) -> std::io::Result<Vec<Value>> {
             }
         }
     }
-    Ok(manifests)
+    // Canonical sidecars supersede legacy metadata without retaining another payload copy.
+    for kind in ["ibt", "sto", "htm", "rpy"] {
+        let relative = format!("library/.catalog/{kind}/.scan");
+        let pinned = match crate::sys::anchor_nas(nas_root, &relative, false) {
+            Ok(p) => p,
+            Err(e) if e.kind() == ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        };
+        for entry in fs::read_dir(pinned.parent().unwrap())?.take(100_000) {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name
+                .strip_suffix(".manifest.json")
+                .is_some_and(crate::util::is_sha256_hex)
+            {
+                continue;
+            }
+            let path = crate::sys::anchor_nas(
+                nas_root,
+                &format!("library/.catalog/{kind}/{name}"),
+                false,
+            )?;
+            let file = crate::sys::open_nofollow(&path)?;
+            if file.metadata()?.len() > 1 << 20 {
+                continue;
+            }
+            let mut text = String::new();
+            file.take((1 << 20) + 1).read_to_string(&mut text)?;
+            if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                manifests.push(value);
+            }
+        }
+    }
+    let mut unique = std::collections::BTreeMap::new();
+    for manifest in manifests {
+        unique.insert(
+            (
+                manifest["kind"].as_str().unwrap_or_default().to_string(),
+                manifest["sha256"].as_str().unwrap_or_default().to_string(),
+            ),
+            manifest,
+        );
+    }
+    Ok(unique.into_values().collect())
 }

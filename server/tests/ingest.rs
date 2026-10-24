@@ -615,11 +615,7 @@ fn manifest_valid(manifest: &Value) {
 }
 
 fn nas_object(env: &Env, sha: &str) -> (std::path::PathBuf, std::path::PathBuf) {
-    let dir = env.nas().join("raw").join(&sha[..2]);
-    (
-        dir.join(format!("{sha}.ibt")),
-        dir.join(format!("{sha}.manifest.json")),
-    )
+    (env.nas_payload(sha), env.nas_manifest(sha))
 }
 
 async fn archive_cycle(point: &str) {
@@ -660,12 +656,19 @@ async fn archive_cycle(point: &str) {
         leftovers.is_empty(),
         "{point}: temp files left {leftovers:?}"
     );
-    let raw_count = std::fs::read_dir(env.nas().join("raw").join(&sha[..2]))
+    let raw_count = std::fs::read_dir(data.parent().unwrap())
         .unwrap()
+        .filter(|p| {
+            p.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(&sha)
+        })
         .count();
     assert_eq!(
-        raw_count, 2,
-        "{point}: exactly the data file and its manifest"
+        raw_count, 1,
+        "{point}: exactly one canonical payload; metadata is in .catalog"
     );
     assert_eq!(
         std::fs::read_dir(env.nas().join("quarantine"))
@@ -692,16 +695,37 @@ async fn archived_recording_releases_its_spool_copy_once_no_job_needs_it() {
     coach_server::ingest::ingest_pending(&env.app)
         .await
         .unwrap();
-    // the queued analysis still needs the spool copy
+    // Queued analysis restages on admission instead of pinning a durable duplicate.
     run_io_lane(&env).await;
+    assert!(!env.data().join("spool/ready").join(&sha).exists());
+    assert_eq!(count(&env, "SELECT spool_present FROM blobs"), 0);
+    env.app
+        .store
+        .write_blocking(|c| {
+            c.execute(
+                "UPDATE jobs SET state='running' WHERE kind='analyze' AND state='queued'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    coach_server::ingest::restage_recording(&env.app, &sha)
+        .await
+        .unwrap();
     assert!(env.data().join("spool/ready").join(&sha).exists());
     assert_eq!(count(&env, "SELECT spool_present FROM blobs"), 1);
+    assert!(
+        !coach_server::handlers::release_spool(&env.app, &sha)
+            .await
+            .unwrap(),
+        "active analysis pins its temporary spool copy"
+    );
     // once the analysis is no longer pending, releasing frees the spool but keeps the NAS copy
     env.app
         .store
         .write_blocking(|c| {
             c.execute(
-                "UPDATE jobs SET state = 'cancelled' WHERE kind IN ('discover', 'analyze') AND state = 'queued'",
+                "UPDATE jobs SET state = 'cancelled' WHERE kind IN ('discover', 'analyze') AND state IN ('queued','running')",
                 [],
             )?;
             Ok(())
@@ -718,7 +742,7 @@ async fn archived_recording_releases_its_spool_copy_once_no_job_needs_it() {
 }
 
 #[tokio::test]
-async fn archiver_quarantines_a_wrong_final_file_and_rewrites() {
+async fn archiver_preserves_a_conflicting_canonical_file_and_reports_it() {
     let env = Env::new().await;
     let bytes = recording(8202, "quarantine", 4_000);
     let sha = sha256_hex(&bytes);
@@ -726,17 +750,34 @@ async fn archiver_quarantines_a_wrong_final_file_and_rewrites() {
     coach_server::ingest::ingest_pending(&env.app)
         .await
         .unwrap();
-    let (data, manifest) = nas_object(&env, &sha);
+    let data = env
+        .nas()
+        .join(format!("library/telemetry/{CUSTOMER}/q--{sha}.ibt"));
     std::fs::create_dir_all(data.parent().unwrap()).unwrap();
     std::fs::write(&data, b"corrupt final file").unwrap();
     run_io_lane(&env).await;
-    assert_eq!(std::fs::read(&data).unwrap(), bytes);
+    assert_eq!(std::fs::read(&data).unwrap(), b"corrupt final file");
+    let manifest = env.nas_manifest(&sha);
     assert!(manifest.exists());
+    assert_eq!(
+        std::fs::read(env.data().join("spool/ready").join(&sha)).unwrap(),
+        bytes,
+        "uploaded bytes remain safe while conflict needs review"
+    );
+    let key = sha.clone();
+    assert_eq!(
+        env.query(move |c| c.query_row(
+            "SELECT state FROM nas_library_objects WHERE sha256=?1",
+            [key],
+            |r| r.get::<_, String>(0)
+        )),
+        "conflict"
+    );
     assert_eq!(
         std::fs::read_dir(env.nas().join("quarantine"))
             .unwrap()
             .count(),
-        1
+        0
     );
     assert_eq!(
         std::fs::read_to_string(env.nas().join("FORMAT")).unwrap(),
@@ -1349,11 +1390,9 @@ async fn archived_only(env: &Env, subsession: i64) -> (String, Vec<u8>) {
             Ok(())
         })
         .unwrap();
-    assert!(
-        coach_server::handlers::release_spool(&env.app, &sha)
-            .await
-            .unwrap()
-    );
+    let _ = coach_server::handlers::release_spool(&env.app, &sha)
+        .await
+        .unwrap();
     assert!(!env.data().join("spool/ready").join(&sha).exists());
     (sha, bytes)
 }

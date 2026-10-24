@@ -69,6 +69,9 @@ pub fn ready_path(app: &AppState, sha: &str) -> PathBuf {
 
 /// The collector-facing state name of a held blob.
 pub fn derive_blob_state(conn: &Connection, sha: &str) -> rusqlite::Result<String> {
+    if crate::nas_library::deleted(conn, sha)? {
+        return Ok("deleted".into());
+    }
     let (kind, nas): (String, String) = conn.query_row(
         "SELECT kind, nas_state FROM blobs WHERE sha256 = ?1",
         [sha],
@@ -190,13 +193,18 @@ enum Existing {
 pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, Value)> {
     let value: Value = serde_json::from_slice(body)
         .map_err(|e| Error::invalid(format!("body is not valid JSON: {e}")))?;
+    let limit = if value["kind"] == "rpy" {
+        (16u64 << 30).min(app.cfg.spool_limit_bytes)
+    } else {
+        app.cfg.max_upload_bytes.min(4u64 << 30)
+    };
     if let Some(size) = value["size"].as_u64()
-        && size > app.cfg.max_upload_bytes
+        && size > limit
     {
         return Err(Error::Api(ApiError::new(
             StatusCode::PAYLOAD_TOO_LARGE,
             "too_large",
-            format!("uploads are limited to {} bytes", app.cfg.max_upload_bytes),
+            format!("uploads of this kind are limited to {limit} bytes"),
         )));
     }
     validate_request("UploadCreate", &value)?;
@@ -231,6 +239,9 @@ pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, V
             .write(move |conn| {
                 let tx = conn.transaction()?;
                 let now = iso_now();
+                let existing_kind: Option<String> = tx.query_row("SELECT kind FROM blobs WHERE sha256=?1 UNION ALL SELECT kind FROM uploads WHERE sha256=?1 UNION ALL SELECT kind FROM nas_library_objects WHERE sha256=?1 LIMIT 1",[&sha],|r|r.get(0)).optional()?;
+                if existing_kind.as_deref().is_some_and(|k|k!=kind) { return Err(Error::conflict("upload_kind_conflict","This hash already belongs to another upload kind")); }
+                if crate::nas_library::deleted(&tx,&sha)? { return Ok(Existing::Blob("deleted".into(),size)); }
                 tx.execute(
                     "INSERT OR IGNORE INTO collectors(collector_id, machine_name, collector_version,
                        protocol, first_seen_at, last_seen_at)
@@ -269,9 +280,15 @@ pub async fn create_upload(app: &AppState, body: &[u8]) -> Result<(StatusCode, V
     };
 
     match existing {
-        Existing::Blob(state, size) => {
-            Ok((StatusCode::OK, upload_state_json(&sha, &state, size, size)))
-        }
+        Existing::Blob(state, size) => Ok((
+            StatusCode::OK,
+            upload_state_json(
+                &sha,
+                &state,
+                if state == "deleted" { 0 } else { size },
+                size,
+            ),
+        )),
         Existing::Upload(row) if row.state == "open" => {
             if row.size != size {
                 return Err(Error::invalid(
@@ -454,6 +471,7 @@ pub enum Settled {
 /// Aligns the file system with the upload row (per-hash lock held by the caller): finishes a
 /// commit that crashed after the rename, completes a full `.part`, or reports the durable offset.
 pub async fn settle(app: &AppState, sha: &str) -> Result<Settled> {
+    crate::nas_library::guard(app, sha).await?;
     let sha_owned = sha.to_string();
     let (row, has_blob) = app
         .store
@@ -522,6 +540,9 @@ pub async fn head_upload(app: &AppState, sha: &str) -> Result<Option<(i64, Strin
     let sha = sha.to_string();
     app.store
         .read(move |conn| {
+            if crate::nas_library::deleted(conn, &sha)? {
+                return Ok(Some((0, "deleted".into())));
+            }
             if blob_exists(conn, &sha)? {
                 let size: i64 =
                     conn.query_row("SELECT size FROM blobs WHERE sha256 = ?1", [&sha], |r| {
@@ -543,8 +564,17 @@ pub async fn put_chunk(
     size: i64,
     body: &[u8],
 ) -> Result<(StatusCode, Value)> {
+    if head_upload(app, sha)
+        .await?
+        .is_some_and(|(_, s)| s == "deleted")
+    {
+        return Ok((StatusCode::OK, upload_state_json(sha, "deleted", 0, size)));
+    }
     let Some(_guard) = app.upload_locks.try_lock(sha) else {
-        let offset = head_upload(app, sha).await?.map(|(o, _)| o).unwrap_or(0);
+        let (offset, state) = head_upload(app, sha).await?.unwrap_or((0, "open".into()));
+        if state == "deleted" {
+            return Ok((StatusCode::OK, upload_state_json(sha, "deleted", 0, size)));
+        }
         return Ok((
             StatusCode::CONFLICT,
             upload_state_json(sha, "open", offset, size),
@@ -563,6 +593,12 @@ pub async fn put_chunk(
     if has_blob {
         let state = blob_state(app, sha).await?;
         return Ok((StatusCode::OK, upload_state_json(sha, &state, size, size)));
+    }
+    if head_upload(app, sha)
+        .await?
+        .is_some_and(|(_, s)| s == "deleted")
+    {
+        return Ok((StatusCode::OK, upload_state_json(sha, "deleted", 0, size)));
     }
     let Some(row) = row else {
         return Err(Error::not_found("no such upload; create it first"));
@@ -865,7 +901,7 @@ async fn finish_blob(app: &AppState, row: &UploadRow) -> Result<()> {
                         "INSERT OR IGNORE INTO recordings(sha256, ingest_state) VALUES (?1, 'verified')",
                         [&row.sha256],
                     )?;
-                } else if row.kind == "field" {
+                } else if matches!(row.kind.as_str(), "field" | "rpy") {
                     jobs::enqueue_tx(&tx, &NewJob::archive(&row.sha256), true)?;
                 } else {
                     // Every occurrence the bytes were announced under, not only the path of the
@@ -944,6 +980,10 @@ pub async fn reconcile(app: &AppState) -> Result<()> {
     // ready/<sha>
     for sha in &ready_files {
         let _guard = app.upload_locks.lock(sha).await;
+        if crate::nas_library::is_deleted(app, sha).await? {
+            crate::nas_library::cleanup_deleted(app, sha).await?;
+            continue;
+        }
         let sha2 = sha.clone();
         let (has_blob, row) = app
             .store
@@ -976,6 +1016,10 @@ pub async fn reconcile(app: &AppState) -> Result<()> {
     // incoming/<sha>.part
     for sha in &part_files {
         let _guard = app.upload_locks.lock(sha).await;
+        if crate::nas_library::is_deleted(app, sha).await? {
+            crate::nas_library::cleanup_deleted(app, sha).await?;
+            continue;
+        }
         let sha2 = sha.clone();
         let row = app
             .store
@@ -1022,7 +1066,7 @@ pub async fn reconcile(app: &AppState) -> Result<()> {
             // blobs not yet on the NAS go back in the archive queue (nas-layout.md section 6)
             let pending: Vec<String> = conn
                 .prepare(
-                    "SELECT sha256 FROM blobs WHERE nas_state IN ('pending', 'failed') AND spool_present = 1",
+                    "SELECT sha256 FROM blobs WHERE nas_state IN ('pending', 'failed') AND spool_present = 1 AND NOT EXISTS(SELECT 1 FROM nas_library_objects n WHERE n.sha256=blobs.sha256 AND n.state='deleted')",
                 )?
                 .query_map([], |r| r.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
@@ -1244,6 +1288,7 @@ async fn fail_ingest(app: &AppState, sha: &str, message: &str) -> Result<()> {
 /// 20 GB and the 4 GiB free rule, and a refused restage waits up to `restage_wait`), and the
 /// file gets the blob's source mtime with the commit clamp, fsynced before it is published.
 pub async fn restage_recording(app: &AppState, sha: &str) -> Result<()> {
+    crate::nas_library::guard(app, sha).await?;
     let sha_owned = sha.to_string();
     let (size, source_mtime, kind): (i64, Option<String>, String) = app
         .store
@@ -1276,25 +1321,28 @@ pub async fn restage_recording(app: &AppState, sha: &str) -> Result<()> {
         }
     };
     let mtime = commit_mtime(source_mtime.as_deref().and_then(util::parse_iso));
-    app.archiver
-        .restage(
-            sha,
-            match kind.as_str() {
-                "sto" | "htm" => crate::archiver::ArchiveKind::SetupFile,
-                "field" => crate::archiver::ArchiveKind::FieldRecording,
-                _ => crate::archiver::ArchiveKind::Recording,
-            },
-            match kind.as_str() {
-                "sto" => "sto",
-                "htm" => "htm",
-                "field" => "field",
-                _ => "ibt",
-            },
-            ready_path(app, sha),
-            app.cfg.spool_incoming(),
-            Some(mtime),
-        )
-        .await?;
+    let canonical = crate::nas_library::restage(app, sha, &kind, size as u64, mtime).await?;
+    if !canonical {
+        app.archiver
+            .restage(
+                sha,
+                match kind.as_str() {
+                    "sto" | "htm" => crate::archiver::ArchiveKind::SetupFile,
+                    "field" => crate::archiver::ArchiveKind::FieldRecording,
+                    _ => crate::archiver::ArchiveKind::Recording,
+                },
+                match kind.as_str() {
+                    "sto" => "sto",
+                    "htm" => "htm",
+                    "field" => "field",
+                    _ => "ibt",
+                },
+                ready_path(app, sha),
+                app.cfg.spool_incoming(),
+                Some(mtime),
+            )
+            .await?;
+    }
     // Counted as spool bytes before the reservation is released.
     let sha_owned = sha.to_string();
     app.store

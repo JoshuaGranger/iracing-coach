@@ -35,6 +35,7 @@ fn the_migrations_are_the_contract_schema_and_run_once() {
         "0003_lab_library.sql",
         "0004_field_recordings.sql",
         "0005_sto_versions.sql",
+        "0006_nas_library.sql",
     ]
     .iter()
     .map(|name| {
@@ -50,7 +51,7 @@ fn the_migrations_are_the_contract_schema_and_run_once() {
     assert_eq!(
         contract.replace("\r\n", "\n"),
         shipped.join("\n"),
-        "migrations 0001 to 0005, in order, must equal contracts/db-schema.sql"
+        "migrations 0001 to 0006, in order, must equal contracts/db-schema.sql"
     );
     assert_eq!(coach_server::db::MIGRATIONS.len(), shipped.len());
     for ((version, _, sql), file) in coach_server::db::MIGRATIONS.iter().zip(&shipped) {
@@ -70,7 +71,7 @@ fn the_migrations_are_the_contract_schema_and_run_once() {
                 .collect::<rusqlite::Result<_>>()?)
         })
         .unwrap();
-    assert_eq!(versions, vec![1, 2, 3, 4, 5]);
+    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6]);
     let (journal, fk): (String, i64) = store
         .read_blocking(|c| {
             Ok((
@@ -94,7 +95,7 @@ fn a_pending_migration_writes_a_pre_migrate_copy_first() {
     drop(coach_server::db::Store::open(&path, "0.19.0").unwrap());
     let mut conn = Connection::open(&path).unwrap();
     let extra = [(
-        6,
+        7,
         "add a nullable column",
         "ALTER TABLE drivers ADD COLUMN nickname TEXT;",
     )];
@@ -104,15 +105,15 @@ fn a_pending_migration_writes_a_pre_migrate_copy_first() {
         .chain(extra)
         .collect();
     coach_server::db::migrate_with(&mut conn, &path, "0.20.0", &all).unwrap();
-    assert!(dir.path().join("pre-migrate-v5.sqlite3").exists());
+    assert!(dir.path().join("pre-migrate-v6.sqlite3").exists());
     let version: i64 = conn
         .query_row("SELECT MAX(version) FROM schema_migrations", [], |r| {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
     // the copy still holds the old schema
-    let old = Connection::open(dir.path().join("pre-migrate-v5.sqlite3")).unwrap();
+    let old = Connection::open(dir.path().join("pre-migrate-v6.sqlite3")).unwrap();
     let cols: i64 = old
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('drivers') WHERE name = 'nickname'",
@@ -128,12 +129,19 @@ fn a_pending_migration_writes_a_pre_migrate_copy_first() {
 #[tokio::test]
 async fn snapshots_follow_user_data_generations_and_back_up_to_the_nas() {
     let env = Env::new().await;
+    coach_server::nas_library::reconcile(&env.app)
+        .await
+        .unwrap();
     // a driver and one user-authored write
     let bytes = fake_ibt(race_meta(9910, 0, "snap"), 2_000);
     env.upload(&bytes, "ibt", "s.ibt", None, 2000).await;
     coach_server::ingest::ingest_pending(&env.app)
         .await
         .unwrap();
+    let before_note = count(
+        &env,
+        "SELECT value FROM server_counters WHERE name = 'user_data_generation'",
+    );
     env.post(
         "/api/v1/drivers/1001/notes",
         json!({"subject_kind": "session", "subject_id": "1", "body": "remember"}),
@@ -143,7 +151,7 @@ async fn snapshots_follow_user_data_generations_and_back_up_to_the_nas() {
         &env,
         "SELECT value FROM server_counters WHERE name = 'user_data_generation'",
     );
-    assert_eq!(generation, 1);
+    assert_eq!(generation, before_note + 1);
 
     // a Python history database and tuning folder are part of the snapshot
     let archive = env.data().join("py/1001/archive");
@@ -155,9 +163,9 @@ async fn snapshots_follow_user_data_generations_and_back_up_to_the_nas() {
 
     let now = coach_server::util::unix_now();
     let summary = coach_server::scheduler::tick(&env.app, now).await.unwrap();
-    assert_eq!(summary["snapshot"]["generation"], 1);
+    assert_eq!(summary["snapshot"]["generation"], generation);
     assert_eq!(summary["snapshot"]["created"], true);
-    let dir = env.data().join("snapshots/g1");
+    let dir = env.data().join(format!("snapshots/g{generation}"));
     let manifest: Value =
         serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
     assert_eq!(manifest["kind"], "backup");
@@ -183,12 +191,23 @@ async fn snapshots_follow_user_data_generations_and_back_up_to_the_nas() {
         .query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
         .unwrap();
     assert_eq!(notes, 1);
+    let pinned: bool = copy
+        .query_row(
+            "SELECT identity IS NOT NULL FROM nas_library_meta WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        pinned,
+        "the durable NAS identity belongs in user-data backups"
+    );
     #[cfg(unix)]
     assert_eq!(
         std::fs::read_link(env.data().join("snapshots/latest"))
             .unwrap()
             .to_string_lossy(),
-        "g1"
+        format!("g{generation}")
     );
 
     // no change, no new generation
@@ -199,7 +218,11 @@ async fn snapshots_follow_user_data_generations_and_back_up_to_the_nas() {
         again["snapshot"].is_null() || again["snapshot"]["created"] == false,
         "{again}"
     );
-    assert!(!env.data().join("snapshots/g2").exists());
+    assert!(
+        !env.data()
+            .join(format!("snapshots/g{}", generation + 1))
+            .exists()
+    );
 
     // the daily copy lands in backups/<day> with matching hashes, complete and left alone afterwards
     let day = coach_server::util::day_from_unix(now, 0);
@@ -222,6 +245,10 @@ async fn snapshots_follow_user_data_generations_and_back_up_to_the_nas() {
         .unwrap()
         .modified()
         .unwrap();
+    let before_note = count(
+        &env,
+        "SELECT value FROM server_counters WHERE name = 'user_data_generation'",
+    );
     env.post(
         "/api/v1/drivers/1001/notes",
         json!({"subject_kind": "session", "subject_id": "2", "body": "more"}),
@@ -230,7 +257,7 @@ async fn snapshots_follow_user_data_generations_and_back_up_to_the_nas() {
     let (g, dir2, created) = coach_server::scheduler::take_snapshot(&env.app)
         .await
         .unwrap();
-    assert!(created && g == 2);
+    assert!(created && g == before_note + 1);
     assert!(
         !coach_server::scheduler::backup_to_nas(&env.app, g, dir2, &day)
             .await
@@ -532,7 +559,7 @@ fn dev_mode_serves_healthcheck_succeeds_and_idle_memory_is_small() {
         std::thread::sleep(Duration::from_millis(100));
     };
     assert!(health.contains("\"status\":\"ok\""), "{health}");
-    assert!(health.contains("\"schema_version\":5"), "{health}");
+    assert!(health.contains("\"schema_version\":6"), "{health}");
 
     // `coach-server healthcheck` is the Compose healthcheck
     let status = Command::new(env!("CARGO_BIN_EXE_coach-server"))

@@ -23,6 +23,7 @@ pub mod import;
 pub mod ingest;
 pub mod jobs;
 pub mod library;
+pub mod nas_library;
 pub mod offline_sessions;
 pub mod overview;
 pub mod rebuild;

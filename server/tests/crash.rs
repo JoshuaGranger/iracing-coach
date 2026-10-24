@@ -220,12 +220,8 @@ async fn a_killed_server_never_loses_the_spool_copy_or_half_archives_at_each_arc
         // the spool copy is the only durable copy until the NAS commit: it is still whole
         let ready = env.data().join("spool/ready").join(&sha);
         assert_eq!(std::fs::read(&ready).unwrap(), bytes, "{point}");
-        let data = env
-            .nas()
-            .join("raw")
-            .join(&sha[..2])
-            .join(format!("{sha}.ibt"));
-        let manifest = data.with_file_name(format!("{sha}.manifest.json"));
+        let data = env.nas_payload(&sha);
+        let manifest = env.nas_manifest(&sha);
         let state: String = env.query({
             let sha = sha.clone();
             move |c| {

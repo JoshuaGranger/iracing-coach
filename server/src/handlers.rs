@@ -38,6 +38,9 @@ pub async fn run(app: &AppState, job: &JobRow, cancel: &Cancel) -> JobOutcome {
         Err(Error::Crash(point)) => {
             JobOutcome::failed("crash", format!("simulated crash at {point}"))
         }
+        Err(Error::Api(api)) if matches!(api.code, "library_file_deleted" | "library_conflict") => {
+            JobOutcome::failed(api.code, api.message)
+        }
         Err(e) => {
             let code = if e.is_no_space() {
                 "no_space"
@@ -135,6 +138,7 @@ pub async fn prepare_root(
     let mut names = Vec::new();
     let mut used = std::collections::HashSet::new();
     for (sha, name) in recordings {
+        crate::nas_library::guard(app, sha).await?;
         let spool = ready_path(app, sha);
         if !spool.exists() {
             crate::ingest::restage_recording(app, sha).await?;
@@ -165,7 +169,7 @@ pub async fn prepare_root(
                 let mut stmt = conn.prepare(
                     "SELECT f.blob_sha256, f.car_folder, f.relative_path FROM setup_files f
                      JOIN blobs b ON b.sha256 = f.blob_sha256
-                     WHERE f.customer_id = ?1 AND f.present = 1 AND b.spool_present = 1",
+                     WHERE f.customer_id = ?1 AND f.present = 1 AND NOT EXISTS(SELECT 1 FROM nas_library_objects n WHERE n.sha256=b.sha256 AND n.state IN ('deleted','conflict'))",
                 )?;
                 Ok(stmt
                     .query_map([customer], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
@@ -173,6 +177,9 @@ pub async fn prepare_root(
             })
             .await?;
         for (sha, car, rel) in files {
+            if !ready_path(app, &sha).is_file() {
+                crate::ingest::restage_recording(app, &sha).await?;
+            }
             // `rel` comes from a collector: refuse anything that would leave the root
             if rel.split('/').any(|s| s == ".." || s.is_empty()) || car == ".." || car.contains('/')
             {
@@ -759,14 +766,15 @@ async fn archive(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
     let Some((size, kind, name, source_mtime, collector, received, nas_state)) = row else {
         return Ok(JobOutcome::failed("not_found", "blob not found"));
     };
-    if nas_state == "archived" {
+    crate::nas_library::guard(app, &sha).await?;
+    if nas_state == "archived" && kind == "field" {
         release_spool(app, &sha).await?;
         return Ok(JobOutcome::Succeeded(
             json!({"sha256": sha, "already": true}),
         ));
     }
     let spool = ready_path(app, &sha);
-    if !spool.exists() {
+    if !spool.exists() && nas_state != "archived" {
         return Ok(JobOutcome::failed(
             "spool_missing",
             "the spool copy is gone and the blob is not archived",
@@ -859,9 +867,17 @@ async fn archive(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
         spool_path: spool,
         manifest,
     };
-    match app.archiver.archive(spec).await {
+    let archive_result = if kind == "field" {
+        app.archiver.archive(spec).await
+    } else {
+        crate::nas_library::archive(app, spec).await
+    };
+    match archive_result {
         Ok(()) => {}
         Err(Error::Crash(p)) => return Err(Error::Crash(p)),
+        Err(Error::Api(api)) if matches!(api.code, "library_file_deleted" | "library_conflict") => {
+            return Ok(JobOutcome::failed(api.code, api.message));
+        }
         Err(e) => {
             let (sha_owned, message) = (sha.clone(), e.to_string());
             app.store
@@ -900,7 +916,7 @@ async fn archive(app: &AppState, job: &JobRow) -> Result<JobOutcome> {
     Ok(JobOutcome::Succeeded(json!({"sha256": sha})))
 }
 
-/// Deletes the spool copy of an archived recording once no queued or running job needs it.
+/// Releases archived IBT/replay caches once no active reader needs them; queued jobs restage.
 /// Setup files stay (a few KB; job roots link them).
 pub async fn release_spool(app: &AppState, sha: &str) -> Result<bool> {
     let sha_owned = sha.to_string();
@@ -917,13 +933,17 @@ pub async fn release_spool(app: &AppState, sha: &str) -> Result<bool> {
             let Some((kind, nas, present)) = row else {
                 return Ok(false);
             };
-            if !matches!(kind.as_str(), "ibt" | "field") || nas != "archived" || present == 0 {
+            if !matches!(kind.as_str(), "ibt" | "field" | "rpy")
+                || nas != "archived"
+                || present == 0
+            {
                 return Ok(false);
             }
             let referenced: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM jobs WHERE state IN ('queued', 'running', 'interrupted')
+                "SELECT COUNT(*) FROM jobs WHERE (state = 'running'
+                    OR (?2 = 'field' AND state IN ('queued','deferred','interrupted')))
                  AND kind <> 'archive' AND instr(subject_json, ?1) > 0",
-                [&sha_owned],
+                params![sha_owned, kind],
                 |r| r.get(0),
             )?;
             let unparsed: i64 = conn.query_row(
@@ -937,7 +957,11 @@ pub async fn release_spool(app: &AppState, sha: &str) -> Result<bool> {
     if !releasable {
         return Ok(false);
     }
-    let _ = std::fs::remove_file(ready_path(app, sha));
+    match std::fs::remove_file(ready_path(app, sha)) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
     let sha_owned = sha.to_string();
     app.store
         .write(move |conn| {

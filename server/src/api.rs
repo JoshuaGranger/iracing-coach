@@ -53,6 +53,10 @@ pub fn router(app: AppState) -> Router {
     let big_limit = DefaultBodyLimit::max(128 << 20);
     let api = Router::new()
         .route("/status", get(status))
+        .route(
+            "/collectors/{collector_id}/sync",
+            get(crate::nas_library::sync),
+        )
         .route("/events", get(events))
         .route("/drivers", get(drivers))
         .route("/drivers/{customer_id}", get(driver))
@@ -399,6 +403,7 @@ async fn status(State(app): State<AppState>) -> Resp {
     let newer = collectors
         .iter()
         .any(|c| c["compatible"] == false && c["protocol"] == 1);
+    let library = crate::nas_library::status(&app).await?;
     ok(json!({
         "server_version": app.cfg.app_version,
         "api_version": 1,
@@ -411,6 +416,7 @@ async fn status(State(app): State<AppState>) -> Resp {
             "state": app.archiver.state().as_str(),
             "last_ok_at": app.archiver.last_ok_at(),
             "pending_archive": pending,
+            "library":library,
         },
         "spool": {"bytes": ready_bytes + part_bytes, "files": ready_files + part_files, "limit_bytes": app.cfg.spool_limit_bytes},
         "queue": {"analysis": analysis, "light": light, "deferred": deferred},

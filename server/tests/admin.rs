@@ -115,11 +115,7 @@ async fn a_recording_goes_with_its_session_analysis_views_and_jobs_and_the_nas_s
     });
     assert!(views_dir(&env, &analysis).is_dir());
     let nas_before = tree(&env.nas());
-    let manifest = env
-        .nas()
-        .join("raw")
-        .join(&gone[..2])
-        .join(format!("{gone}.manifest.json"));
+    let manifest = env.nas_manifest(&gone);
     assert!(manifest.exists(), "archived before the removal");
     let setups_before = count(&env, "SELECT COUNT(*) FROM setups");
     // the recording's own setup, which nothing else observed, goes with it

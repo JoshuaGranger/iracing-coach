@@ -111,6 +111,7 @@ impl Viewer {
 #[derive(Default)]
 struct Inner {
     collectors: HashMap<String, CollectorConn>,
+    status_received: HashMap<String, (Instant, u64)>,
     viewers: HashMap<i64, Vec<Arc<Viewer>>>,
     backlog: HashMap<i64, (VecDeque<Bytes>, u64)>,
     /// The presence each collector last had published to browsers, without `last_seen_at`.
@@ -192,6 +193,13 @@ impl Hub {
     /// Registers a collector connection; an older connection with the same id is closed (4002).
     pub fn register(&self, collector_id: &str, conn: CollectorConn) -> bool {
         let mut inner = self.inner.lock().unwrap();
+        inner.status_received.remove(collector_id);
+        if conn.status.is_some() {
+            let age = util::unix_now().saturating_sub(conn.last_seen).max(0) as u64;
+            inner
+                .status_received
+                .insert(collector_id.into(), (Instant::now(), age));
+        }
         let replaced = if let Some(old) = inner.collectors.remove(collector_id) {
             if old.online {
                 let _ = old.tx.send(Outgoing::Close(4002, "duplicate_collector"));
@@ -265,6 +273,9 @@ impl Hub {
         let streaming_stopped = was_streaming && !c.streaming;
         c.status = Some(status);
         let driver = c.driver;
+        inner
+            .status_received
+            .insert(collector_id.into(), (Instant::now(), 0));
         let viewers = driver
             .map(|d| inner.viewers.get(&d).map(|v| v.len()).unwrap_or(0))
             .unwrap_or(0);
@@ -522,6 +533,28 @@ impl Hub {
             .collect();
         list.sort_by_key(|v| v["collector_id"].as_str().unwrap_or_default().to_string());
         list
+    }
+
+    /// NAS reconciliation is background bulk I/O too; ambiguous live evidence pauses it.
+    pub fn allows_library_work(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .collectors
+            .iter()
+            .filter(|(_, c)| c.online)
+            .all(|(id, c)| {
+                if inner
+                    .status_received
+                    .get(id)
+                    .is_none_or(|(at, age)| at.elapsed().as_secs().saturating_add(*age) > 10)
+                {
+                    return false;
+                }
+                let Some(s) = c.status.as_ref() else {
+                    return false;
+                };
+                s["bulk_io_allowed"] == true
+            })
     }
 
     /// Collectors silent for longer than `idle_secs`.

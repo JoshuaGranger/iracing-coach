@@ -537,25 +537,22 @@ pub async fn backfill(app: &AppState) -> crate::error::Result<usize> {
         .await?;
     let mut done = 0;
     for (sha, stored) in rows {
+        if crate::nas_library::guard(app, &sha).await.is_err() {
+            continue;
+        }
         let spool = crate::ingest::ready_path(app, &sha);
-        let nas = app
-            .archiver
-            .nas_root()
-            .join("raw")
-            .join(&sha[..2.min(sha.len())])
-            .join(format!("{sha}.ibt"));
         let parser = app.parser.clone();
-        let parsed = tokio::task::spawn_blocking(move || {
-            [spool, nas]
-                .into_iter()
-                .filter(|p| p.is_file())
-                .find_map(|p| parser.parse(&p).ok())
-        })
-        .await
-        .ok()
-        .flatten();
-        let Some(parsed) = parsed else { continue };
-        let times = &parsed.header_json;
+        let times = if spool.is_file() {
+            tokio::task::spawn_blocking(move || parser.parse(&spool).ok().map(|p| p.header_json))
+                .await
+                .ok()
+                .flatten()
+        } else {
+            crate::nas_library::header(app, &sha).await.ok().flatten()
+        };
+        let Some(times) = times else {
+            continue;
+        };
         // a parser that does not report the lap sample (`lap_last` absent, not null) would make
         // every start read the row again
         if times["session_start_time"].is_null() || times.get("lap_last").is_none() {

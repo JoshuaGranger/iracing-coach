@@ -42,9 +42,14 @@ pub const MIGRATIONS: &[(i64, &str, &str)] = &[
         "immutable STO working versions",
         include_str!("../migrations/0005_sto_versions.sql"),
     ),
+    (
+        6,
+        "canonical NAS library and replay sync",
+        include_str!("../migrations/0006_nas_library.sql"),
+    ),
 ];
 
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 pub struct Store {
     writer: Mutex<Option<mpsc::Sender<WriteJob>>>,

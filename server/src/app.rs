@@ -216,10 +216,20 @@ impl App {
             tracing::warn!(dir = %cfg.contracts_dir.display(), "COACH_CONTRACTS_DIR is not a directory: worker results cannot be validated and their jobs will fail");
         }
         let store = Arc::new(Store::open(&cfg.db_path(), &cfg.app_version)?);
-        let archiver = Archiver::start(
+        let identity = store
+            .read(|conn| {
+                Ok(conn.query_row(
+                    "SELECT identity FROM nas_library_meta WHERE singleton=1",
+                    [],
+                    |r| r.get::<_, Option<String>>(0),
+                )?)
+            })
+            .await?;
+        let archiver = Archiver::start_pinned(
             cfg.nas_root.clone(),
             parts.faults.clone(),
             cfg.nas_stall_after,
+            identity,
         );
         let worker_identity = parts
             .worker_identity
