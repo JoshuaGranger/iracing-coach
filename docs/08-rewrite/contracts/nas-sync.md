@@ -32,18 +32,26 @@ If the full hash already has a canonical payload, record the new occurrence with
 another payload or deleting the user's duplicate input. The app never creates an extra copy.
 
 The catalog states distinguish legacy, rename-pending, canonical-verified, conflict and deleted.
-Migrate existing raw/setup payloads by hash-verified same-filesystem no-replace rename, with a
-durable intent before relocation and commit after verification. No bulk copy. Preserve legacy
-manifests/metadata as needed. Recovery checks both planned locations and completes interrupted
-renames; a transition is never mistaken for a user deletion. Restage understands catalog paths
-and unmigrated legacy paths, but a tombstone prevents all legacy fallback/recreation.
+Migrate existing raw/setup payloads by verified same-filesystem relocation, with durable intent
+before relocation and commit after verification. No bulk copy. The production NFS filesystem
+does not support renameat2 RENAME_NOREPLACE. Claim the input with an ordinary atomic rename into
+an empty leaf inside a new private app-owned per-object directory. Never unlink the original
+input pathname: an editor may have replaced it. Preserve legacy manifests/metadata as needed.
+Recovery checks planned locations and completes interrupted claims; a transition is never
+mistaken for a user deletion. Restage understands catalog and unmigrated legacy paths, but a
+tombstone prevents all legacy fallback/recreation.
 
 New payload writes use exclusive temp, flush, reopen/hash and atomic no-replace publication.
 No permanent hard-link/symlink mirror. Existing unequal content is preserved and reported as
 conflict, never overwritten or classified as deleted. Temporary dual directory entries during
-a no-replace relocation are permitted only if they name the same physical payload and recovery
-removes the old name after verifying the canonical object. Migration cannot leave two durable
-independent payload copies. Keep all operations on the archiver thread.
+a no-replace publication are permitted only if they name the same physical payload.
+`library/.catalog/claims/<kind>/<sha>/` is a pinned private directory (mode0700 on Linux): write
+and fsync its identity receipt before claiming, hash the claimed file, publish the canonical
+name with an exclusive hard link, then durably record publication before removing only the
+private owned claim leaf. A new file at the original input name is untouched. Unexpected claimed
+bytes are preserved and reported as conflict. A published receipt with a missing canonical
+file forbids recreation, including after restart. Migration cannot leave two durable independent
+payload copies. Keep all operations on the archiver thread.
 
 The upload/analysis spool is temporary. Release archived IBT/replay bytes after any active
 analysis no longer needs them; queued/deferred work must restage when actually admitted instead
