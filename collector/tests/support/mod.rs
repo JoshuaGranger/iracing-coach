@@ -2,7 +2,7 @@
 //! (`collector-protocol.md`), synthetic SDK maps and recordings, and temp folders.
 #![allow(dead_code)]
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -90,6 +90,7 @@ pub type BodyHook = Box<dyn FnMut(&str, usize) + Send>;
 #[derive(Default)]
 pub struct State {
     pub uploads: HashMap<String, Upload>,
+    pub deleted: HashSet<String>,
     pub creates: Vec<Value>,
     pub puts: Vec<Put>,
     pub aborted_puts: usize,
@@ -332,6 +333,14 @@ fn create(stream: &mut TcpStream, state: &Arc<Mutex<State>>, body: &[u8]) {
     s.creates.push(v.clone());
     let sha = v["sha256"].as_str().unwrap().to_string();
     let size = v["size"].as_u64().unwrap();
+    if s.deleted.contains(&sha) {
+        return reply(
+            stream,
+            200,
+            &json!({"sha256":sha,"state":"deleted","offset":0,"size":size}),
+            &[],
+        );
+    }
     if size > 4 * 1024 * 1024 * 1024 {
         return reply(stream, 413, &json!({"error": "too_large"}), &[]);
     }

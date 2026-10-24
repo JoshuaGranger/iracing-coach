@@ -177,7 +177,9 @@ fn spawn_evidence(hub: Arc<Hub>, source: Box<dyn MapSource>) -> JoinHandle<()> {
         while !hub.is_shutdown() {
             reader.wait(Duration::from_millis(100));
             let _ = reader.poll(hub.clock.mono_ms(), hub.clock.unix_ms());
-            hub.gate.observe(reader.evidence());
+            hub.gate
+                .observe_with_session(reader.evidence(), reader.in_race());
+            hub.refresh_bulk_gate_status();
         }
     })
 }
@@ -238,9 +240,12 @@ pub fn run_with(
 
 fn wait_for_off_track(hub: &Hub, out: &mut dyn Write) {
     let mut told = false;
-    while !hub.gate.allows_file_work() {
+    while !hub.gate.allows_bulk_work() {
         if !told {
-            let _ = writeln!(out, "waiting for iRacing to be off track (or closed)");
+            let _ = writeln!(
+                out,
+                "waiting for iRacing to be off track outside a race (or closed)"
+            );
             told = true;
         }
         thread::sleep(Duration::from_millis(100));
@@ -253,7 +258,7 @@ fn dry_run(
     known: &Journal,
     out: &mut dyn Write,
 ) -> Result<Summary, String> {
-    let proceed = || hub.gate.allows_file_work();
+    let proceed = || hub.gate.allows_bulk_work();
     loop {
         wait_for_off_track(hub, out);
         let now = hub.clock.unix_ms();

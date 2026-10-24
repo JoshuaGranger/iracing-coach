@@ -1,6 +1,6 @@
 //! Directory listings for the uploader: recordings under `Documents\iRacing\telemetry` and setup
-//! files under `Documents\iRacing\setups`. Metadata only, read-only; nothing under
-//! `Documents\iRacing` is ever written, renamed or deleted. Every listing asks `proceed` before
+//! files under `Documents\iRacing\setups`, and saved replays. This scanner is read-only;
+//! only the separate sync worker may create new managed setup copies. Every listing asks `proceed` before
 //! each directory read and each entry, so a scan stops within one metadata call of the on-track
 //! gate closing (`collector-protocol.md` section 4); an interrupted listing is returned as such,
 //! never as a short one.
@@ -12,6 +12,7 @@ use std::time::UNIX_EPOCH;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Ibt,
+    Rpy,
     Sto,
     Htm,
     Field,
@@ -21,6 +22,7 @@ impl Kind {
     pub fn as_str(self) -> &'static str {
         match self {
             Kind::Ibt => "ibt",
+            Kind::Rpy => "rpy",
             Kind::Sto => "sto",
             Kind::Htm => "htm",
             Kind::Field => "field",
@@ -30,6 +32,7 @@ impl Kind {
     pub fn parse(s: &str) -> Option<Kind> {
         match s {
             "ibt" => Some(Kind::Ibt),
+            "rpy" => Some(Kind::Rpy),
             "sto" => Some(Kind::Sto),
             "htm" => Some(Kind::Htm),
             "field" => Some(Kind::Field),
@@ -41,6 +44,7 @@ impl Kind {
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
         match ext.as_str() {
             "ibt" => Some(Kind::Ibt),
+            "rpy" => Some(Kind::Rpy),
             "sto" => Some(Kind::Sto),
             "htm" => Some(Kind::Htm),
             "jsonl" if path.file_name()?.to_str()?.ends_with(".field.jsonl") => Some(Kind::Field),
@@ -118,6 +122,69 @@ fn candidate(path: PathBuf, kind: Kind, relative_path: Option<String>) -> Option
         kind,
         relative_path,
     })
+}
+
+/// Native saved replays at any depth (maximum eight); never follow symlinks/reparse points.
+pub fn scan_replays(dir: &Path, proceed: &dyn Fn() -> bool) -> Result<Vec<Candidate>, Interrupted> {
+    fn walk(
+        dir: &Path,
+        depth: usize,
+        proceed: &dyn Fn() -> bool,
+        out: &mut Vec<Candidate>,
+    ) -> Result<(), Interrupted> {
+        if !proceed() {
+            return Err(Interrupted);
+        }
+        if depth > 8 {
+            return Ok(());
+        }
+        let Ok(meta) = fs::symlink_metadata(dir) else {
+            return Ok(());
+        };
+        if is_reparse(&meta) {
+            return Ok(());
+        }
+        let Ok(entries) = fs::read_dir(dir) else {
+            return Ok(());
+        };
+        for entry in entries.flatten() {
+            if !proceed() {
+                return Err(Interrupted);
+            }
+            let path = entry.path();
+            let Ok(meta) = fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if is_reparse(&meta) {
+                continue;
+            }
+            if meta.is_dir() {
+                walk(&path, depth + 1, proceed, out)?;
+            } else if meta.is_file()
+                && Kind::of_path(&path) == Some(Kind::Rpy)
+                && let Some(c) = candidate(path, Kind::Rpy, None)
+            {
+                out.push(c);
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(dir, 0, proceed, &mut out)?;
+    Ok(newest_first(out))
+}
+
+/// Windows junctions and other reparse points also must not redirect managed file work.
+pub(crate) fn is_reparse(meta: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        meta.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        meta.file_type().is_symlink()
+    }
 }
 
 /// Every `.ibt` directly in `dir`, newest first.
@@ -362,5 +429,43 @@ mod tests {
         assert_eq!(scan_recordings(&tel, &proceed), Err(Interrupted));
         assert_eq!(scan_recordings(&tel, &|| true).unwrap().len(), 4);
         fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod replay_tests {
+    use super::*;
+    #[test]
+    fn nested_replays_are_discovered_without_unrelated_files() {
+        let root =
+            std::env::temp_dir().join(format!("coach-replay-scan-{}", crate::util::uuid_v4()));
+        fs::create_dir_all(root.join("nested")).unwrap();
+        fs::write(root.join("a.rpy"), b"one").unwrap();
+        fs::write(root.join("nested/b.RPY"), b"two").unwrap();
+        fs::write(root.join("nested/c.ibt"), b"other").unwrap();
+        let found = scan_replays(&root, &|| true).unwrap();
+        assert_eq!(found.len(), 2);
+        assert!(
+            found
+                .iter()
+                .all(|c| c.kind == Kind::Rpy && c.relative_path.is_none())
+        );
+        assert_eq!(scan_replays(&root, &|| false), Err(Interrupted));
+        let _ = fs::remove_dir_all(root);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn replay_scan_never_follows_symlink_directories_or_files() {
+        let root =
+            std::env::temp_dir().join(format!("coach-replay-scan-{}", crate::util::uuid_v4()));
+        let outside = root.join("outside");
+        let replay = root.join("replay");
+        fs::create_dir_all(&outside).unwrap();
+        fs::create_dir_all(&replay).unwrap();
+        fs::write(outside.join("a.rpy"), b"private").unwrap();
+        std::os::unix::fs::symlink(&outside, replay.join("linked")).unwrap();
+        std::os::unix::fs::symlink(outside.join("a.rpy"), replay.join("linked.rpy")).unwrap();
+        assert!(scan_replays(&replay, &|| true).unwrap().is_empty());
+        let _ = fs::remove_dir_all(root);
     }
 }

@@ -126,6 +126,9 @@ impl Paths {
     pub fn telemetry_dir(&self) -> PathBuf {
         self.iracing_root.join("telemetry")
     }
+    pub fn replays_dir(&self) -> PathBuf {
+        self.iracing_root.join("replay")
+    }
     pub fn setups_dir(&self) -> PathBuf {
         self.iracing_root.join("setups")
     }

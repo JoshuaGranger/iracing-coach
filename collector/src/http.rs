@@ -6,7 +6,8 @@
 //! server's `Content-Range` handling.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::TcpStream;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Largest response body accepted (the API answers with small JSON).
@@ -70,6 +71,7 @@ pub struct HttpClient {
     authority: String,
     connect_timeout: Duration,
     io_timeout: Duration,
+    address_cache: Arc<crate::connect::Cache>,
 }
 
 impl HttpClient {
@@ -79,6 +81,7 @@ impl HttpClient {
             authority: authority.to_string(),
             connect_timeout: Duration::from_secs(5),
             io_timeout: Duration::from_secs(120),
+            address_cache: Arc::new(crate::connect::Cache::default()),
         }
     }
 
@@ -97,9 +100,30 @@ impl HttpClient {
         method: &str,
         path: &str,
         headers: &[(&str, String)],
-        mut body: Body<'_>,
+        body: Body<'_>,
     ) -> Result<Response, HttpError> {
-        let mut stream = self.connect()?;
+        self.request_gated(method, path, headers, body, &|| true, MAX_BODY)
+    }
+
+    /// Bounded gate-aware downloads and response reads. The server authority never changes.
+    pub fn request_gated(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, String)],
+        mut body: Body<'_>,
+        keep_going: &dyn Fn() -> bool,
+        max_response: usize,
+    ) -> Result<Response, HttpError> {
+        let body_gate = match &body {
+            Body::Stream { keep_going, .. } => Some(*keep_going),
+            _ => None,
+        };
+        let proceed = || keep_going() && body_gate.is_none_or(|gate| gate());
+        if !proceed() {
+            return Err(HttpError::Body(io::Error::other("request abandoned")));
+        }
+        let mut stream = self.connect(&proceed)?;
         let len = match &body {
             Body::None => 0,
             Body::Bytes(b) => b.len() as u64,
@@ -117,11 +141,10 @@ impl HttpClient {
         }
         head.push_str("\r\n");
         stream.set_nonblocking(true)?;
-        let always = || true;
-        write_gated(&mut stream, head.as_bytes(), &always, self.io_timeout)?;
+        write_gated(&mut stream, head.as_bytes(), &proceed, self.io_timeout)?;
         match &mut body {
             Body::None => {}
-            Body::Bytes(bytes) => write_gated(&mut stream, bytes, &always, self.io_timeout)?,
+            Body::Bytes(bytes) => write_gated(&mut stream, bytes, &proceed, self.io_timeout)?,
             Body::Stream {
                 len,
                 reader,
@@ -150,33 +173,31 @@ impl HttpClient {
                 }
             }
         }
-        stream.set_nonblocking(false)?;
-        read_response(stream, method == "HEAD")
+        read_response(
+            GatedSocket {
+                stream,
+                proceed: &proceed,
+                timeout: self.io_timeout,
+            },
+            method == "HEAD",
+            max_response,
+        )
     }
 
-    fn connect(&self) -> Result<TcpStream, HttpError> {
-        let connect_err = |source: io::Error| HttpError::Connect {
+    fn connect(&self, proceed: &dyn Fn() -> bool) -> Result<TcpStream, HttpError> {
+        let stream = crate::connect::connect(
+            &self.authority,
+            self.connect_timeout,
+            proceed,
+            &self.address_cache,
+        )
+        .map_err(|source| HttpError::Connect {
             authority: self.authority.clone(),
             source,
-        };
-        let addrs = self
-            .authority
-            .to_socket_addrs()
-            .map_err(connect_err)?
-            .collect::<Vec<_>>();
-        let mut last = io::Error::new(io::ErrorKind::NotFound, "no address");
-        for addr in addrs {
-            match TcpStream::connect_timeout(&addr, self.connect_timeout) {
-                Ok(stream) => {
-                    stream.set_nodelay(true).ok();
-                    bound_send_buffer(&stream);
-                    stream.set_read_timeout(Some(self.io_timeout))?;
-                    return Ok(stream);
-                }
-                Err(e) => last = e,
-            }
-        }
-        Err(connect_err(last))
+        })?;
+        stream.set_nodelay(true).ok();
+        bound_send_buffer(&stream);
+        Ok(stream)
     }
 }
 
@@ -191,6 +212,10 @@ fn write_gated(
 ) -> Result<(), HttpError> {
     let mut last_progress = Instant::now();
     while !data.is_empty() {
+        if !keep_going() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            return Err(HttpError::Body(io::Error::other("request abandoned")));
+        }
         match stream.write(data) {
             Ok(0) => return Err(io::Error::from(io::ErrorKind::WriteZero).into()),
             Ok(n) => {
@@ -236,10 +261,51 @@ fn bound_send_buffer(stream: &TcpStream) {
 #[cfg(not(windows))]
 fn bound_send_buffer(_: &TcpStream) {}
 
-fn read_response(stream: TcpStream, head_only: bool) -> Result<Response, HttpError> {
+struct GatedSocket<'a> {
+    stream: TcpStream,
+    proceed: &'a dyn Fn() -> bool,
+    timeout: Duration,
+}
+
+impl Read for GatedSocket<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let started = Instant::now();
+        loop {
+            if !(self.proceed)() {
+                let _ = self.stream.shutdown(std::net::Shutdown::Both);
+                return Err(io::Error::other("request abandoned"));
+            }
+            let want = buf.len().min(WRITE_PIECE);
+            match self.stream.read(&mut buf[..want]) {
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    if started.elapsed() >= self.timeout {
+                        return Err(io::ErrorKind::TimedOut.into());
+                    }
+                    std::thread::sleep(WRITE_POLL);
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                result => return result,
+            }
+        }
+    }
+}
+
+fn read_line(reader: &mut impl BufRead, out: &mut String) -> Result<usize, HttpError> {
+    let n = reader.take(MAX_HEADER_BYTES as u64 + 1).read_line(out)?;
+    if n > MAX_HEADER_BYTES {
+        return Err(HttpError::Malformed("line too long".into()));
+    }
+    Ok(n)
+}
+
+fn read_response(
+    stream: impl Read,
+    head_only: bool,
+    max_body: usize,
+) -> Result<Response, HttpError> {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
-    reader.read_line(&mut line)?;
+    read_line(&mut reader, &mut line)?;
     let mut parts = line.trim_end().splitn(3, ' ');
     let version = parts.next().unwrap_or_default();
     if !version.starts_with("HTTP/1.") {
@@ -253,7 +319,7 @@ fn read_response(stream: TcpStream, head_only: bool) -> Result<Response, HttpErr
     let mut header_bytes = 0;
     loop {
         line.clear();
-        let n = reader.read_line(&mut line)?;
+        let n = read_line(&mut reader, &mut line)?;
         header_bytes += n;
         if n == 0 || header_bytes > MAX_HEADER_BYTES {
             return Err(HttpError::Malformed("headers too long or cut off".into()));
@@ -278,12 +344,12 @@ fn read_response(stream: TcpStream, head_only: bool) -> Result<Response, HttpErr
         .header("transfer-encoding")
         .is_some_and(|v| v.eq_ignore_ascii_case("chunked"));
     if chunked {
-        response.body = read_chunked(&mut reader)?;
+        response.body = read_chunked(&mut reader, max_body)?;
     } else if let Some(n) = response
         .header("content-length")
         .and_then(|v| v.parse::<usize>().ok())
     {
-        if n > MAX_BODY {
+        if n > max_body {
             return Err(HttpError::Malformed(format!("body of {n} bytes")));
         }
         let mut body = vec![0u8; n];
@@ -291,8 +357,8 @@ fn read_response(stream: TcpStream, head_only: bool) -> Result<Response, HttpErr
         response.body = body;
     } else {
         let mut body = Vec::new();
-        reader.take(MAX_BODY as u64 + 1).read_to_end(&mut body)?;
-        if body.len() > MAX_BODY {
+        reader.take(max_body as u64 + 1).read_to_end(&mut body)?;
+        if body.len() > max_body {
             return Err(HttpError::Malformed("body too long".into()));
         }
         response.body = body;
@@ -300,23 +366,28 @@ fn read_response(stream: TcpStream, head_only: bool) -> Result<Response, HttpErr
     Ok(response)
 }
 
-fn read_chunked(reader: &mut impl BufRead) -> Result<Vec<u8>, HttpError> {
+fn read_chunked(mut reader: &mut impl BufRead, max_body: usize) -> Result<Vec<u8>, HttpError> {
     let mut body = Vec::new();
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line)?;
+        read_line(&mut reader, &mut line)?;
         let size = usize::from_str_radix(line.trim().split(';').next().unwrap_or(""), 16)
             .map_err(|_| HttpError::Malformed(format!("chunk size {line:?}")))?;
         if size == 0 {
             // Trailers up to the blank line.
+            let mut trailer_bytes = 0;
             loop {
                 line.clear();
-                if reader.read_line(&mut line)? == 0 || line.trim().is_empty() {
+                trailer_bytes += read_line(&mut reader, &mut line)?;
+                if trailer_bytes > MAX_HEADER_BYTES {
+                    return Err(HttpError::Malformed("trailers too long".into()));
+                }
+                if line.is_empty() || line.trim().is_empty() {
                     return Ok(body);
                 }
             }
         }
-        if body.len() + size > MAX_BODY {
+        if size > max_body.saturating_sub(body.len()) {
             return Err(HttpError::Malformed("body too long".into()));
         }
         let start = body.len();
@@ -352,6 +423,59 @@ mod tests {
             got
         });
         (addr, handle)
+    }
+
+    #[test]
+    fn a_stalled_response_is_abandoned_promptly_when_the_gate_closes() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let started = Arc::new(AtomicBool::new(false));
+        let began = started.clone();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\n\r\nx")
+                .unwrap();
+            began.store(true, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(250));
+        });
+        let allowed = Arc::new(AtomicBool::new(true));
+        let gate = allowed.clone();
+        let seen = started.clone();
+        let closer = thread::spawn(move || {
+            while !seen.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            gate.store(false, Ordering::SeqCst);
+            Instant::now()
+        });
+        let response = HttpClient::new(&addr).request_gated(
+            "GET",
+            "/",
+            &[],
+            Body::None,
+            &|| allowed.load(Ordering::SeqCst),
+            2048,
+        );
+        let closed = closer.join().unwrap();
+        assert!(response.is_err());
+        assert!(closed.elapsed() < Duration::from_millis(100));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn downloaded_body_respects_the_callers_explicit_bound() {
+        let (addr, server) = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n12345");
+        let response =
+            HttpClient::new(&addr).request_gated("GET", "/", &[], Body::None, &|| true, 4);
+        assert!(matches!(response, Err(HttpError::Malformed(_))));
+        server.join().unwrap();
     }
 
     #[test]
@@ -508,9 +632,10 @@ mod tests {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = l.local_addr().unwrap().to_string();
         drop(l);
-        assert!(matches!(
-            HttpClient::new(&addr).request("GET", "/", &[], Body::None),
-            Err(HttpError::Connect { .. })
-        ));
+        let result = HttpClient::new(&addr).request("GET", "/", &[], Body::None);
+        assert!(
+            matches!(result, Err(HttpError::Connect { .. })),
+            "{result:?}"
+        );
     }
 }

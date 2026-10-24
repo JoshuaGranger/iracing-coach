@@ -187,6 +187,8 @@ pub struct Hub {
     pub stream: Mutex<StreamControl>,
     pub frames: FrameQueue,
     pub uploads: UploadStats,
+    sync_info: Mutex<Value>,
+    replay_capability_until: AtomicU64,
     /// Durable field recorder diagnostic; atomic so SDK backpressure never takes an I/O lock.
     pub field_capture_gaps: AtomicU64,
     pub field_generation: AtomicU64,
@@ -195,6 +197,8 @@ pub struct Hub {
     /// `status.streaming`, readable without cloning the status (the link asks every pass).
     streaming: AtomicBool,
     status_gen: AtomicU64,
+    driver_epoch: AtomicU64,
+    bulk_io_allowed: AtomicBool,
     /// The generation of the status the link last sent (for a clean drain at exit).
     status_sent_gen: AtomicU64,
     layout: Mutex<Option<LayoutState>>,
@@ -220,12 +224,18 @@ impl Hub {
             stream: Mutex::new(StreamControl::new()),
             frames: FrameQueue::new(FRAME_QUEUE_CAPACITY),
             uploads: UploadStats::default(),
+            replay_capability_until: AtomicU64::new(0),
+            sync_info: Mutex::new(
+                serde_json::json!({"state":"waiting","last_error":null,"last_sync_at":null,"installed":0}),
+            ),
             field_capture_gaps: AtomicU64::new(0),
             field_generation: AtomicU64::new(0),
             field_scanned_generation: AtomicU64::new(0),
             status: Mutex::new(StatusModel::default()),
             streaming: AtomicBool::new(false),
             status_gen: AtomicU64::new(0),
+            driver_epoch: AtomicU64::new(0),
+            bulk_io_allowed: AtomicBool::new(false),
             status_sent_gen: AtomicU64::new(0),
             layout: Mutex::new(None),
             layout_gen: AtomicU64::new(0),
@@ -258,6 +268,35 @@ impl Hub {
         self.frames.clear();
     }
 
+    /// Only a recent valid manifest may enable a replay upload to this server.
+    pub fn set_replay_upload_capability(&self, enabled: bool) {
+        self.replay_capability_until.store(
+            if enabled {
+                self.clock.mono_ms().saturating_add(120_000)
+            } else {
+                0
+            },
+            Ordering::SeqCst,
+        );
+        self.wake_uploader();
+    }
+    pub fn replay_upload_capability(&self) -> bool {
+        let until = self.replay_capability_until.load(Ordering::SeqCst);
+        until > 0 && self.clock.mono_ms() <= until
+    }
+
+    pub fn sync_info(&self) -> Value {
+        lock(&self.sync_info).clone()
+    }
+
+    pub fn set_sync_info(&self, next: Value) {
+        let mut info = lock(&self.sync_info);
+        if *info != next {
+            *info = next;
+            self.status_gen.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     // ---- status ----
 
     pub fn status(&self) -> StatusModel {
@@ -268,6 +307,14 @@ impl Hub {
     pub fn set_status(&self, next: StatusModel) {
         let mut guard = lock(&self.status);
         if *guard != next {
+            let old_driver = guard
+                .driver
+                .as_ref()
+                .and_then(|d| d["customer_id"].as_i64());
+            let new_driver = next.driver.as_ref().and_then(|d| d["customer_id"].as_i64());
+            if old_driver != new_driver {
+                self.driver_epoch.fetch_add(1, Ordering::SeqCst);
+            }
             self.streaming.store(next.streaming, Ordering::SeqCst);
             *guard = next;
             self.status_gen.fetch_add(1, Ordering::SeqCst);
@@ -277,6 +324,18 @@ impl Hub {
     /// Whether the status says the collector is streaming (no clone of the status).
     pub fn is_streaming(&self) -> bool {
         self.streaming.load(Ordering::SeqCst)
+    }
+
+    pub fn driver_epoch(&self) -> u64 {
+        self.driver_epoch.load(Ordering::SeqCst)
+    }
+
+    /// Also checked by the network loop so a stalled reader's evidence expiry is published.
+    pub fn refresh_bulk_gate_status(&self) {
+        let allowed = self.gate.allows_bulk_work();
+        if self.bulk_io_allowed.swap(allowed, Ordering::SeqCst) != allowed {
+            self.status_gen.fetch_add(1, Ordering::SeqCst);
+        }
     }
 
     pub fn status_gen(&self) -> u64 {

@@ -497,6 +497,12 @@ impl App {
         } else {
             server
         };
+        let sync = self.hub.sync_info();
+        let server = if sync["last_error"].is_string() {
+            format!("{server} · Setup sync needs attention (see logs)")
+        } else {
+            server
+        };
         let gaps = self.hub.field_capture_gaps.load(Ordering::Relaxed);
         let sim = if gaps > 0 {
             format!("Field recording gaps: {gaps} · {sim}")

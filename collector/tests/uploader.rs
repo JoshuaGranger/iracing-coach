@@ -70,9 +70,12 @@ impl Env {
     }
 
     fn set_off_track(&self) {
-        self.hub.gate.observe(Evidence::Live {
-            on_track: Some(false),
-        });
+        self.hub.gate.observe_with_session(
+            Evidence::Live {
+                on_track: Some(false),
+            },
+            Some(false),
+        );
     }
 
     fn set_on_track(&self) {
@@ -751,4 +754,148 @@ fn a_recording_the_server_refuses_for_good_is_terminal_and_survives_a_restart_un
         "the mock failed once and saw no retry"
     );
     assert!(mock.with(|s| s.uploads.is_empty()));
+}
+
+#[test]
+fn a_replay_waits_for_advertised_support_then_uploads_and_resumes() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let bytes = vec![43u8; 200_000];
+    let path = env.paths.replays_dir().join("series/named.RPY");
+    write_file(&path, &bytes);
+    age_file(&path, 30);
+    let mut up = env.uploader(&mock.url(), 32 * 1024);
+    env.drain(&mut up, 10);
+    mock.with(|s| assert!(s.creates.is_empty()));
+    assert_eq!(env.hub.uploads.rejected.load(Ordering::Relaxed), 0);
+    env.hub.set_replay_upload_capability(true);
+    mock.with(|s| s.put_failures.push_back(PutFail::DropAfter(35_000)));
+    env.drain(&mut up, 60);
+    mock.with(|s| {
+        let upload = &s.uploads[&sha256_hex(&bytes)];
+        assert!(upload.verified);
+        assert_eq!(upload.kind, "rpy");
+        assert_eq!(upload.part, bytes);
+    });
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    let creates = mock.with(|s| s.creates.len());
+    let restarted = env.restarted();
+    let mut up = restarted.uploader(&mock.url(), 32 * 1024);
+    restarted.drain(&mut up, 10);
+    assert_eq!(mock.with(|s| s.creates.len()), creates);
+}
+
+#[test]
+fn a_replay_must_be_quiet_and_match_the_scanned_metadata() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let path = env.paths.replays_dir().join("new.rpy");
+    write_file(&path, b"writing");
+    env.hub.set_replay_upload_capability(true);
+    let mut up = env.uploader(&mock.url(), 64 * 1024);
+    env.drain(&mut up, 8);
+    mock.with(|s| assert!(s.creates.is_empty()));
+    assert_eq!(env.pending_journal(), 0);
+    age_file(&path, 30);
+    up.request_rescan();
+    up.step();
+    write_file(&path, b"changed after scan");
+    age_file(&path, 30);
+    env.drain(&mut up, 4);
+    mock.with(|s| assert!(s.creates.is_empty()));
+    up.request_rescan();
+    env.drain(&mut up, 20);
+    mock.with(|s| {
+        assert_eq!(
+            s.uploads[&sha256_hex(b"changed after scan")].part,
+            b"changed after scan"
+        )
+    });
+}
+
+#[test]
+fn race_and_unknown_session_pause_bulk_scanning_even_in_the_garage() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let path = env.paths.telemetry_dir().join("ready.ibt");
+    recording(&path, 2, 8);
+    let mut up = env.uploader(&mock.url(), 64 * 1024);
+    for in_race in [Some(true), None] {
+        env.hub.gate.observe_with_session(
+            Evidence::Live {
+                on_track: Some(false),
+            },
+            in_race,
+        );
+        assert!(matches!(up.step(), Step::Idle(_)));
+        assert_eq!(env.hub.uploads.scans_done.load(Ordering::Relaxed), 0);
+    }
+    env.set_off_track();
+    env.drain(&mut up, 20);
+    mock.with(|s| assert!(s.uploads[&sha256_hex(&std::fs::read(path).unwrap())].verified));
+}
+
+#[test]
+fn explicit_library_deletion_sends_no_source_payload_and_survives_restart() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let path = env.paths.telemetry_dir().join("retained.ibt");
+    let bytes = recording(&path, 2, 9);
+    mock.with(|s| {
+        s.deleted.insert(sha256_hex(&bytes));
+    });
+    let mut up = env.uploader(&mock.url(), 64 * 1024);
+    env.drain(&mut up, 20);
+    mock.with(|s| {
+        assert!(s.puts.is_empty());
+        assert!(s.uploads.is_empty());
+        assert_eq!(s.creates.len(), 1);
+    });
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    assert_eq!(env.pending_journal(), 0);
+    assert_eq!(env.hub.uploads.files_uploaded.load(Ordering::Relaxed), 0);
+    assert_eq!(env.hub.uploads.files_held.load(Ordering::Relaxed), 0);
+    let restarted = env.restarted();
+    let mut up = restarted.uploader(&mock.url(), 64 * 1024);
+    restarted.drain(&mut up, 10);
+    mock.with(|s| assert_eq!(s.creates.len(), 1));
+}
+
+#[test]
+fn replay_old_server_rejection_is_not_a_durable_refusal() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let path = env.paths.replays_dir().join("retained.rpy");
+    write_file(&path, b"replay bytes");
+    age_file(&path, 30);
+    env.hub.set_replay_upload_capability(true);
+    mock.with(|s| s.create_failures.push_back(400));
+    let mut up = env.uploader(&mock.url(), 64 * 1024);
+    env.drain(&mut up, 8);
+    assert!(!env.hub.replay_upload_capability());
+    assert_eq!(env.hub.uploads.rejected.load(Ordering::Relaxed), 0);
+    env.hub.set_replay_upload_capability(true);
+    env.drain(&mut up, 30);
+    mock.with(|s| assert!(s.uploads[&sha256_hex(b"replay bytes")].verified));
+    assert!(path.exists());
+}
+
+#[test]
+fn a_future_dated_replay_is_not_finalized_or_hashed() {
+    let env = Env::new();
+    let mock = Mock::start();
+    let path = env.paths.replays_dir().join("future.rpy");
+    write_file(&path, b"still writing");
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+        .unwrap();
+    env.hub.set_replay_upload_capability(true);
+    let mut up = env.uploader(&mock.url(), 64 * 1024);
+    env.drain(&mut up, 8);
+    mock.with(|s| assert!(s.creates.is_empty()));
+    assert_eq!(env.pending_journal(), 0);
+    assert_eq!(std::fs::read(path).unwrap(), b"still writing");
 }

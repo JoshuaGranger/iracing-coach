@@ -1,6 +1,6 @@
 # coach-collector
 
-The sim-PC half of iRacing Coach: a native Rust program with no WebView and no .NET. It reads iRacing's shared memory, runs the live engine (`crates/coach-live`), draws the always-on-top monitor, captures garage setups, and uploads finalized recordings to the server. Contracts: `docs/08-rewrite/contracts/collector-protocol.md`, `live-frame.md`, the `Collector*` and `Upload*` parts of `api.openapi.yaml`, `nas-layout.md` section 7.
+The sim-PC half of iRacing Coach: a native Rust program with no WebView and no .NET. It reads iRacing's shared memory, runs the live engine (`crates/coach-live`), draws the always-on-top monitor, captures garage setups, and automatically syncs finalized recordings, saved replays and managed setup copies through the server. Contracts: `docs/08-rewrite/contracts/collector-protocol.md`, `live-frame.md`, the `Collector*` and `Upload*` parts of `api.openapi.yaml`, `nas-layout.md` section 7.
 
 ```
 coach-collector [run] [--server URL] [--replay FILE [--speed N]] [--dry-run] [--no-ui]
@@ -24,6 +24,7 @@ coach-collector backfill [--dry-run] [--archive DIR | --no-archive] [--server UR
 | `uploader`, `http`, `scan`, `win::watcher` | Finalization gate, SHA-256, create, 4 MiB chunks, resume; the gate is re-checked per 32 KiB piece read, per directory entry scanned, per journal entry matched, and every 2 ms while a full socket is waited on (the socket is non-blocking), so an abort completes within 100 ms |
 | `garage`, `garage_io` | P5 two-moment capture state machine; journal thread; `.sto` search and hash under the gate |
 | `backfill` | `coach-collector backfill`, D12 step 3: the uploader pointed at the telemetry folder, the legacy raw archive and any FOLDER given, at any depth; its own journal, its own shared-memory evidence of the car being off track; `--dry-run` lists and writes nothing (see Backfill) |
+| `sync` | 60-second paginated setup pull for the persisted driver; bounded hash-verified downloads, atomic new managed files, durable installation receipts and no-overwrite conflicts |
 | `journal` | `journal.jsonl`: pending recordings, garage snapshots and commits, hash memo, `seen` memo (restart does not hash or post a held file again), and the terminal state of recordings given up on (see Refused recordings). A torn tail is cut off at start; a failed append is not applied and the caller retries it; a journal that cannot be opened holds entries in memory, sends no garage event, and opens the file again |
 | `link`, `ws`, `stream` | One WebSocket (own RFC 6455 client), presence, stream latch, layout sync, garage resend after every welcome |
 | `win::ui`, `win::render`, `layout`, `hotkey` | Layered, always draggable, no-activate overlay, tray, hotkey, server prompt; GDI renderer usable on a memory bitmap. The overlay looks for new figures 10 times a second and redraws only the tiles whose text, accent or bar position changed, into a back buffer it keeps (`Renderer::dirty`, `paint_tiles`); a trend tile with a value scrolls, so it redraws in every step |
@@ -41,13 +42,47 @@ Gate G4-3: at most 1.5 % of one core while the car moves, streaming at 60 Hz wit
 
 ## State (`%LOCALAPPDATA%\iRacingCoach`)
 
-`collector.json` (collector id, server, placement, cached layout), `journal.jsonl`, `logs\collector.log` (+ `.1`, 5 MB each), `dry-run.jsonl` in `--dry-run`, and while a backfill runs `backfill-journal.jsonl` and `backfill.lock`. The folder name is shared with the retired desktop app: `uninstall` removes only these files. The collector never writes under `Documents\iRacing`.
+`collector.json` (collector id, server, placement, cached layout), `journal.jsonl`, `setup-sync.json` (installed full identities, local-deletion retention and sync result), `logs\collector.log` (+ `.1`, 5 MB each), `dry-run.jsonl` in `--dry-run`, and while a backfill runs `backfill-journal.jsonl` and `backfill.lock`. The folder name is shared with the retired desktop app: `uninstall` removes only these files. The collector reads original iRacing files only. Setup pull may create new hash/version-named copies beneath `Documents\iRacing\setups\<car>\Coach Synced`; it never replaces an existing file or removes any source.
 
 The Windows installer installs the executable separately under `%LOCALAPPDATA%\Programs\iRacingCoach`. It runs `install --server URL` to retain the collector id and settings, enable startup at Windows sign-in, and start the companion immediately. A Start menu launch of `run` hides its own private console; an existing PowerShell/cmd console and headless diagnostics remain visible. Upgrades stop the earlier process before loading its settings; unknown optional top-level configuration fields survive a save.
 
 Installer removal uses `uninstall --installer`: stop and wait up to eight seconds, then remove only the sign-in Run value. The state folder, pending-upload journal, logs and executable remain; the installer owns removal of the installed files. `stop` keeps the Run value too. Both return success when already stopped; installer uninstall also succeeds when the Run value is absent. A stop timeout or registry error returns exit code 1 before file removal; invalid CLI arguments return 2. Bare `uninstall` retains its earlier file-cleanup behavior for manual installs.
 
 Lifecycle integration tests inherit `COACH_TEST_RUN_KEY` to redirect startup to a throwaway HKCU key and `COACH_TEST_INSTANCE_ID` to isolate the named mutex/event. With an id, the names are `Local\iRacingCoach.Collector.<id>` and `Local\iRacingCoach.Collector.Quit.<id>`; absent/empty uses the names without a suffix. Detached children inherit both variables. The normal installer checks that `iRacingSim64DX11` is closed before changing the installation.
+
+## Automatic NAS sync
+
+The companion runs sync automatically with the server configured in `collector.json`; it needs
+no NAS mount or credentials on the sim PC. The readable durable library is
+`\\192.168.1.82\apps\iracing-coach\library`. The server catalogs one canonical NAS payload
+per kind/hash; library objects and original sim files are retained independently.
+
+- Finalized `.ibt`, setup `.sto`/`.htm`, field segments and saved `.rpy` files upload through the
+  existing resumable, acknowledged, SHA-256-verified path. Native replays are discovered
+  recursively under `Documents\iRacing\replay`, with a ten-second quiet/stable-size gate.
+  Replays are archive-only and do not appear as telemetry sessions. The server advertises replay
+  capability before any replay bytes are sent; old servers keep these files pending.
+- All bulk scans, hashes, uploads and setup downloads pause on track, throughout a Race session
+  (including its garage), or when SDK/session evidence is missing or stale. Work resumes when
+  fresh evidence permits it. Tiny garage captures keep their existing behavior.
+- Every 60 seconds, Coach working revisions and NAS inbox imports for the collector's last
+  driver download into new `setups\<car>\Coach Synced` copies (`NAS` subfolder for inbox imports).
+  Names carry stable identity, version and hash suffixes. Same bytes are a no-op; changed
+  existing files and source purchases are never replaced. Old installed versions remain.
+- Put NAS imports under `library\setups\<customer-id>\<car>\inbox`. They become locked sources;
+  Save As creates an editable Coach lineage. Editing a downloaded file in iRacing uploads a
+  new locked source, rather than silently changing the Coach revision.
+- Sim deletion never requests a NAS deletion. Removing an installed managed rig copy keeps
+  that exact revision removed; a later revision may still arrive. A deliberate NAS deletion
+  is acknowledged as `deleted` and sends no source payload, so restart/backfill cannot undo it.
+
+Replay uploads are at most 16 GiB and also bounded by server spool capacity; other uploads
+retain their 4 GiB cap. Sync errors remain in collector status and `logs\collector.log`, and the
+tray indicates when setup sync needs attention. `setup-sync.json` is durable installation
+state: preserve it to retain intentional rig-copy deletions. Corrupt or unsupported receipt
+state fails clearly and is never silently replaced. A durable installation intent is written
+before publication. After an interrupted install, an existing exact copy is verified before
+acknowledgement; an absent copy stays absent with a sync error rather than being recreated.
 
 ## Optional wheel interruption recorder
 
@@ -69,7 +104,7 @@ A recording the collector cannot read as one (the header says 0 records, the siz
 
 ## Backfill
 
-`coach-collector backfill` is the D12 step 3 command: it uploads the recordings under the legacy raw archive (`Documents\iRacing Coach\data\telemetry-traces\raw`, one folder per hash; `--archive DIR` changes it), the telemetry folder, and each FOLDER given (all searched at any depth for `.ibt`; `--no-archive` searches only the FOLDERs). It is the normal uploader: finalization gate, SHA-256 at background priority, `POST /api/v1/uploads`, 4 MiB chunks, resume, hash-verified, only while the collector's own read of the shared memory says the car is off track or iRacing is closed (it waits otherwise), files opened read-only with sharing and never written. An archived recording is uploaded under the name its `manifest.json` records (`original_path`, else a `.ibt` `source_discoveries[].source_path`), as `tools/migrate/Backfill-RawArchive.ps1` did. It is idempotent: the server answers `verified` for bytes it holds and the file is dropped; what the running collector's `journal.jsonl` (read only) or the backfill's own journal already knows the server holds is not even hashed. Progress is in `backfill-journal.jsonl`, so an interrupted backfill resumes, and `backfill.lock` keeps two from running at once. Refused recordings end in the terminal state above and are listed at the end. A run ends when every file is uploaded, held, or refused; it prints a progress line every 15 s.
+`coach-collector backfill` is the D12 step 3 command: it uploads the recordings under the legacy raw archive (`Documents\iRacing Coach\data\telemetry-traces\raw`, one folder per hash; `--archive DIR` changes it), the telemetry folder, and each FOLDER given (all searched at any depth for `.ibt`; `--no-archive` searches only the FOLDERs). It is the normal uploader: finalization gate, SHA-256 at background priority, `POST /api/v1/uploads`, 4 MiB chunks, resume, hash-verified, only while the collector's own read of shared memory says the car is off track in a known non-Race session, or iRacing is closed (it waits otherwise), files opened read-only with sharing and never written. An archived recording is uploaded under the name its `manifest.json` records (`original_path`, else a `.ibt` `source_discoveries[].source_path`), as `tools/migrate/Backfill-RawArchive.ps1` did. It is idempotent: the server answers `verified` for bytes it holds and the file is dropped; what the running collector's `journal.jsonl` (read only) or the backfill's own journal already knows the server holds is not even hashed. Progress is in `backfill-journal.jsonl`, so an interrupted backfill resumes, and `backfill.lock` keeps two from running at once. Refused recordings end in the terminal state above and are listed at the end. A run ends when every file is uploaded, held, or refused; it prints a progress line every 15 s.
 
 `--dry-run` waits for the off-track evidence like any scan, then lists each recording (`queue`, `held`, `refused`, size, mtime, path, and `as <name>` when the archive's name differs) and a total line. It sends nothing, hashes nothing, and creates no file or folder.
 

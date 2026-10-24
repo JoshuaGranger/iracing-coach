@@ -44,7 +44,8 @@ pub struct RejectedEntry {
     pub at_ms: u64,
 }
 
-/// A file the server is known to hold, remembered so a restart does not hash or post it again.
+/// A file the server has accounted for (held or explicitly library-deleted), remembered so a
+/// restart does not hash or post it again. A deletion acknowledgement never claims archived.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SeenEntry {
     pub path: String,

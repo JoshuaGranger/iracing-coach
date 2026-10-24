@@ -32,6 +32,7 @@ pub enum Evidence {
 #[derive(Debug, Clone, Copy)]
 struct State {
     evidence: Evidence,
+    in_race: Option<bool>,
     /// When the current kind of evidence began (monotonic ms).
     since: u64,
     /// When the reader last reported (monotonic ms).
@@ -53,6 +54,12 @@ impl TrackGate {
 
     /// Called by the reader on every pass, including idle ones, so the observation stays fresh.
     pub fn observe(&self, evidence: Evidence) {
+        self.observe_with_session(evidence, None);
+    }
+
+    /// Bulk sync needs a known non-Race session as well as fresh off-track evidence.
+    /// `None` means unknown, never an assumption that a session is safe.
+    pub fn observe_with_session(&self, evidence: Evidence, in_race: Option<bool>) {
         let now = self.clock.mono_ms();
         let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let since = match *guard {
@@ -61,6 +68,7 @@ impl TrackGate {
         };
         *guard = Some(State {
             evidence,
+            in_race,
             since,
             seen: now,
         });
@@ -68,6 +76,16 @@ impl TrackGate {
 
     /// True when file work (hashing, scanning, uploading) may proceed right now.
     pub fn allows_file_work(&self) -> bool {
+        self.allows(false)
+    }
+
+    /// Uploads, downloads, hashing and scans pause throughout Race, including its garage.
+    /// Tiny garage captures retain their existing off-track-only semantics.
+    pub fn allows_bulk_work(&self) -> bool {
+        self.allows(true)
+    }
+
+    fn allows(&self, bulk: bool) -> bool {
         let now = self.clock.mono_ms();
         let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let Some(state) = *guard else {
@@ -79,7 +97,9 @@ impl TrackGate {
         match state.evidence {
             Evidence::NoMap => true,
             Evidence::StatusClear => now.saturating_sub(state.since) >= STATUS_CLEAR_MS,
-            Evidence::Live { on_track } => on_track == Some(false),
+            Evidence::Live { on_track } => {
+                on_track == Some(false) && (!bulk || state.in_race == Some(false))
+            }
             Evidence::Stale => false,
         }
     }
@@ -107,6 +127,39 @@ mod tests {
     fn gate() -> (Arc<TrackGate>, Arc<ManualClock>) {
         let clock = Arc::new(ManualClock::new(0));
         (TrackGate::new(clock.clone()), clock)
+    }
+
+    #[test]
+    fn bulk_work_requires_non_race_context_but_garage_capture_keeps_its_gate() {
+        let (g, clock) = gate();
+        g.observe_with_session(
+            Evidence::Live {
+                on_track: Some(false),
+            },
+            Some(true),
+        );
+        assert!(g.allows_file_work());
+        assert!(!g.allows_bulk_work());
+        g.observe(Evidence::Live {
+            on_track: Some(false),
+        });
+        assert!(!g.allows_bulk_work(), "unknown session pauses bulk work");
+        g.observe_with_session(
+            Evidence::Live {
+                on_track: Some(false),
+            },
+            Some(false),
+        );
+        assert!(g.allows_bulk_work());
+        clock.advance(1_001);
+        assert!(!g.allows_bulk_work());
+        g.observe(Evidence::NoMap);
+        assert!(g.allows_bulk_work());
+        g.observe(Evidence::StatusClear);
+        assert!(!g.allows_bulk_work());
+        clock.advance(2_001);
+        g.observe(Evidence::StatusClear);
+        assert!(g.allows_bulk_work());
     }
 
     #[test]

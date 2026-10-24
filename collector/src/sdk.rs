@@ -179,6 +179,35 @@ impl SdkReader {
         }
     }
 
+    /// A fresh live session's race classification for bulk-transfer gating.
+    pub fn in_race(&self) -> Option<bool> {
+        let kind = self
+            .context
+            .as_deref()?
+            .session_type(i64::from(self.sample.session_num?))?;
+        if kind.eq_ignore_ascii_case("Race") {
+            Some(true)
+        } else if [
+            "Practice",
+            "Lone Practice",
+            "Testing",
+            "Offline Testing",
+            "Qualify",
+            "Lone Qualify",
+            "Open Qualify",
+            "Warmup",
+            "Time Trial",
+            "Time Attack",
+        ]
+        .iter()
+        .any(|known| kind.eq_ignore_ascii_case(known))
+        {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     pub fn sample(&self) -> &Sample {
         &self.sample
     }
@@ -475,6 +504,35 @@ mod tests {
     use super::*;
     use crate::gate::TrackGate;
     use crate::util::ManualClock;
+
+    #[test]
+    fn bulk_session_classification_uses_the_current_native_session_type() {
+        use crate::fixture::SessionSpec;
+        let mut reader = SdkReader::new(Box::new(Open::Absent));
+        assert_eq!(reader.in_race(), None);
+        reader.sample.session_num = Some(0);
+        for (kind, expected) in [
+            ("Race", Some(true)),
+            ("Offline Testing", Some(false)),
+            ("Practice", Some(false)),
+            ("Qualify", Some(false)),
+            ("unexpected", None),
+        ] {
+            let spec = SessionSpec {
+                session_type: kind.into(),
+                ..SessionSpec::default()
+            };
+            let info = SessionInfo::parse(&spec.yaml()).unwrap();
+            reader.apply_session_info(&info, 1);
+            assert_eq!(reader.in_race(), expected, "{kind}");
+        }
+        reader.sample.session_num = Some(17);
+        assert_eq!(
+            reader.in_race(),
+            None,
+            "missing session cannot be assumed safe"
+        );
+    }
 
     /// A map too short to hold the header: it opens, but nothing can be read from it.
     struct ShortMap;

@@ -22,7 +22,8 @@ use crate::http::{Body, HttpClient, HttpError};
 use crate::hub::Hub;
 use crate::journal::{Journal, RecordingEntry, RejectedEntry, SeenEntry};
 use crate::scan::{
-    Candidate, Kind, archived_name, scan_recordings, scan_recordings_below, scan_setups,
+    Candidate, Kind, archived_name, scan_recordings, scan_recordings_below, scan_replays,
+    scan_setups,
 };
 use crate::util::{Clock, iso_utc};
 
@@ -202,7 +203,7 @@ impl Uploader {
     fn proceed(&self) -> impl Fn() -> bool + use<> {
         let gate = self.hub.gate.clone();
         let hub = self.hub.clone();
-        move || gate.allows_file_work() && !hub.is_shutdown()
+        move || gate.allows_bulk_work() && !hub.is_shutdown()
     }
 
     /// Items pending in the journal from an earlier run, whose files still exist. False when the
@@ -282,6 +283,7 @@ impl Uploader {
             Some(roots) => scan_recordings_below(roots, proceed),
             None => scan_recordings(&self.paths.telemetry_dir(), proceed).and_then(|mut found| {
                 found.extend(scan_setups(&self.paths.setups_dir(), proceed)?);
+                found.extend(scan_replays(&self.paths.replays_dir(), proceed)?);
                 found.extend(crate::scan::scan_fields(
                     &self.paths.state_dir.join("field"),
                     proceed,
@@ -362,7 +364,7 @@ impl Uploader {
         }
         let now = self.now();
         let has_work = self.scanned_at_ms.is_none() || self.rescan_requested || self.pending() > 0;
-        if !self.hub.gate.allows_file_work() {
+        if !self.hub.gate.allows_bulk_work() {
             self.hub
                 .uploads
                 .waiting_for_off_track
@@ -399,7 +401,10 @@ impl Uploader {
             .items
             .iter()
             .enumerate()
-            .filter(|(_, i)| i.next_try_ms <= now)
+            .filter(|(_, i)| {
+                i.next_try_ms <= now
+                    && (i.cand.kind != Kind::Rpy || self.hub.replay_upload_capability())
+            })
             .min_by_key(|(_, i)| (i.cand.kind != Kind::Ibt, std::cmp::Reverse(i.cand.mtime_ms)))
             .map(|(idx, _)| idx);
         let Some(idx) = next else {
@@ -422,7 +427,7 @@ impl Uploader {
                 // Collector-owned field segments can be reclaimed only after verified/have.
                 // iRacing recordings and every other source file remain read-only.
                 if cand.kind == Kind::Field
-                    && self.hub.gate.allows_file_work()
+                    && self.hub.gate.allows_bulk_work()
                     && cand.path.parent() == Some(self.paths.state_dir.join("field").as_path())
                     && let Err(error) = std::fs::remove_file(&cand.path)
                 {
@@ -472,6 +477,9 @@ impl Uploader {
     }
 
     fn process(&mut self, cand: &Candidate) -> Outcome {
+        if cand.kind == Kind::Rpy && !self.hub.replay_upload_capability() {
+            return Outcome::Later(1_000);
+        }
         let now_unix = self.hub.clock.unix_ms();
         // 1. Known to the server already (same path, size, mtime).
         if self.held_hash(cand, now_unix).is_some() {
@@ -495,6 +503,22 @@ impl Uploader {
                         _ => Outcome::Later(not_ready_delay(&reason, &self.settings)),
                     };
                 }
+            }
+        }
+        if cand.kind == Kind::Rpy {
+            let Some(current) = stat(&cand.path, cand.kind, None) else {
+                return Outcome::Later(5_000);
+            };
+            let quiet = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .map(|t| t.as_millis() as u64)
+                .is_some_and(|now| now.saturating_sub(current.mtime_ms) >= 10_000);
+            if !quiet || current.size != cand.size || current.mtime_ms != cand.mtime_ms {
+                return Outcome::Later(self.settings.not_ready_retry_ms);
+            }
+            if cand.size > 16 * 1024 * 1024 * 1024 {
+                return Outcome::Rejected("replay exceeds the 16 GiB upload limit".into());
             }
         }
         // 3. Pending in the journal.
@@ -550,7 +574,7 @@ impl Uploader {
     fn hash(&mut self, cand: &Candidate) -> Result<String, Outcome> {
         let gate = self.hub.gate.clone();
         let hub = self.hub.clone();
-        let mut proceed = move |_: u64| gate.allows_file_work() && !hub.is_shutdown();
+        let mut proceed = move |_: u64| gate.allows_bulk_work() && !hub.is_shutdown();
         match sha256_file(&cand.path, &mut proceed) {
             Ok(HashOutcome::Complete { sha256, bytes }) => {
                 // The file must not have changed while it was read.
@@ -595,8 +619,12 @@ impl Uploader {
             "customer_id": self.last_customer_id,
         })
         .to_string();
-        let mut offset = match self.create(&create) {
+        let mut offset = match self.create(&create, cand.kind) {
             Ok(Created::Open(offset)) => offset,
+            Ok(Created::Deleted) => {
+                crate::info!("library deletion retained for {}", cand.path.display());
+                return self.finish(cand, sha);
+            }
             Ok(Created::Held) => {
                 self.count(|s| &s.files_held);
                 return self.finish(cand, sha);
@@ -613,7 +641,7 @@ impl Uploader {
             }
         };
         loop {
-            if !self.hub.gate.allows_file_work() || self.hub.is_shutdown() {
+            if !self.hub.gate.allows_bulk_work() || self.hub.is_shutdown() {
                 return Outcome::GateClosed;
             }
             if offset >= cand.size {
@@ -663,11 +691,21 @@ impl Uploader {
                                     .and_then(|o| o.as_u64())
                                     .unwrap_or(offset + len);
                             }
-                            Some(_) => {
+                            Some("deleted") => {
+                                crate::info!(
+                                    "library deletion retained for {}",
+                                    cand.path.display()
+                                );
+                                return self.finish(cand, sha);
+                            }
+                            Some(
+                                "verified" | "parsed" | "discovered" | "archived"
+                                | "analysis_queued" | "analyzed" | "deferred" | "failed",
+                            ) => {
                                 self.count(|s| &s.files_uploaded);
                                 return self.finish(cand, sha);
                             }
-                            None => {
+                            _ => {
                                 return Outcome::ServerTrouble {
                                     retry_after_ms: None,
                                 };
@@ -705,12 +743,15 @@ impl Uploader {
         }
     }
 
-    fn create(&mut self, body: &str) -> Result<Created, Outcome> {
-        let resp = self.http.request(
+    fn create(&mut self, body: &str, kind: Kind) -> Result<Created, Outcome> {
+        let live = self.proceed();
+        let resp = self.http.request_gated(
             "POST",
             "/api/v1/uploads",
             &[("Content-Type", "application/json".to_string())],
             Body::Bytes(body.as_bytes()),
+            &live,
+            1 << 20,
         );
         let resp = match resp {
             Ok(r) => r,
@@ -728,8 +769,12 @@ impl Uploader {
                     Some("open") => Ok(Created::Open(
                         json.get("offset").and_then(|o| o.as_u64()).unwrap_or(0),
                     )),
-                    Some(_) => Ok(Created::Held),
-                    None => Err(Outcome::ServerTrouble {
+                    Some("deleted") => Ok(Created::Deleted),
+                    Some(
+                        "verified" | "parsed" | "discovered" | "archived" | "analysis_queued"
+                        | "analyzed" | "deferred" | "failed",
+                    ) => Ok(Created::Held),
+                    _ => Err(Outcome::ServerTrouble {
                         retry_after_ms: None,
                     }),
                 }
@@ -740,6 +785,14 @@ impl Uploader {
             413 => Err(Outcome::Rejected(
                 "the server refuses files of this size".into(),
             )),
+            400 | 422 if kind == Kind::Rpy => {
+                // A rolling downgrade can happen after a valid manifest. Do not poison the
+                // durable journal with a terminal old-server schema rejection.
+                self.hub.set_replay_upload_capability(false);
+                Err(Outcome::ServerTrouble {
+                    retry_after_ms: Some(5_000),
+                })
+            }
             400 | 422 => Err(Outcome::Rejected(format!(
                 "the server rejected the upload ({})",
                 resp.status
@@ -769,6 +822,8 @@ impl Uploader {
 }
 
 enum Created {
+    /// A deliberate NAS deletion: keep the sim source, send no bytes, do not claim archived.
+    Deleted,
     Open(u64),
     /// The server already has the file (`verified`, `parsed`, `archived`, ...).
     Held,
@@ -840,7 +895,7 @@ impl Read for GateReader<'_> {
         if self.remaining == 0 {
             return Ok(0);
         }
-        if !self.gate.allows_file_work() || self.hub.is_shutdown() {
+        if !self.gate.allows_bulk_work() || self.hub.is_shutdown() {
             return Err(io::Error::other("on-track gate closed"));
         }
         let want = buf.len().min(self.remaining as usize);

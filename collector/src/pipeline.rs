@@ -402,7 +402,9 @@ pub fn run_reader_loop(
     while !hub.is_shutdown() {
         reader.wait(Duration::from_millis(100));
         let poll = reader.poll(hub.clock.mono_ms(), hub.clock.unix_ms());
-        hub.gate.observe(reader.evidence());
+        hub.gate
+            .observe_with_session(reader.evidence(), reader.in_race());
+        hub.refresh_bulk_gate_status();
         pipeline.on_poll(poll, reader);
         if exit_at_end && reader.at_end() {
             pipeline.finish();

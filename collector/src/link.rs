@@ -417,6 +417,8 @@ impl Link {
             "in_garage": s.in_garage,
             "on_pit_road": s.on_pit_road,
             "streaming": s.streaming,
+            "sync": self.hub.sync_info(),
+            "bulk_io_allowed": self.hub.gate.allows_bulk_work(),
             "queue": {
                 "uploads_pending": self.hub.uploads.uploads_pending.load(Ordering::Relaxed),
                 "bytes_pending": self.hub.uploads.bytes_pending.load(Ordering::Relaxed),
@@ -432,9 +434,12 @@ impl Link {
     }
 
     fn send_status(&self, ws: &mut WebSocket, state: &mut ConnState) -> Result<(), String> {
+        // Snapshot the generation before the JSON. A transition during serialization must
+        // remain due on the next link pass rather than being acknowledged without sending it.
+        let generation = self.hub.status_gen();
         let message = self.status_message();
         state.last_status_sent = Instant::now();
-        state.last_status_gen = self.hub.status_gen();
+        state.last_status_gen = generation;
         self.hub.note_status_sent(state.last_status_gen);
         state.last_queue = (
             self.hub.uploads.uploads_pending.load(Ordering::Relaxed),
@@ -444,6 +449,7 @@ impl Link {
     }
 
     fn maybe_send_status(&self, ws: &mut WebSocket, state: &mut ConnState) -> Result<(), String> {
+        self.hub.refresh_bulk_gate_status();
         let queue = (
             self.hub.uploads.uploads_pending.load(Ordering::Relaxed),
             self.hub.uploads.bytes_pending.load(Ordering::Relaxed),
@@ -584,5 +590,46 @@ pub fn garage_message(item: &GarageOut) -> Value {
             "load_type": c.load_type,
             "values": values,
         }),
+    }
+}
+
+#[cfg(test)]
+mod bulk_status_tests {
+    use super::*;
+    use crate::gate::Evidence;
+    use crate::journal::Journal;
+    use crate::util::ManualClock;
+    #[test]
+    fn bulk_permission_and_its_expiry_publish_without_a_status_model_change() {
+        let clock = Arc::new(ManualClock::new(1_790_000_000_000));
+        let hub = Hub::new(clock.clone(), Journal::in_memory(), true);
+        let link = Link::new(
+            hub.clone(),
+            LinkSettings::new("http://127.0.0.1:1", "11111111-2222-4333-8444-555555555555"),
+        );
+        assert_eq!(link.status_message()["bulk_io_allowed"], false);
+        hub.gate.observe_with_session(
+            Evidence::Live {
+                on_track: Some(false),
+            },
+            Some(false),
+        );
+        hub.refresh_bulk_gate_status();
+        let generation = hub.status_gen();
+        assert_eq!(link.status_message()["bulk_io_allowed"], true);
+        let model = hub.status();
+        clock.advance(1001);
+        hub.refresh_bulk_gate_status();
+        assert_eq!(hub.status(), model);
+        assert!(hub.status_gen() > generation);
+        assert_eq!(link.status_message()["bulk_io_allowed"], false);
+        hub.gate.observe_with_session(
+            Evidence::Live {
+                on_track: Some(false),
+            },
+            Some(true),
+        );
+        hub.refresh_bulk_gate_status();
+        assert_eq!(link.status_message()["bulk_io_allowed"], false);
     }
 }

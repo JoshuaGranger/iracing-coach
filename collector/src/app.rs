@@ -223,10 +223,25 @@ pub fn run(opts: RunOptions) -> Result<RunReport, String> {
             uploader.run();
         }));
 
+        let sync = crate::sync::SetupSync::new(
+            hub.clone(),
+            &config.server,
+            paths.clone(),
+            &config.collector_id,
+        );
+        helpers.push(spawn("setup-sync", move || {
+            background_mode();
+            sync.run();
+        }));
+
         #[cfg(windows)]
         helpers.extend(crate::win::watcher::spawn(
             hub.clone(),
-            vec![paths.telemetry_dir(), paths.setups_dir()],
+            vec![
+                paths.telemetry_dir(),
+                paths.setups_dir(),
+                paths.replays_dir(),
+            ],
         ));
     }
 
