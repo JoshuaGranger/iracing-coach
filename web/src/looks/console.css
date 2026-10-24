@@ -294,9 +294,8 @@
   }
   & :is(.ri-tab, .seg:not(.phase, .sx-toggles) button):focus-visible {
     outline: none;
-    text-decoration: underline;
-    text-underline-offset: 0.3em;
     background: var(--color-surface-hover);
+    box-shadow: inset 0 -2px 0 var(--color-focus);
   }
   & .ri-tab::before {
     content: "> ";
