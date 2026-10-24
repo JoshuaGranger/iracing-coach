@@ -557,23 +557,27 @@ pub async fn backfill_results(app: &AppState) -> Result<usize> {
         .await?;
     let mut done = 0;
     for (sha, stored) in rows {
+        if crate::nas_library::guard(app, &sha).await.is_err() {
+            continue;
+        }
         let spool = crate::ingest::ready_path(app, &sha);
-        let nas = app
-            .archiver
-            .nas_root()
-            .join("raw")
-            .join(&sha[..2.min(sha.len())])
-            .join(format!("{sha}.ibt"));
         let parser = app.parser.clone();
-        let results = tokio::task::spawn_blocking(move || {
-            [spool, nas]
-                .into_iter()
-                .filter(|p| p.is_file())
-                .find_map(|p| parser.results(&p).ok())
-        })
-        .await
-        .ok()
-        .flatten();
+        let local = if spool.is_file() {
+            tokio::task::spawn_blocking(move || parser.results(&spool).ok())
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        let results = match local {
+            Some(results) => Some(results),
+            None => crate::nas_library::header(app, &sha)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|header| header.get("results").cloned()),
+        };
         let Some(results) = results else { continue };
         let mut header: Value = serde_json::from_str(&stored).unwrap_or_else(|_| json!({}));
         if !header.is_object() {

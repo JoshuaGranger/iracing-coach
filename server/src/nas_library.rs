@@ -654,6 +654,7 @@ pub async fn status(app: &AppState) -> Result<Value> {
 }
 
 pub async fn header(app: &AppState, sha: &str) -> Result<Option<Value>> {
+    let _lock = app.upload_locks.lock(sha).await;
     guard(app, sha).await?;
     let key = sha.to_string();
     let object = app
@@ -675,7 +676,6 @@ pub async fn header(app: &AppState, sha: &str) -> Result<Option<Value>> {
     } else {
         format!("raw/{}/{sha}.ibt", &sha[..2])
     };
-    let _lock = app.upload_locks.lock(sha).await;
     let Reply::Header(value) = app
         .archiver
         .library(
