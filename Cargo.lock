@@ -232,6 +232,7 @@ dependencies = [
  "coach-live",
  "coach-wire",
  "jsonschema",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

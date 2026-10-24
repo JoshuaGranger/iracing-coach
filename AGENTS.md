@@ -37,7 +37,7 @@ After it lands, run `tools\check.ps1` (adds Rust, web, and wire-drift checks) an
 
 ## Hard boundaries
 
-- Never modify or delete raw iRacing telemetry, replay, setup or purchased source files. The collector reads them with sharing and writes nothing under `Documents\iRacing`.
+- Never modify or delete raw iRacing telemetry, replay, setup or purchased source files. The collector reads sources with sharing. Owner-authorized NAS sync (2026-10-24) may create new, hash/version-named files only beneath `Documents\iRacing\setups\<car>\Coach Synced`; it never replaces or deletes an existing source. Sim deletion never propagates to the NAS library; deliberate share-folder deletion is remembered (contracts/nas-sync.md).
 - No Garage61, AI or other credentials in the repository, settings files, arguments, logs or fixtures. Secrets reach the mini PC on standard input through `g-house-app set`.
 - Deterministic analysis works without the internet, Garage61 or AI.
 - The Python backend is authoritative for telemetry math, evidence labels, damage and repair screening, and setup safeguards. The server and UI pass its results through; they do not recompute them. A Rust stage replaces a Python stage only with byte-identical output on the parity corpus; an unexplained numeric difference is a failure, not a tolerance. A backend fix gets regression tests and regenerated contracts and fixtures.

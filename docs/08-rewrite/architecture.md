@@ -82,14 +82,14 @@ Static files served by `coach-server`. Pages: Drivers (redirects when there is o
 
 | Store | Location | Writer | Contents | Protection |
 |---|---|---|---|---|
-| iRacing files | sim `Documents\iRacing` | iRacing only | `.ibt`, `.sto`, `.htm` | never modified; collector reads with sharing |
+| iRacing files | sim `Documents\iRacing` | iRacing; collector creates new managed setup copies only | `.ibt`, `.rpy`, `.sto`, `.htm` | sources never replaced/deleted; managed `Coach Synced` copies follow `contracts/nas-sync.md` |
 | Collector state | sim `%LOCALAPPDATA%\iRacingCoach\` | collector | `collector.json` (server address, collector id, placement, cached layout), `journal.jsonl`, `logs\` (2 x 5 MB) | rebuildable except placement |
-| Spool | mini PC `/data/spool/{incoming,ready}` | server | uploads in flight, recordings awaiting archive or analysis | cap 20 GB, then uploads get 503 |
+| Spool | mini PC `/data/spool/{incoming,ready}` | server | temporary upload and active analysis/restage bytes | 20 GiB including open reservations; archived large payloads released, queued work restages on admission |
 | SQLite | `/data/db/coach.sqlite3` | server writer thread | index, ingest state, jobs, setup library, all user-authored data | release recovery point (backup API), hourly snapshot, daily NAS copy |
 | Python archives | `/data/py/<customer_id>/archive` | worker | `reports/` (derived), `history.sqlite3` (includes user tuning experiments), `tuning/`, `trials/` | user parts in every snapshot; reports re-derivable |
 | View files | `/data/views/<analysis_id>/p<projection>/` | projector | bounded view payloads | re-derivable from `analysis.json` |
 | Snapshots | `/data/snapshots/latest/`, NAS `backups/` | scheduler | SQLite (backup API) and Python user data | NAS daily copies are never pruned (each is a few MB) |
-| Raw archive | NAS `iracing-coach/raw/`, `setups/` | archiver | immutable content-addressed files + manifests | NAS volume; the copy on the sim remains iRacing's |
+| Library | NAS `iracing-coach/library/{telemetry,replays,setups}/` | archiver; deliberate user share actions | one canonical payload per kind/hash, distinct setup versions and durable catalog | legacy raw/setup payloads relocate without copying; sim deletion retained; share deletion remembered |
 | Browser | memory, localStorage | SPA | loaded analyses, pending writes, view state | per device |
 
 ## 6. When a box is down
@@ -211,3 +211,17 @@ Determinism rules every Rust stage must meet (spike section 5): Neumaier compens
 - **No outbox copy on the sim:** the collector uploads from iRacing's own file and keeps a reference journal, which removes all sim disk writes; the cost is that a recording deleted by the user before upload is lost (stated in `risks.md`).
 - **`mem_limit` is 4 GiB, not P1 peak plus a small margin:** a light job that loads one `analysis.json` (about 0.9 GiB) fits beside an analysis; heavier light jobs wait through the shared worker budget.
 - **Recordings over about 250 MB are deferred, not analysed:** the 2 GB Kansas file would need about 22 GiB in Python; it is listed and its setup is captured, and port phases 1-2 lift the limit.
+
+### Owner refinement: automatic NAS library sync (2026-10-24)
+
+`contracts/nas-sync.md` supersedes the raw/setup payload locations and collector no-write
+statements above for the scoped feature. `\\192.168.1.82\apps\iracing-coach\library` is the
+browseable canonical archive, not an export duplicate. Existing payloads relocate on the NAS
+without bulk copying; field recordings and metadata/user-data backups keep their prior layout.
+Replay uploads use the same resumed and verified transport, with no telemetry analysis. Setup
+inbox imports remain locked and Coach saves create versions; only new managed copies arrive
+on the rig. The app never mirrors a sim deletion, and a pinned-identity-checked share deletion
+creates a durable tombstone so synchronization cannot resurrect it. Original sim files and
+the retired desktop archive remain read-only. Large payloads have no second durable mini-PC
+cache; active upload/analysis scratch is released when safe. See the contract for exact state,
+path, quota, interruption and restoration rules.

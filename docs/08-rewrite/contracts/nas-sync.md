@@ -147,3 +147,21 @@ failure vs deliberate deletion, tombstone suppression including open/ready/queue
 aliases, manual restoration hash check, NAS inbox adoption/idempotency, driver/page isolation,
 path/symlink/conflict safety, rig delete retention, Race/stale/on-track interruption and recovery.
 Use synthetic fixtures; live acceptance only new copies. Do not delete originals for testing.
+
+## 8. Additive status and recovery metadata
+
+Optional `ServerStatus.nas.library` exposes path `library`, state (pending/ready/paused/error),
+pending/verified/deleted/conflicts counts and last_error/last_ok_at. Counts include unseeded
+objects; a partial good batch does not clear unresolved conflict or identity errors. Optional
+CollectorStatusBody.sync reports waiting/waiting_for_driver/ok/error, last_error/last_sync_at
+and process-local installed count. These optional fields do not change protocol versions.
+Small `library/.catalog/<kind>/<fullsha>.manifest.json` sidecars retain identity, canonical path,
+state/tombstone and archive manifest metadata for index rebuild and crash recovery. They never
+contain another IBT/replay payload. Legacy manifests may remain as metadata; canonical catalog
+sidecars take precedence when rebuilding. Keep user-data generation current for identity,
+inbox and tombstone transactions so normal backups retain them. The first periodic migration
+is delayed at least60seconds after service startup, allowing managed release health checks to
+finish. Recovery/rollback must use the canonical catalog/sidecars; an old binary that only reads
+raw paths cannot be used after relocation without restoring names through a verified relocation.
+
+Optional CollectorStatusBody.bulk_io_allowed publishes the collector's current fresh bulk gate (and changes on gate transitions). The server requires true from every fresh online collector before library bulk maintenance. Missing/false or stale status evidence pauses it; pongs and other traffic cannot renew bulk permission; sim=not_running alone is insufficient because legacy presence also used that value for stale SDK data. With no online collectors, server-only NAS maintenance may continue; no sim-PC I/O is performed. Local operations always recheck their own fresh gate.

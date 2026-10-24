@@ -488,6 +488,64 @@
         "stalled"
       ]
     },
+    "NasLibraryStatus": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "state",
+        "path",
+        "pending",
+        "verified",
+        "deleted",
+        "conflicts",
+        "last_error",
+        "last_ok_at"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "ready",
+            "paused",
+            "error"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "const": "library"
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "verified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "conflicts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_ok_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
     "ServerStatus": {
       "type": "object",
       "required": [
@@ -553,6 +611,9 @@
             },
             "pending_archive": {
               "type": "integer"
+            },
+            "library": {
+              "$ref": "#/$defs/NasLibraryStatus"
             }
           }
         },
@@ -6213,6 +6274,45 @@
         }
       }
     },
+    "CollectorSyncStatus": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "state",
+        "last_error",
+        "last_sync_at",
+        "installed"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "waiting",
+            "waiting_for_driver",
+            "ok",
+            "error"
+          ]
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_sync_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "installed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "New managed setup copies installed during this companion process."
+        }
+      }
+    },
     "CollectorStatusBody": {
       "type": "object",
       "required": [
@@ -6267,6 +6367,13 @@
         },
         "streaming": {
           "type": "boolean"
+        },
+        "bulk_io_allowed": {
+          "type": "boolean",
+          "description": "Fresh collector gate evidence permits bulk work now; false for on-track, Race, unknown or stale. It does not replace per-operation gate checks."
+        },
+        "sync": {
+          "$ref": "#/$defs/CollectorSyncStatus"
         },
         "queue": {
           "type": "object",

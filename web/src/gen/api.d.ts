@@ -3040,6 +3040,21 @@ export interface components {
         };
         /** @enum {string} */
         NasState: "ok" | "readonly" | "unreachable" | "stalled";
+        NasLibraryStatus: {
+            /** @enum {string} */
+            state: "pending" | "ready" | "paused" | "error";
+            /** @constant */
+            path: "library";
+            pending: number;
+            verified: number;
+            deleted: number;
+            conflicts: number;
+            last_error: string | null;
+            /** Format: date-time */
+            last_ok_at: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         ServerStatus: {
             server_version: string;
             /** @constant */
@@ -3056,6 +3071,7 @@ export interface components {
                 /** Format: date-time */
                 last_ok_at?: string | null;
                 pending_archive: number;
+                library?: components["schemas"]["NasLibraryStatus"];
             };
             spool: {
                 bytes: number;
@@ -4540,6 +4556,17 @@ export interface components {
             track_config?: string | null;
             car_path?: string | null;
         };
+        CollectorSyncStatus: {
+            /** @enum {string} */
+            state: "waiting" | "waiting_for_driver" | "ok" | "error";
+            last_error: string | null;
+            /** Format: date-time */
+            last_sync_at: string | null;
+            /** @description New managed setup copies installed during this companion process. */
+            installed: number;
+        } & {
+            [key: string]: unknown;
+        };
         CollectorStatusBody: {
             /** @enum {string} */
             sim: "not_running" | "menus" | "in_session";
@@ -4550,6 +4577,9 @@ export interface components {
             session?: components["schemas"]["LiveSessionRef"] | null;
             driver?: components["schemas"]["DriverRef"] | null;
             streaming: boolean;
+            /** @description Fresh collector gate evidence permits bulk work now; false for on-track, Race, unknown or stale. It does not replace per-operation gate checks. */
+            bulk_io_allowed?: boolean;
+            sync?: components["schemas"]["CollectorSyncStatus"];
             queue: {
                 uploads_pending: number;
                 bytes_pending: number;

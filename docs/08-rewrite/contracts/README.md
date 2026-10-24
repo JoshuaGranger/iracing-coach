@@ -10,6 +10,7 @@ These files are the only interfaces between workstreams. Code follows them; a wo
 | `nas-layout.md` + `manifest.schema.json` | NAS folder layout, atomic write protocol, manifests, crash recovery, deletion rules | server, migration |
 | `db-schema.sql` | Server SQLite schema v1 | server |
 | `worker-interface.md` | How the server runs the Python worker; how Rust stages substitute; parity | server, Python worker, port |
+| `nas-sync.md` | Single-copy library, replay upload, setup sync and deliberate deletion | server, collector, deploy |
 | `sto-editor.md` | Locked STO sources, immutable revisions, native codec and idempotent saves | server, Python, web |
 | `setup-keys.json` | `CarSetup` keys excluded from setup identity (P5 derived values) | server, collector |
 | `crate-api.md` | Public Rust types, signatures and error enums of `coach-ibt`, `coach-live`, `coach-views`, the generated `coach-wire` items they use, crate ownership and dependencies | collector, server, the crates' owners, scaffold (step 0b) |
@@ -36,7 +37,7 @@ The Python MCP contracts in the top-level `contracts/` remain the oracle's own; 
 
 ### 2026-10-24, automatic NAS library sync
 
-Owner-approved canonical single-copy library, archive-only replay uploads, durable deliberate-deletion tombstones, a bounded driver-scoped setup pull manifest, quiet NAS setup inbox adoption and additive managed-copy writes are specified in nas-sync.md. Sim deletions never propagate; purchased originals and old distinct revisions remain protected. Codex Sol 6.1 approved the D15 protocol and ingest review before implementation, including canonical relocation, identity-checked deletion, quota reservations, driver isolation and race gates. Generated wire artifacts accompany this contract.
+Owner-approved canonical single-copy library, archive-only replay uploads, durable deliberate-deletion tombstones, a bounded driver-scoped setup pull manifest, quiet NAS setup inbox adoption and additive managed-copy writes are specified in nas-sync.md. Sim deletions never propagate; purchased originals and old distinct revisions remain protected. Codex Sol 6.1 approved the D15 protocol and ingest review before implementation, including canonical relocation, identity-checked deletion, quota reservations, driver isolation and race gates. Generated wire artifacts accompany this contract. Additive optional collector sync/bulk-gate and NAS library status fields, recovery metadata sidecars and migration 6 are recorded with the implementation. Bulk permission freshness comes from actual status receipts; pongs do not renew it.
 
 
 ### 2026-10-23, native floating-literal serialization for STO edits

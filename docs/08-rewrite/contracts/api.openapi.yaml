@@ -1485,6 +1485,20 @@ components:
       type: string
       enum: [ok, readonly, unreachable, stalled]
 
+    NasLibraryStatus:
+      type: object
+      additionalProperties: true
+      required: [state, path, pending, verified, deleted, conflicts, last_error, last_ok_at]
+      properties:
+        state: { type: string, enum: [pending, ready, paused, error] }
+        path: { type: string, const: library }
+        pending: { type: integer, minimum: 0 }
+        verified: { type: integer, minimum: 0 }
+        deleted: { type: integer, minimum: 0 }
+        conflicts: { type: integer, minimum: 0 }
+        last_error: { type: [string, "null"] }
+        last_ok_at: { type: [string, "null"], format: date-time }
+
     ServerStatus:
       type: object
       required: [server_version, api_version, collector_protocol, live_table_version, projection_version, nas, spool, queue, collectors, disk_free_bytes]
@@ -1504,6 +1518,7 @@ components:
             state: { $ref: "#/components/schemas/NasState" }
             last_ok_at: { type: [string, "null"], format: date-time }
             pending_archive: { type: integer }
+            library: { $ref: "#/components/schemas/NasLibraryStatus" }
         spool:
           type: object
           required: [bytes, files, limit_bytes]
@@ -3629,6 +3644,16 @@ components:
         track_config: { type: [string, "null"] }
         car_path: { type: [string, "null"] }
 
+    CollectorSyncStatus:
+      type: object
+      additionalProperties: true
+      required: [state, last_error, last_sync_at, installed]
+      properties:
+        state: { type: string, enum: [waiting, waiting_for_driver, ok, error] }
+        last_error: { type: [string, "null"] }
+        last_sync_at: { type: [string, "null"], format: date-time }
+        installed: { type: integer, minimum: 0, description: "New managed setup copies installed during this companion process." }
+
     CollectorStatusBody:
       type: object
       required: [sim, connected, on_track, in_garage, on_pit_road, streaming, queue]
@@ -3641,6 +3666,8 @@ components:
         session: { oneOf: [{ $ref: "#/components/schemas/LiveSessionRef" }, { type: "null" }] }
         driver: { oneOf: [{ $ref: "#/components/schemas/DriverRef" }, { type: "null" }] }
         streaming: { type: boolean }
+        bulk_io_allowed: { type: boolean, description: "Fresh collector gate evidence permits bulk work now; false for on-track, Race, unknown or stale. It does not replace per-operation gate checks." }
+        sync: { $ref: "#/components/schemas/CollectorSyncStatus" }
         queue:
           type: object
           required: [uploads_pending, bytes_pending]
