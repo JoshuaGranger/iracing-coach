@@ -25,6 +25,7 @@ export const LOOKS: readonly Look[] = [
 ];
 
 const STORAGE_KEY = "coach.look";
+const BAR_KEY = "coach.look-bar";
 
 const loaders: Record<Exclude<LookId, "current">, () => Promise<unknown>> = {
   pitwall: () => import("./pitwall.css"),
@@ -47,6 +48,16 @@ export function initialLook(search: string, stored: unknown): LookId {
 
 export const currentLook = createStore<LookId>(initialLook(typeof location === "undefined" ? "" : location.search, readJson<unknown>(STORAGE_KEY, null)));
 
+/**
+ * The chooser strip takes room above the header, so the shipped look keeps its exact layout until the strip is asked for: it shows
+ * while another look is on, once a look was chosen here (Alt+L or the strip) and until it is closed, or with `?look=` in the URL.
+ */
+export function barInitiallyOpen(search: string, look: LookId, opened: unknown): boolean {
+  return look !== "current" || opened === true || new URLSearchParams(search).has("look");
+}
+
+export const lookBarOpen = createStore<boolean>(barInitiallyOpen(typeof location === "undefined" ? "" : location.search, currentLook.get(), readJson<unknown>(BAR_KEY, false)));
+
 /** The next look in the list, wrapping; `step` -1 goes back. */
 export function stepLook(id: LookId, step: 1 | -1): LookId {
   const index = LOOKS.findIndex((look) => look.id === id);
@@ -65,5 +76,14 @@ export async function applyLook(id: LookId): Promise<void> {
 export function chooseLook(id: LookId): void {
   currentLook.set(id);
   writeJson(STORAGE_KEY, id);
+  lookBarOpen.set(true);
+  writeJson(BAR_KEY, true);
   void applyLook(id);
+}
+
+/** Closing the strip goes back to the shipped look and its layout. */
+export function closeLookBar(): void {
+  chooseLook("current");
+  lookBarOpen.set(false);
+  writeJson(BAR_KEY, false);
 }

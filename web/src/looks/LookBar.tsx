@@ -1,14 +1,16 @@
 import { useEffect } from "preact/hooks";
 import { useStore } from "../core/store";
-import { LOOKS, applyLook, chooseLook, currentLook, stepLook } from "./looks";
+import { LOOKS, applyLook, chooseLook, closeLookBar, currentLook, lookBarOpen, stepLook } from "./looks";
 import "./look-bar.css";
 
 /**
  * The look chooser: a slim strip above the app, outside the header and the page, styled the same in every look so it never takes part
- * in the comparison. Alt+L steps to the next look, Alt+Shift+L back. Exploration tooling: it goes once a look is chosen.
+ * in the comparison. Alt+L steps to the next look, Alt+Shift+L back; the close button returns to the shipped look and hides the strip.
+ * Exploration tooling: it goes once a look is chosen.
  */
 export function LookBar() {
   const id = useStore(currentLook);
+  const open = useStore(lookBarOpen);
   const look = LOOKS.find((entry) => entry.id === id)!;
   useEffect(() => {
     void applyLook(currentLook.get());
@@ -20,6 +22,7 @@ export function LookBar() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  if (!open) return null;
   return (
     <div id="look-bar" class="look-bar" role="group" aria-label="Look">
       <span class="look-bar-label">Look</span>
@@ -32,6 +35,9 @@ export function LookBar() {
       </span>
       <span class="look-bar-idea">{look.idea}</span>
       <span class="look-bar-keys">Alt+L</span>
+      <button type="button" class="look-bar-close" aria-label="Close the look chooser and return to the shipped look" title="Back to the shipped look" onClick={closeLookBar}>
+        ×
+      </button>
     </div>
   );
 }
