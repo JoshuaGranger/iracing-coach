@@ -291,6 +291,8 @@
     & .topbar {
       position: sticky;
       flex-direction: row;
+      flex-wrap: nowrap;
+      align-self: stretch;
       align-items: center;
       gap: var(--space-2);
       height: auto;
@@ -302,6 +304,11 @@
     }
     & .topbar nav {
       flex-direction: row;
+      min-width: 0;
+    }
+    & .nav-link {
+      flex: 1;
+      width: auto;
     }
     & .driver-name,
     & .driver-switch {
@@ -622,7 +629,7 @@
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
   }
-  & :is(.ri-card, .ri-panel, .ri-sl-map, .ri-sl-laps, .ri-sl-open) {
+  & :is(.ri-card, .ri-panel, .ri-sl-map, .ri-sl-laps, .ri-sl-open, .ri-results-summary, .ri-field-race) {
     border: 1px solid var(--gl-edge);
     border-radius: 1.25rem;
     background: var(--gl-fill);
@@ -632,6 +639,14 @@
     font-family: var(--font-display);
     font-size: 1.125rem;
     font-weight: 600;
+  }
+  & .ri-results-summary .ri-chart-head strong {
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+  & .ri-results-table thead th {
+    background: rgb(18 24 39 / 0.95);
+    font-weight: 500;
   }
   & .ri-card-label .ri-card-title {
     font-size: 1.0625rem;
