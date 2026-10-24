@@ -1714,6 +1714,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/collectors/{collector_id}/sync": {
+        parameters: {
+            query?: {
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                collector_id: string;
+            };
+            cookie?: never;
+        };
+        /** Current driver's managed setup copies and replay capability (nas-sync.md). */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    collector_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Bounded setup sync page; unknown driver has no files. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CollectorSync"];
+                    };
+                };
+                404: components["responses"]["NotFound"];
+                /** @description Cursor belongs to a previous driver; reset the sync pass. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -1737,7 +1791,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Existing upload (resume) or already received */
+                /** @description Existing upload (resume), already received, or deliberately deleted library hash suppressed (deleted). */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1755,7 +1809,16 @@ export interface paths {
                         "application/json": components["schemas"]["UploadState"];
                     };
                 };
-                /** @description Larger than 4 GiB */
+                /** @description SHA already belongs to another file kind; no bytes accepted. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Exceeds kind-specific limit (replay min(16 GiB, spool cap), other kinds 4 GiB). */
                 413: {
                     headers: {
                         [name: string]: unknown;
@@ -1806,7 +1869,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Chunk durable (state open) or file verified (state verified) */
+                /** @description Chunk durable (open), file verified (verified), or deliberately deleted library hash suppressed (deleted, no new payload write). */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -4130,12 +4193,33 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        CollectorSync: {
+            /** @constant */
+            schema_version: 1;
+            customer_id: number | null;
+            replay_upload: boolean;
+            next_cursor: string | null;
+            files: components["schemas"]["CollectorSyncFile"][];
+        } & {
+            [key: string]: unknown;
+        };
+        CollectorSyncFile: {
+            id: string;
+            version: number;
+            sha256: string;
+            size: number;
+            relative_path: string;
+            download_url: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** @enum {string} */
-        UploadKind: "ibt" | "sto" | "htm" | "field";
+        UploadKind: "ibt" | "sto" | "htm" | "field" | "rpy";
         /** @enum {string} */
-        UploadStateName: "open" | "verified" | "parsed" | "discovered" | "archived" | "analysis_queued" | "analyzed" | "deferred" | "failed";
+        UploadStateName: "open" | "verified" | "parsed" | "discovered" | "archived" | "analysis_queued" | "analyzed" | "deferred" | "failed" | "deleted";
         UploadCreate: {
             sha256: string;
+            /** @description Replays up to 16 GiB; other kinds retain the server's 4 GiB cap. */
             size: number;
             kind: components["schemas"]["UploadKind"];
             file_name: string;

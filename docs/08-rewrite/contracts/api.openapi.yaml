@@ -744,6 +744,26 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /api/v1/collectors/{collector_id}/sync:
+    parameters:
+      - { name: collector_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: cursor, in: query, schema: { type: string, maxLength: 512 } }
+    get:
+      tags: [collector]
+      summary: Current driver's managed setup copies and replay capability (nas-sync.md).
+      responses:
+        "200":
+          description: Bounded setup sync page; unknown driver has no files.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CollectorSync" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Cursor belongs to a previous driver; reset the sync pass.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /api/v1/uploads:
     post:
       tags: [ingest]
@@ -755,7 +775,7 @@ paths:
             schema: { $ref: "#/components/schemas/UploadCreate" }
       responses:
         "200":
-          description: Existing upload (resume) or already received
+          description: Existing upload (resume), already received, or deliberately deleted library hash suppressed (deleted).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadState" }
@@ -764,7 +784,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadState" }
-        "413": { description: Larger than 4 GiB }
+        "409":
+          description: SHA already belongs to another file kind; no bytes accepted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "413": { description: "Exceeds kind-specific limit (replay min(16 GiB, spool cap), other kinds 4 GiB)." }
         "503":
           description: Spool full; retry after `Retry-After` seconds
           headers:
@@ -793,7 +818,7 @@ paths:
             schema: { type: string, format: binary, maxLength: 8388608 }
       responses:
         "200":
-          description: Chunk durable (state open) or file verified (state verified)
+          description: Chunk durable (open), file verified (verified), or deliberately deleted library hash suppressed (deleted, no new payload write).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/UploadState" }
@@ -3158,20 +3183,46 @@ components:
             error_message: { type: [string, "null"] }
             result: { type: [object, "null"], additionalProperties: true, description: "Tool result for Python-backed jobs (validated against its MCP contract where one exists)." }
 
+    CollectorSync:
+      type: object
+      additionalProperties: true
+      required: [schema_version, customer_id, replay_upload, files, next_cursor]
+      properties:
+        schema_version: { type: integer, const: 1 }
+        customer_id: { type: [integer, "null"] }
+        replay_upload: { type: boolean }
+        next_cursor: { type: [string, "null"], maxLength: 512 }
+        files:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/CollectorSyncFile" }
+
+    CollectorSyncFile:
+      type: object
+      additionalProperties: true
+      required: [id, version, sha256, size, relative_path, download_url]
+      properties:
+        id: { type: string, maxLength: 128 }
+        version: { type: integer, minimum: 1 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size: { type: integer, minimum: 1, maximum: 16777216 }
+        relative_path: { type: string, maxLength: 1024 }
+        download_url: { type: string, maxLength: 1024 }
+
     UploadKind:
       type: string
-      enum: [ibt, sto, htm, field]
+      enum: [ibt, sto, htm, field, rpy]
 
     UploadStateName:
       type: string
-      enum: [open, verified, parsed, discovered, archived, analysis_queued, analyzed, deferred, failed]
+      enum: [open, verified, parsed, discovered, archived, analysis_queued, analyzed, deferred, failed, deleted]
 
     UploadCreate:
       type: object
       required: [sha256, size, kind, file_name, collector_id]
       properties:
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
-        size: { type: integer, minimum: 1, maximum: 4294967296 }
+        size: { type: integer, minimum: 1, maximum: 17179869184, description: "Replays up to 16 GiB; other kinds retain the server's 4 GiB cap." }
         kind: { $ref: "#/components/schemas/UploadKind" }
         file_name: { type: string, maxLength: 512 }
         relative_path: { type: [string, "null"], maxLength: 1024, description: "For setup files: path under Documents\\iRacing\\setups, forward slashes." }

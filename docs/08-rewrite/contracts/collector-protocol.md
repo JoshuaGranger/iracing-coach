@@ -139,3 +139,16 @@ Edge rules (wave 1, from P5 and the collector):
 | 4001 | incompatible protocol | keep capturing; uploads continue while `POST /api/v1/uploads` succeeds; retry the WebSocket every 10 min |
 | 4002 | duplicate `collector_id` connected (newest wins) | the older socket stops reconnecting for 60 s |
 | 4008 | too slow (browser sockets only) | n/a |
+
+## 11. Owner-requested NAS library synchronization (2026-10-24)
+
+nas-sync.md supersedes sections 4 and 9 where they conflict: bulk work also pauses for every
+Race session or unknown session type; replay uploads and managed setup downloads are supported.
+The only new source-folder writes are additive hash/version-named Coach Synced files. Sim
+file deletion never propagates. Canonical single-copy NAS storage and deliberate library
+object deletion/tombstones are defined there. Upload URLs remain SHA-keyed; a SHA cannot be
+registered under another kind. POST with an existing SHA and different kind returns409 Error
+before receipt/tombstone handling and accepts no bytes. Tombstone lookup uses the registered
+kind and full SHA, so a different-kind request cannot bypass deletion. HEAD/POST/PUT return
+explicit terminal UploadState deleted for a known tombstone. It is neither archived nor a
+retry request; collector records suppression, sends no payload, and keeps the sim source.

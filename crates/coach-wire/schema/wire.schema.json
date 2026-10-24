@@ -4834,13 +4834,93 @@
         }
       ]
     },
+    "CollectorSync": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "schema_version",
+        "customer_id",
+        "replay_upload",
+        "files",
+        "next_cursor"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "customer_id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "replay_upload": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/CollectorSyncFile"
+          }
+        }
+      }
+    },
+    "CollectorSyncFile": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "version",
+        "sha256",
+        "size",
+        "relative_path",
+        "download_url"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "relative_path": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "download_url": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      }
+    },
     "UploadKind": {
       "type": "string",
       "enum": [
         "ibt",
         "sto",
         "htm",
-        "field"
+        "field",
+        "rpy"
       ]
     },
     "UploadStateName": {
@@ -4854,7 +4934,8 @@
         "analysis_queued",
         "analyzed",
         "deferred",
-        "failed"
+        "failed",
+        "deleted"
       ]
     },
     "UploadCreate": {
@@ -4874,7 +4955,8 @@
         "size": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 4294967296
+          "maximum": 17179869184,
+          "description": "Replays up to 16 GiB; other kinds retain the server's 4 GiB cap."
         },
         "kind": {
           "$ref": "#/$defs/UploadKind"

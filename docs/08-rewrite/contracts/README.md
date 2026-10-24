@@ -1,4 +1,4 @@
-﻿# Rewrite contracts
+# Rewrite contracts
 
 These files are the only interfaces between workstreams. Code follows them; a workstream that needs a change edits only the contract (one commit touching `docs/08-rewrite/contracts/` and the regenerated files), states the reason in the commit message, and the change is reviewed (Codex Sol 6.1 for protocol and ingest changes, D15) before dependent code lands. Additive optional fields need no review.
 
@@ -33,6 +33,11 @@ Command: `pnpm gen:wire` at the repository root. Schemas use only constructs bot
 The Python MCP contracts in the top-level `contracts/` remain the oracle's own; the server validates worker results against them where they exist (`analyze-result-v1`, `setup-package-v1`, `tuning-recommendation-v1`).
 
 ## Change log
+
+### 2026-10-24, automatic NAS library sync
+
+Owner-approved canonical single-copy library, archive-only replay uploads, durable deliberate-deletion tombstones, a bounded driver-scoped setup pull manifest, quiet NAS setup inbox adoption and additive managed-copy writes are specified in nas-sync.md. Sim deletions never propagate; purchased originals and old distinct revisions remain protected. Codex Sol 6.1 approved the D15 protocol and ingest review before implementation, including canonical relocation, identity-checked deletion, quota reservations, driver isolation and race gates. Generated wire artifacts accompany this contract.
+
 
 ### 2026-10-23, native floating-literal serialization for STO edits
 
