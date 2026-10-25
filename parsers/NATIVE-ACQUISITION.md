@@ -51,8 +51,10 @@ optional routes remain absent. Section records retain their native station,
 checkpoint station, XY, inverse span and interpolation coefficients.
 
 The native loader aligns ordinary RL geometry to the finite `checkpoint_00`
-segment before resampling. This checkpoint differs from `cp_start`, the
-race-start marker. The decoder preserves both and the SDK layout branch mode.
+segment before resampling. This checkpoint differs from
+`cp_startpathbegin`, the start-path marker at world+0xbcd8. That marker is
+not the separate `cp_start` key. The decoder preserves checkpoint_00,
+cp_startpathbegin and the SDK layout branch mode.
 Alternate layout mode is reported without assuming the ordinary lap divisor.
 These data replace a track-specific human fit only after runtime verification.
 
@@ -87,3 +89,8 @@ ground mesh, legal limits, pit-speed boundaries or an optimal racing line.
 Successful parsing grants no driving admission. A build change requires new
 layout evidence; a new track requires fresh identity/frame/phase evidence,
 not another reverse-engineering session or a human reference lap.
+
+A first frozen OUT-only acquisition on DESKTOP-SIM refused module enumeration
+with Win32 access error 5 before any track-memory read. This machine has not
+qualified the process reader. No protected-process workaround is implemented.
+Version 1.1.1 corrects the start-path marker label; 1.1.0 called it cp_start.

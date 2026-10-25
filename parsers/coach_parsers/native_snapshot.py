@@ -152,11 +152,11 @@ def decode_snapshot(read: Callable[[int, int], bytes], module_base: int,
         raise SnapshotError("world origin outside geographic bounds")
     (sdk_length,) = _unpack(bounded_read, world_ptr + 0x38, "<f")
     checkpoint_00 = _unpack(bounded_read, world_ptr + 0xB4C4, "<4f")
-    cp_start = _unpack(bounded_read, world_ptr + 0xBCD8, "<4f")
+    cp_startpathbegin = _unpack(bounded_read, world_ptr + 0xBCD8, "<4f")
     (layout_branch_mode,) = _unpack(bounded_read, world_ptr + 0x3F4, "<i")
     sdk_length, = _finite((sdk_length,), "ordinary SDK lap length")
     checkpoint_00 = _finite(checkpoint_00, "checkpoint_00")
-    cp_start = _finite(cp_start, "cp_start")
+    cp_startpathbegin = _finite(cp_startpathbegin, "cp_startpathbegin")
     if sdk_length <= 0:
         raise SnapshotError("ordinary SDK lap length must be positive")
     (route_count,) = _unpack(bounded_read, world_ptr + 0x703D0, "<i")
@@ -183,7 +183,7 @@ def decode_snapshot(read: Callable[[int, int], bytes], module_base: int,
             "sdk_phase_inputs": {
                 "ordinary_sdk_length": sdk_length,
                 "checkpoint_00_segment": checkpoint_00,
-                "cp_start_segment": cp_start,
+                "cp_startpathbegin_segment": cp_startpathbegin,
                 "layout_branch_mode": layout_branch_mode,
                 "alternate_layout_detected": layout_branch_mode >= 1,
                 "sdk_phase_admitted": False,

@@ -111,8 +111,8 @@ class NativeSnapshotTests(unittest.TestCase):
         phase = result["sdk_phase_inputs"]
         self.assertAlmostEqual(phase["ordinary_sdk_length"], 1609.344, places=3)
         self.assertEqual(phase["checkpoint_00_segment"], (101.0, 102.0, 103.0, 104.0))
-        self.assertEqual(phase["cp_start_segment"], (201.0, 202.0, 203.0, 204.0))
-        self.assertNotEqual(phase["checkpoint_00_segment"], phase["cp_start_segment"])
+        self.assertEqual(phase["cp_startpathbegin_segment"], (201.0, 202.0, 203.0, 204.0))
+        self.assertNotEqual(phase["checkpoint_00_segment"], phase["cp_startpathbegin_segment"])
         self.assertEqual(phase["layout_branch_mode"], 0)
         self.assertFalse(phase["sdk_phase_admitted"])
         self.assertFalse(result["driving_admitted"])
