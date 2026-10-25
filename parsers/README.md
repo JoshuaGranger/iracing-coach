@@ -61,6 +61,11 @@ including historical `lab-notes/` references in source docstrings, so existing
 bundle reader hashes still match. This README supplies the current public scope
 and provenance. Test imports changed; iDriver retains module-name adapters.
 
+Release wheels are built from a clean committed archive, and every packaged
+Python module is compared byte-for-byte with that commit before publication.
+Version 1.0.1 corrects stale build output in the first 1.0.0 wheel; calculations
+are unchanged and original reader-source hashes are preserved in 1.0.1.
+
 Original Git blob IDs, for checking the transfer against the retained history:
 
 | Source path | Blob |
