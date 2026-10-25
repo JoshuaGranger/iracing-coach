@@ -18,8 +18,9 @@ python -m coach_parsers.native_route_cache <decoded-copy.rlc> --records
 python -m coach_parsers.native_route_bundle <decoded-copy.rl> --output <new-folder>
 ```
 
-The installed package has no runtime dependencies and needs neither a Coach
-checkout, internet access, simulator, nor device. Console commands `coach-route`,
+The offline readers have no runtime dependencies and need neither a Coach
+checkout, internet access, simulator, nor device. The optional process reader
+requires an explicitly selected running simulator on 64-bit Windows. Console commands `coach-route`,
 `coach-route-cache` and `coach-route-bundle` expose the same entry points.
 Consumers pin an immutable Coach commit when installing from Git; a wheel built
 from that commit can be installed offline with `pip install --no-index <wheel>`.
@@ -49,6 +50,35 @@ Only synthetic, de-identified tests are committed in
 `iracing-coach/tests/test_native_route*.py`; `tools/check.ps1` runs them with the
 backend suite. No installed track assets, private geometry, research captures,
 setups or decoding material belong in Git.
+
+## Build-pinned native acquisition (1.1.0)
+
+`coach_parsers.native_process.open_native_process(pid)` is a context-managed,
+read-only Windows reader. It binds the PID, executable path and creation time to
+an opened handle, verifies the pinned executable SHA-256 and image size, and
+revalidates identity before exposing memory reads. Unsupported builds and access
+denials fail explicitly. It never injects, writes process memory, changes
+privileges or sends simulator inputs. No process is opened at import time.
+
+`native_snapshot.decode_snapshot(reader.read, reader.image_base,
+reader.executable_sha256)` decodes processed race and available pit routes,
+including checkpoint stations and interpolation coefficients. It also retains
+the native geographic origin and axis rotation. `decode_player_pose` takes the
+same arguments and separately reads the selected player position, rotation and
+station. All reads are bounded; unknown geometry and physical limits remain
+unknown. Inputs and outputs belong outside Git.
+
+This layout is statically verified for one executable hash. Runtime acquisition,
+moving-pose coherence and performance are **unqualified**. Tick bracketing does
+not establish an atomic snapshot. These APIs do not grant driving admission or
+establish surface edges, walls, pit speed boundaries or a fastest line. The
+standalone offline RL/RLC readers retain their earlier coordinate/phase limits.
+The native reader has no dependency on iDriver, the worker, a service or an AI.
+
+Synthetic tests are part of the normal backend suite in
+`iracing-coach/tests/test_native_snapshot.py` and `test_native_process.py`,
+including wrong-build refusal, pointer and allocation limits, adjacent-field
+sentinels, process identity changes, exact reads and handle cleanup.
 
 ## Provenance
 
