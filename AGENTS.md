@@ -17,9 +17,12 @@ Keep the investigation on one well-planned screen: track location, exact compari
 | `collector/`, `crates/coach-live/`, `crates/coach-ibt/` | sim-PC collector, live engine, IBT and session-info parsing |
 | `server/`, `crates/coach-views/`, `crates/coach-wire/` | mini-PC service, view projection, generated wire types |
 | `iracing-coach/` | Python analysis: the v1 production worker and the permanent parity oracle |
+| `parsers/` | Reusable offline track parsing package; STO codec and garage descriptors stay in the Python worker |
 | `web/` | TypeScript SPA |
 | `deploy/mini-pc/` | Dockerfile, Compose file, `app.env` (mini-pc skill conventions) |
 | `docs/08-rewrite/contracts/` | interfaces between workstreams; change them only by the process in its README |
+
+Coach owns the website, the deployed sim-PC tray companion (`coach-collector.exe`), and parsing tools including track parsing and `.sto`. The separate [iDriver repository](https://github.com/JoshuaGranger/iDriver) owns agent driving, lap/data collection experiments, and driving skills/MCP/plugins. iDriver may depend on Coach's versioned parser package and public API; Coach never depends on iDriver. This owner decision of 2026-10-24 supersedes older references assigning general parsing to the utility repository. The collector/tray is the current companion app.
 
 The retired desktop app (`companion-app/`) was deleted in rewrite wave 4 (2026-10-03); its source lives in Git history (last present at `3ff5e87`).
 

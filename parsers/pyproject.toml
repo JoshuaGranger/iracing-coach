@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iracing-coach-parsers"
+version = "1.0.0"
+description = "Deterministic offline iRacing route readers owned by iRacing Coach"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/JoshuaGranger/iracing-coach"
+
+[project.scripts]
+coach-route = "coach_parsers.native_route:main"
+coach-route-bundle = "coach_parsers.native_route_bundle:main"
+coach-route-cache = "coach_parsers.native_route_cache:main"
+
+[tool.setuptools]
+packages = ["coach_parsers"]

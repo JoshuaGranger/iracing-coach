@@ -56,7 +56,30 @@ Five proofs with thresholds fixed in advance ran before any design (`prove/P1` t
 - **iRacing-utility is a separate repository** (`C:\Users\joshu\source\repos\iRacing-utility`): "the windows-side auxiliary functions (driving a track to find limits, driving to test tire wear and tuning, etc.) ... a tool to help gather data and setups and stuff. It will not be a function of iRacing coach itself, rather a companion extension arm to get data for first app population and for data gathering experiments." It absorbs the vJoy test driver, the IRP bot study backlog and the parked `.sto` harvest and decryption work, and feeds Coach only through the public upload API and the collector's backfill. Coach never depends on it.
 - The review link for him is `http://100.70.45.32:8210/` (the ts.net name is forced to HTTPS by browsers); an "iRacing Coach" entry is being added to the G House menu in Home Assistant.
 
-## Parking lot (not in this product now)
+## Repository ownership, 2026-10-24
+
+Joshua requested two maintained GitHub repositories: **iRacing Coach** for the
+website, deployed sim-PC tray companion and parsing tools (including track and
+`.sto` parsing); **iDriver** for the agent driving mechanism, lap/data collection
+experiments, and its skills, MCP servers and plugins. The existing private
+`iRacing-utility` repository is renamed to `iDriver`, preserving its history and
+visibility. Its current local directory and active immutable driving builds are
+kept in place during the active driving session.
+
+Coach's existing STO codec/editor stays authoritative. The deterministic offline
+RL/RLC readers become Coach's versioned `iracing-coach-parsers` Python package;
+iDriver consumes that package through compatibility adapters rather than a second
+parser implementation. Coach has no dependency on iDriver. Installing dependencies
+may use the network; parsing and driving do not require it at runtime. Private
+research, track assets, setup files, extraction material and live results remain
+outside public source. These assignments supersede the earlier general assignment
+of `.sto` decryption and parsing to the utility repository.
+
+The word companion refers to Coach's deployed collector/tray. The retired
+`companion-app/` desktop UI remains historical source only. This organization
+does not change product screens or authorize a deployment.
+
+## Parking lot (historical 2026-10-02 scope; later decisions above supersede it)
 
 - Bulk `.sto` harvest (an agent loads every `.sto` in a test session) and `.sto` decryption. Joshua: these "are utility functions that need to join the test driving stuff on a separate app or something."
 - Plan, saved Tests and Test day screens; Replay; Details; Ask; crew-chief calls that appear on the overlay. Their data is still preserved by D12.

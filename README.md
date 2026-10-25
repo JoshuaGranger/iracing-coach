@@ -4,6 +4,13 @@
 
 iRacing Coach is a race-engineering and driver-coaching system: a Rust collector and live overlay on the sim PC, a Rust service with the Python analysis worker in a Docker container on the mini PC, raw recordings on the NAS, and a TypeScript web UI for desktop, rig screen, tablet and phone. The deterministic Python backend remains the source of truth for calculations, evidence labels, setup safeguards, and credential handling.
 
+Coach owns the website, the deployed sim-PC tray companion (`coach-collector.exe`),
+and reusable parsing tools, including tracks and `.sto` files.
+[iDriver](https://github.com/JoshuaGranger/iDriver) is the separate agent driving
+mechanism for collecting laps and experimental data, including its driving
+skills, MCP servers and plugins. iDriver consumes Coach's public APIs and
+versioned parser package; Coach does not depend on iDriver.
+
 ## Current baseline
 
 - Rewrite decided 2026-10-02: [owner decisions](docs/08-rewrite/owner-decisions-2026-10-02.md), [architecture](docs/08-rewrite/architecture.md), [workstreams](docs/08-rewrite/workstreams.md)
@@ -15,6 +22,7 @@ iRacing Coach is a race-engineering and driver-coaching system: a Rust collector
 - [`collector/`](collector/), [`crates/`](crates/), [`server/`](server/) - Rust collector, shared crates, and mini-PC service.
 - [`web/`](web/) - TypeScript web UI.
 - [`iracing-coach/`](iracing-coach/) - authoritative deterministic telemetry and coaching backend.
+- [`parsers/`](parsers/) - installable offline track readers for Coach and external consumers such as iDriver; STO parsing stays in the authoritative Python backend.
 - [`deploy/`](deploy/) - mini-PC image and Compose files.
 - [`contracts/`](contracts/) - checked-in API and data-contract snapshots of the Python backend.
 - [`config/`](config/) - shared repository configuration and generated-UI inputs.

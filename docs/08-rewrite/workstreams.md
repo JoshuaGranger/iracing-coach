@@ -32,7 +32,7 @@ Owner: architect, Opus 5.5, high effort; reviewed by Codex Sol 6.1 with the plan
 | W3 | Collector | `collector/` | collector-protocol, live-frame, api (Collector*, Upload*), nas-layout section 7 | Sonnet 5.5, high | dev PC; sim PC in waves 2-4 **[sim: blocked]** |
 | W4 | Server | `server/` | all except live-channels internals | Sonnet 5.5, high | dev PC + WSL |
 | W5 | View projection | `crates/coach-views/` | api (views), worker-interface | Sonnet 5.5, high | dev PC |
-| W6 | Python worker and parity | `iracing-coach/`, `tools/parity/`, `contracts/` (Python MCP), `test-data/` | worker-interface | Opus 5.5, high | dev PC + WSL |
+| W6 | Python worker, file parsers and parity | `iracing-coach/`, `parsers/`, `tools/parity/`, `contracts/` (Python MCP), `test-data/` | worker-interface | Opus 5.5, high | dev PC + WSL |
 | W7 | Web app (shell, library, setups, tuning, live) | `web/` except `web/src/investigation/` and `web/perf/` | api, live-frame, live-channels | Sonnet 5.5, high | dev PC |
 | W8 | Web investigation (Race, Runs, Sections, Traces) | `web/src/investigation/`, `web/perf/` | api (views, traces), budgets | Sonnet 5.5, high | dev PC |
 | W9 | Deploy, migration, rig, integration | `deploy/`, `tools/migrate/`, `tools/rig/`, `docs/08-rewrite/acceptance/`, root `.dockerignore`, `companion-app/` deletion (wave 4) | all | Opus 5.5, high | dev PC, mini PC, sim PC **[sim: blocked]** |

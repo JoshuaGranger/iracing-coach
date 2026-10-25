@@ -38,6 +38,14 @@
 
 # Personal telemetry is private. Only the named sanitized test fixtures are source.
 *.ibt
+*.sto
+*.rpy
+*.rl
+*.rlc
+*.dat
+/parsers/build/
+/parsers/dist/
+/parsers/*.egg-info/
 !test-data/ibt/synthetic-race.ibt
 !test-data/ibt/truncated-race.ibt
 
