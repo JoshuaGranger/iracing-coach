@@ -51,6 +51,14 @@ Only synthetic, de-identified tests are committed in
 backend suite. No installed track assets, private geometry, research captures,
 setups or decoding material belong in Git.
 
+## Meaning of the track traces
+
+[NATIVE-ROUTE-SEMANTICS.md](NATIVE-ROUTE-SEMANTICS.md) records the recovered
+native consumers, Martinsville and IRP measurements, comparison with old IRP
+impact candidates, and the repeatable extraction/validation process. Min/max
+bound a padded sampling grid; they are not verified collision walls. Center is
+separately authored, not the arithmetic midpoint or a proven fastest line.
+
 ## Build-pinned native acquisition (1.1.0)
 
 `coach_parsers.native_process.open_native_process(pid)` is a context-managed,

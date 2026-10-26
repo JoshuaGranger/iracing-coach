@@ -1,5 +1,9 @@
 # Native route and position acquisition
 
+For what race/pit/min/max/center traces mean, native consumer evidence and the
+IRP comparison, see [NATIVE-ROUTE-SEMANTICS.md](NATIVE-ROUTE-SEMANTICS.md).
+Acquisition qualification and geometric/physical interpretation are separate.
+
 Coach owns this reader; iDriver consumes an immutable installed Coach package.
 No worker, service, iDriver checkout, reference lap, model call, injection or
 simulator input is needed to decode a loaded track. Offline RL/RLC parsing
