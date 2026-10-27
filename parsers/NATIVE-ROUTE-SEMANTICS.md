@@ -5,7 +5,10 @@ parsers and their semantics; iDriver consumes them for driving experiments.
 
 The curves are authored geometric references and lateral constraints. Native
 consumers use min/max to bound a padded spatial sampling grid. **A min/max
-curve is not an established collision wall or official track limit.** At the
+curve is not an established collision wall or official track limit.** The
+[width-aware IRP follow-up](NATIVE-ROUTE-WALL-TEST.md) now finds that even the
+wall-favoring rigid placement cannot accommodate the clean positions and tested
+footprint margins at the existing metre scale. At the
 two inspected counterclockwise ovals, `racemin` is toward the outside and
 `racemax` toward the infield. Calling `racemax` the outer wall would reverse
 the observed sides.
@@ -131,6 +134,9 @@ is toward the infield at every station in all four fits.
 **Interpretation:** `racepanicmin` is the strongest correspondence to the old
 outer envelope among the extracted race-family curves; ordinary min/high lies
 near it. `racemax` corresponds to the inner side, not the outer boundary.
+The subsequent [width and alignment test](NATIVE-ROUTE-WALL-TEST.md) distinguishes
+this car-position match from physical-wall containment and argues against using
+`racepanicmin` as a calibrated collision wall.
 This supports an outer envelope/constraint role for the minimum-side curves.
 It does not prove that either curve is the collision-wall face: the recorded
 profile measures car centres, and translation/lane choice remains uncertain.
