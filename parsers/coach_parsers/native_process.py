@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import ntpath
 import os
 import platform
 import time
@@ -202,9 +203,10 @@ class NativeProcessReader:
                     not _USER_PTR_MIN <= module.base < (1 << 47) or
                     module.size != native_snapshot.IMAGE_MEMSPAN or not module.path):
                 raise ProcessReaderError("module discovery returned invalid metadata")
-            if os.path.normcase(module.path) != os.path.normcase(identity_before.path):
+            # These are Windows image paths even for an injected offline backend.
+            if ntpath.normcase(module.path) != ntpath.normcase(identity_before.path):
                 raise ProcessReaderError("enumerated module path does not match opened process image")
-            if os.path.basename(module.path).casefold() != self._module_name.casefold():
+            if ntpath.basename(module.path).casefold() != self._module_name.casefold():
                 raise ProcessReaderError("enumerated image is not the supported executable")
             self.image_base, self.image_size, self.image_path = module.base, module.size, module.path
             self.executable_sha256 = backend.hash_file(module.path)
@@ -216,7 +218,7 @@ class NativeProcessReader:
                 raise ProcessReaderError("process identity changed during executable validation")
             if module_after != module:
                 raise ProcessReaderError("module identity changed during executable validation")
-            if os.path.normcase(module_after.path) != os.path.normcase(identity_after.path):
+            if ntpath.normcase(module_after.path) != ntpath.normcase(identity_after.path):
                 raise ProcessReaderError("revalidated module path does not match process handle")
             self._identity = identity_after
             self._opened = True

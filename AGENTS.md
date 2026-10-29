@@ -26,6 +26,14 @@ Coach owns the website, the deployed sim-PC tray companion (`coach-collector.exe
 
 The retired desktop app (`companion-app/`) was deleted in rewrite wave 4 (2026-10-03); its source lives in Git history (last present at `3ff5e87`).
 
+For track traces, min/max semantics and telemetry position mapping, start with
+[`parsers/TELEMETRY-REGISTRATION.md`](parsers/TELEMETRY-REGISTRATION.md). It records
+the available extraction corpus, recovered SDK conversion, measured mapping,
+private evidence locations and remaining work. This is offline research plus
+reusable helpers, not an integrated or deployed app feature. Preserve its
+distinction between longitudinal station consistency and lateral accuracy;
+min/max curves are not established walls or legal limits.
+
 Work in your workstream's owned paths only (`docs/08-rewrite/workstreams.md`).
 
 ## Verify before delivery

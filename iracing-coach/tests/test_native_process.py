@@ -47,6 +47,15 @@ class Backend:
 
 
 class NativeProcessReaderTests(unittest.TestCase):
+    def test_image_paths_use_windows_semantics_on_every_test_host(self):
+        backend = Backend(
+            identities=[np.ProcessIdentity(42, r"C:\SIM\iRacingSim64DX11.exe", 123)],
+            modules=[np.ModuleInfo(0x1_4000_0000, ns.IMAGE_MEMSPAN,
+                                   "c:/sim/iracingsim64dx11.exe")])
+        with np.open_native_process(42, backend=backend) as reader:
+            self.assertEqual(reader.read(reader.image_base, 1), b"\xab")
+        self.assertEqual(backend.closed, [0x1234])
+
     def test_preserves_module_base_above_four_gib(self):
         backend = Backend()
         with np.open_native_process(42, backend=backend) as reader:

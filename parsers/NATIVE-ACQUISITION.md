@@ -4,6 +4,11 @@ For what race/pit/min/max/center traces mean, native consumer evidence and the
 IRP comparison, see [NATIVE-ROUTE-SEMANTICS.md](NATIVE-ROUTE-SEMANTICS.md).
 Acquisition qualification and geometric/physical interpretation are separate.
 
+For the later offline position-correlation study, recovered SDK GPS formula
+and private evidence handoff, see
+[TELEMETRY-REGISTRATION.md](TELEMETRY-REGISTRATION.md). Those results do not
+qualify live process acquisition or sample coherence.
+
 Coach owns this reader; iDriver consumes an immutable installed Coach package.
 No worker, service, iDriver checkout, reference lap, model call, injection or
 simulator input is needed to decode a loaded track. Offline RL/RLC parsing
@@ -69,9 +74,10 @@ east  = sin(theta) * X - cos(theta) * Y
 north = cos(theta) * X + sin(theta) * Y
 ```
 
-The native GPS converter uses geographic origin `world+0x50/+0x58`, distinct
-from the WeekendInfo metadata origin. Mixing those origins creates a false
-translation. Body compass yaw is `wrap(theta - atan2(matrix[3], matrix[0]))`;
+The native GPS converter reads geographic origin `world+0x50/+0x58`.
+Equality with the rounded WeekendInfo metadata origin has not been established;
+substitution can introduce a false translation. Body compass yaw is
+`wrap(theta - atan2(matrix[3], matrix[0]))`;
 the decoder uses the canonical range [-pi, pi). Compare yaw circularly.
 
 Player selection uses the native player index and manager branch; inactive or

@@ -3,6 +3,11 @@
 Verified knowledge from the 2026-10-24–26 REA investigation. Coach owns these
 parsers and their semantics; iDriver consumes them for driving experiments.
 
+The later [2026-10-27 telemetry-registration study](TELEMETRY-REGISTRATION.md)
+expands the asset inventory and measures position correspondence. Its larger
+corpus includes edge and raceopt assets absent from the three-track inventory
+below. Earlier geometric measurements retain their original scope.
+
 The curves are authored geometric references and lateral constraints. Native
 consumers use min/max to bound a padded spatial sampling grid. **A min/max
 curve is not an established collision wall or official track limit.** The
@@ -197,8 +202,11 @@ the same contacts would be circular.
    framing/check, then read the bounded directory. Validate complete record
    consumption, member ranges, duplicate names, lengths and codec modes.
    Select route names by explicit layout prefix and native catalog policy.
-3. Read only selected RL/RLC stored ranges. The verified adapter supports
-   ordinary member codecs 0/7. Fail explicitly on unsupported context-dependent
+3. Read only selected RL/RLC stored ranges. This original three-track adapter
+   verified ordinary member codecs 0/7. The later
+   [registration study](TELEMETRY-REGISTRATION.md) records the expanded private
+   adapter and corpus; use its pinned codec evidence for that acquisition.
+   Fail explicitly on unsupported context-dependent
    members; do not invent data from `track.ini` or track-surface assets that
    were not decoded. Check source identity again and hash every copied range.
 4. Parse decoded RL/RLC copies using `coach_parsers.native_route` and

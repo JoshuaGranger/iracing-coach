@@ -12,6 +12,12 @@ Passing tests does not make a requirement correct. Written requirements can be a
 
 ## Reading path
 
+Track geometry research: [Track extraction and telemetry registration](../parsers/TELEMETRY-REGISTRATION.md)
+records the available corpus, SDK conversion, six-layout correlation and
+four-layout fresh-file confirmation. It includes the evidence handoff and
+remaining coverage, qualification and app-integration work; it is not a release
+record or a claim of calibrated walls or absolute lateral accuracy.
+
 1. [Authority and normative language](00-governance/authority-and-language.md)
 2. [Source register](00-governance/source-register.md)
 3. [Product mission, scope, and operating context](01-product/mission-scope-and-operating-context.md)

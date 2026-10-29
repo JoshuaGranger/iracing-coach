@@ -32,6 +32,11 @@ versioned parser package; Coach does not depend on iDriver.
 
 Start with [the documentation index](docs/README.md) and [the contributor instructions](AGENTS.md).
 
+Track extraction and telemetry position research is recorded in the
+[track-registration handoff](parsers/TELEMETRY-REGISTRATION.md), including
+coverage, formulas, validation, private artifact locations and remaining work.
+The offline helpers are in source; app integration and release remain open.
+
 ## Verify the source
 
 From the repository root on Windows:

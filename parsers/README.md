@@ -38,10 +38,16 @@ Bundle output requires a new directory and never replaces an existing source.
 Inputs must already be decoded offline copies: RL versions 1/2 and RLC version 5.
 This package does not extract installed DAT archives. The private extraction
 adapter and its evidence are outside this repository. Full installed-DAT
-acquisition is unverified.
+acquisition is not a public package capability. The bounded private archive
+study and its explicit framing exceptions are recorded in
+[TELEMETRY-REGISTRATION.md](TELEMETRY-REGISTRATION.md); inventorying every
+current sim-PC track remains open.
 
-Route XY is local native geometry with no verified world/GPS transform or
-LapDist phase. RL's third component is a vertical query seed; RLC planning
+Standalone RL/RLC decoding does not supply a qualified world/GPS transform or
+LapDist phase. The separate [registration study](TELEMETRY-REGISTRATION.md)
+measures correspondence on six layouts, with fresh-file confirmation on four;
+those private fits are not automatically applied by the parser or app.
+RL's third component is a vertical query seed; RLC planning
 heights and envelope fields do not establish physical ground or collision
 walls. Legal track limits, official pit lines and driving admission remain
 unavailable. A plotted route is not permission for iDriver to drive it.
@@ -52,6 +58,13 @@ backend suite. No installed track assets, private geometry, research captures,
 setups or decoding material belong in Git.
 
 ## Meaning of the track traces
+
+[TELEMETRY-REGISTRATION.md](TELEMETRY-REGISTRATION.md) records the expanded
+2026-10-27 corpus and position correlation: 1,348 decoded curves, 178 caches,
+six compared layouts and fresh-recording station checks on four layouts.
+`coach_parsers.telemetry_registration` provides explicit spherical/WGS84 local
+conversion, rigid frames, cyclic chord projection and circular statistics.
+These helpers do not fit or qualify a transform; private maps stay outside Git.
 
 [NATIVE-ROUTE-SEMANTICS.md](NATIVE-ROUTE-SEMANTICS.md) records the recovered
 native consumers, Martinsville and IRP measurements, comparison with old IRP
